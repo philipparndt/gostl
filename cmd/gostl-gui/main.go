@@ -167,6 +167,12 @@ func (a *App) setupMainUI() {
 	})
 	aaCheck.SetChecked(true) // Start with AA enabled
 
+	// Create unlimited points checkbox
+	unlimitedPointsCheck := widget.NewCheck("Unlimited Points (Polyline)", func(checked bool) {
+		a.renderer.SetUnlimitedPoints(checked)
+	})
+	unlimitedPointsCheck.SetChecked(false) // Start with 2-point limit
+
 	// Create resolution slider
 	resolutionLabel := widget.NewLabel("Resolution: 85%")
 	resolutionSlider := widget.NewSlider(0.3, 1.0)
@@ -256,6 +262,7 @@ func (a *App) setupMainUI() {
 		fillEdgesCheck,
 		inPlaceCheck,
 		aaCheck,
+		unlimitedPointsCheck,
 		widget.NewSeparator(),
 		resolutionLabel,
 		resolutionSlider,

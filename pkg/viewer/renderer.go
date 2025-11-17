@@ -35,6 +35,7 @@ type ModelRenderer struct {
 	showFilledEdges        bool
 	showInPlaceMeasurement bool
 	enableAntiAliasing     bool
+	unlimitedPoints        bool
 	width                  float64
 	height                 float64
 	resolutionScale        float64
@@ -58,6 +59,7 @@ func NewModelRenderer(model *stl.Model) *ModelRenderer {
 		showFilledEdges:        false, // Start without edges on filled surfaces
 		showInPlaceMeasurement: true,  // Start with in-place measurements enabled
 		enableAntiAliasing:     true,  // Start with anti-aliasing enabled
+		unlimitedPoints:        false, // Start with 2-point limit
 		resolutionScale:        0.85,
 		lightX:                 -0.5,
 		lightY:                 -0.5,
@@ -121,6 +123,18 @@ func (r *ModelRenderer) SetEnableAntiAliasing(enable bool) {
 // IsEnableAntiAliasing returns whether anti-aliasing is enabled
 func (r *ModelRenderer) IsEnableAntiAliasing() bool {
 	return r.enableAntiAliasing
+}
+
+// SetUnlimitedPoints toggles unlimited point selection mode
+func (r *ModelRenderer) SetUnlimitedPoints(unlimited bool) {
+	r.unlimitedPoints = unlimited
+	// Clear selection when switching modes
+	r.ClearSelection()
+}
+
+// IsUnlimitedPoints returns whether unlimited points mode is enabled
+func (r *ModelRenderer) IsUnlimitedPoints() bool {
+	return r.unlimitedPoints
 }
 
 // SetResolutionScale sets the rendering resolution scale
@@ -409,8 +423,16 @@ func (r *ModelRenderer) updatePointMarkers() {
 	r.pointMarkers = make([]*canvas.Circle, 0)
 
 	colors := []color.Color{
-		color.RGBA{255, 0, 0, 255}, // Red for first point
-		color.RGBA{0, 255, 0, 255}, // Green for second point
+		color.RGBA{255, 0, 0, 255},     // Red
+		color.RGBA{0, 255, 0, 255},     // Green
+		color.RGBA{0, 100, 255, 255},   // Blue
+		color.RGBA{255, 255, 0, 255},   // Yellow
+		color.RGBA{255, 0, 255, 255},   // Magenta
+		color.RGBA{0, 255, 255, 255},   // Cyan
+		color.RGBA{255, 128, 0, 255},   // Orange
+		color.RGBA{128, 0, 255, 255},   // Purple
+		color.RGBA{255, 192, 203, 255}, // Pink
+		color.RGBA{0, 255, 128, 255},   // Spring Green
 	}
 
 	for i, point := range r.selectedPoints {
@@ -455,42 +477,47 @@ func (r *ModelRenderer) updateMeasurementTexts() {
 		return
 	}
 
-	p1 := r.selectedPoints[0]
-	p2 := r.selectedPoints[1]
+	// Show measurements for each segment in the polyline
+	for i := 0; i < len(r.selectedPoints)-1; i++ {
+		p1 := r.selectedPoints[i]
+		p2 := r.selectedPoints[i+1]
 
-	// Project points to screen
-	x1, y1, _ := r.camera.Project(p1, r.width, r.height)
-	x2, y2, _ := r.camera.Project(p2, r.width, r.height)
+		// Project points to screen
+		x1, y1, _ := r.camera.Project(p1, r.width, r.height)
+		x2, y2, _ := r.camera.Project(p2, r.width, r.height)
 
-	// Calculate midpoint for text placement
-	midX := (x1 + x2) / 2
-	midY := (y1 + y2) / 2
+		// Calculate midpoint for text placement
+		midX := (x1 + x2) / 2
+		midY := (y1 + y2) / 2
 
-	// Calculate measurements
-	v := p2.Sub(p1)
-	totalDist := p1.Distance(p2)
+		// Calculate measurements
+		v := p2.Sub(p1)
+		segmentDist := p1.Distance(p2)
 
-	if totalDist < 0.0001 {
-		return // Don't show if distance is zero
-	}
+		if segmentDist < 0.0001 {
+			continue // Don't show if distance is zero
+		}
 
-	// Distance label at midpoint
-	distText := canvas.NewText(fmt.Sprintf("%.1f", totalDist), color.RGBA{255, 255, 0, 255})
-	distText.TextSize = 14
-	distText.TextStyle = fyne.TextStyle{Bold: true}
-	distText.Move(fyne.NewPos(float32(midX)+10, float32(midY)-20))
-	r.measurementTexts = append(r.measurementTexts, distText)
+		// Distance label at midpoint
+		distText := canvas.NewText(fmt.Sprintf("%.1f", segmentDist), color.RGBA{255, 255, 0, 255})
+		distText.TextSize = 14
+		distText.TextStyle = fyne.TextStyle{Bold: true}
+		distText.Move(fyne.NewPos(float32(midX)+10, float32(midY)-20))
+		r.measurementTexts = append(r.measurementTexts, distText)
 
-	// Elevation angle (if not zero)
-	horizontalDist := math.Sqrt(v.X*v.X + v.Y*v.Y)
-	elevationRad := math.Atan2(v.Z, horizontalDist)
-	elevationDeg := elevationRad * 180.0 / math.Pi
+		// Elevation angle (if not zero) - only for first segment to avoid clutter
+		if i == 0 {
+			horizontalDist := math.Sqrt(v.X*v.X + v.Y*v.Y)
+			elevationRad := math.Atan2(v.Z, horizontalDist)
+			elevationDeg := elevationRad * 180.0 / math.Pi
 
-	if math.Abs(elevationDeg) > 0.01 {
-		angleText := canvas.NewText(fmt.Sprintf("%.1f°", elevationDeg), color.RGBA{0, 255, 255, 255})
-		angleText.TextSize = 12
-		angleText.Move(fyne.NewPos(float32(midX)+10, float32(midY)+5))
-		r.measurementTexts = append(r.measurementTexts, angleText)
+			if math.Abs(elevationDeg) > 0.01 {
+				angleText := canvas.NewText(fmt.Sprintf("%.1f°", elevationDeg), color.RGBA{0, 255, 255, 255})
+				angleText.TextSize = 12
+				angleText.Move(fyne.NewPos(float32(midX)+10, float32(midY)+5))
+				r.measurementTexts = append(r.measurementTexts, angleText)
+			}
+		}
 	}
 }
 
@@ -561,10 +588,12 @@ func (r *ModelRenderer) findNearestVertex(screenX, screenY float64) (geometry.Ve
 func (r *ModelRenderer) addSelectedPoint(point geometry.Vector3) {
 	r.selectedPoints = append(r.selectedPoints, point)
 
-	// Keep only last 2 points
-	if len(r.selectedPoints) > 2 {
+	// Apply point limit based on mode
+	if !r.unlimitedPoints && len(r.selectedPoints) > 2 {
+		// Keep only last 2 points in standard mode
 		r.selectedPoints = r.selectedPoints[len(r.selectedPoints)-2:]
 	}
+	// In unlimited mode, no limit - users can click Clear Selection to reset
 
 	r.updatePointMarkers()
 	r.Refresh()
@@ -652,18 +681,20 @@ func (m *modelWidgetRenderer) Refresh() {
 		m.objects = append(m.objects, line)
 	}
 
-	// Add line between selected points if we have 2 points
-	if len(m.renderer.selectedPoints) == 2 {
-		p1 := m.renderer.selectedPoints[0]
-		p2 := m.renderer.selectedPoints[1]
-		x1, y1, _ := m.renderer.camera.Project(p1, m.renderer.width, m.renderer.height)
-		x2, y2, _ := m.renderer.camera.Project(p2, m.renderer.width, m.renderer.height)
+	// Add lines connecting all selected points (polyline)
+	if len(m.renderer.selectedPoints) >= 2 {
+		for i := 0; i < len(m.renderer.selectedPoints)-1; i++ {
+			p1 := m.renderer.selectedPoints[i]
+			p2 := m.renderer.selectedPoints[i+1]
+			x1, y1, _ := m.renderer.camera.Project(p1, m.renderer.width, m.renderer.height)
+			x2, y2, _ := m.renderer.camera.Project(p2, m.renderer.width, m.renderer.height)
 
-		measureLine := canvas.NewLine(color.RGBA{255, 255, 0, 255})
-		measureLine.StrokeWidth = 2
-		measureLine.Position1 = fyne.NewPos(float32(x1), float32(y1))
-		measureLine.Position2 = fyne.NewPos(float32(x2), float32(y2))
-		m.objects = append(m.objects, measureLine)
+			measureLine := canvas.NewLine(color.RGBA{255, 255, 0, 255})
+			measureLine.StrokeWidth = 2
+			measureLine.Position1 = fyne.NewPos(float32(x1), float32(y1))
+			measureLine.Position2 = fyne.NewPos(float32(x2), float32(y2))
+			m.objects = append(m.objects, measureLine)
+		}
 	}
 
 	// Add hover marker (if hovering over a point)
