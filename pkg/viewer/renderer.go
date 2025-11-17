@@ -1,12 +1,16 @@
 package viewer
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"math"
+	"runtime"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 	"github.com/philipparndt/gostl/pkg/geometry"
 	"github.com/philipparndt/gostl/pkg/stl"
@@ -15,43 +19,122 @@ import (
 // ModelRenderer renders an STL model in 3D
 type ModelRenderer struct {
 	widget.BaseWidget
-	model          *stl.Model
-	camera         *Camera
-	lines          []*canvas.Line
-	rasterImage    *canvas.Image
-	selectedPoints []geometry.Vector3
-	pointMarkers   []*canvas.Circle
-	dragStart      *fyne.Position
-	isDragging     bool
-	filledMode     bool
-	width          float64
-	height         float64
-	onPointSelect  func(point geometry.Vector3)
+	model                  *stl.Model
+	camera                 *Camera
+	lines                  []*canvas.Line
+	rasterImage            *canvas.Image
+	selectedPoints         []geometry.Vector3
+	pointMarkers           []*canvas.Circle
+	hoverPoint             *geometry.Vector3
+	hoverMarker            *canvas.Circle
+	measurementTexts       []*canvas.Text
+	dragStart              *fyne.Position
+	isDragging             bool
+	showFilled             bool
+	showMesh               bool
+	showFilledEdges        bool
+	showInPlaceMeasurement bool
+	enableAntiAliasing     bool
+	width                  float64
+	height                 float64
+	resolutionScale        float64
+	lightX                 float64
+	lightY                 float64
+	lightZ                 float64
+	onPointSelect          func(point geometry.Vector3)
 }
 
 // NewModelRenderer creates a new 3D model renderer
 func NewModelRenderer(model *stl.Model) *ModelRenderer {
 	r := &ModelRenderer{
-		model:          model,
-		camera:         NewCamera(model.BoundingBox()),
-		lines:          make([]*canvas.Line, 0),
-		selectedPoints: make([]geometry.Vector3, 0),
-		pointMarkers:   make([]*canvas.Circle, 0),
-		filledMode:     false,
+		model:                  model,
+		camera:                 NewCamera(model.BoundingBox()),
+		lines:                  make([]*canvas.Line, 0),
+		selectedPoints:         make([]geometry.Vector3, 0),
+		pointMarkers:           make([]*canvas.Circle, 0),
+		measurementTexts:       make([]*canvas.Text, 0),
+		showFilled:             true,  // Start with fill enabled
+		showMesh:               false, // Start with mesh hidden
+		showFilledEdges:        false, // Start without edges on filled surfaces
+		showInPlaceMeasurement: true,  // Start with in-place measurements enabled
+		enableAntiAliasing:     true,  // Start with anti-aliasing enabled
+		resolutionScale:        0.85,
+		lightX:                 -0.5,
+		lightY:                 -0.5,
+		lightZ:                 -1.0,
 	}
 	r.ExtendBaseWidget(r)
 	return r
 }
 
-// SetFilledMode toggles between wireframe and filled rendering
-func (r *ModelRenderer) SetFilledMode(filled bool) {
-	r.filledMode = filled
+// SetShowFilled toggles filled rendering
+func (r *ModelRenderer) SetShowFilled(show bool) {
+	r.showFilled = show
 	r.Render(r.width, r.height)
 }
 
-// IsFilledMode returns whether filled mode is enabled
-func (r *ModelRenderer) IsFilledMode() bool {
-	return r.filledMode
+// SetShowMesh toggles mesh rendering
+func (r *ModelRenderer) SetShowMesh(show bool) {
+	r.showMesh = show
+	r.Render(r.width, r.height)
+}
+
+// IsShowFilled returns whether filled mode is enabled
+func (r *ModelRenderer) IsShowFilled() bool {
+	return r.showFilled
+}
+
+// IsShowMesh returns whether mesh mode is enabled
+func (r *ModelRenderer) IsShowMesh() bool {
+	return r.showMesh
+}
+
+// SetShowFilledEdges toggles edges on filled surfaces
+func (r *ModelRenderer) SetShowFilledEdges(show bool) {
+	r.showFilledEdges = show
+	r.Render(r.width, r.height)
+}
+
+// IsShowFilledEdges returns whether filled edges mode is enabled
+func (r *ModelRenderer) IsShowFilledEdges() bool {
+	return r.showFilledEdges
+}
+
+// SetShowInPlaceMeasurement toggles in-place measurement display
+func (r *ModelRenderer) SetShowInPlaceMeasurement(show bool) {
+	r.showInPlaceMeasurement = show
+	r.updateMeasurementTexts()
+	r.Refresh()
+}
+
+// IsShowInPlaceMeasurement returns whether in-place measurement is enabled
+func (r *ModelRenderer) IsShowInPlaceMeasurement() bool {
+	return r.showInPlaceMeasurement
+}
+
+// SetEnableAntiAliasing toggles anti-aliasing (supersampling)
+func (r *ModelRenderer) SetEnableAntiAliasing(enable bool) {
+	r.enableAntiAliasing = enable
+	r.Render(r.width, r.height)
+}
+
+// IsEnableAntiAliasing returns whether anti-aliasing is enabled
+func (r *ModelRenderer) IsEnableAntiAliasing() bool {
+	return r.enableAntiAliasing
+}
+
+// SetResolutionScale sets the rendering resolution scale
+func (r *ModelRenderer) SetResolutionScale(scale float64) {
+	r.resolutionScale = scale
+	r.Render(r.width, r.height)
+}
+
+// SetLightDirection sets the lighting direction
+func (r *ModelRenderer) SetLightDirection(x, y, z float64) {
+	r.lightX = x
+	r.lightY = y
+	r.lightZ = z
+	r.Render(r.width, r.height)
 }
 
 // SetOnPointSelect sets the callback for when a point is selected
@@ -72,24 +155,29 @@ func (r *ModelRenderer) Render(width, height float64) {
 	r.width = width
 	r.height = height
 
-	if r.filledMode {
+	// Clear everything first
+	r.lines = make([]*canvas.Line, 0)
+	r.rasterImage = nil
+
+	// Render filled if enabled
+	if r.showFilled {
 		r.renderFilled(width, height)
-	} else {
+	}
+
+	// Render mesh if enabled (can be combined with filled)
+	if r.showMesh {
 		r.renderWireframe(width, height)
 	}
 
-	// Update point markers
+	// Update point markers and measurement texts
 	r.updatePointMarkers()
+	r.updateMeasurementTexts()
 
 	r.Refresh()
 }
 
 // renderWireframe renders the model as a wireframe
 func (r *ModelRenderer) renderWireframe(width, height float64) {
-	// Clear previous lines
-	r.lines = make([]*canvas.Line, 0)
-	r.rasterImage = nil
-
 	// First pass: calculate depth range for normalization
 	minZ := math.MaxFloat64
 	maxZ := -math.MaxFloat64
@@ -161,11 +249,11 @@ func (r *ModelRenderer) renderWireframe(width, height float64) {
 
 // renderFilled renders the model with filled triangles (optimized)
 func (r *ModelRenderer) renderFilled(width, height float64) {
-	// Clear previous wireframe
-	r.lines = make([]*canvas.Line, 0)
-
-	// Render at 0.5x resolution for maximum performance, then scale
-	scale := 0.5
+	// Use configurable resolution scale with optional supersampling for AA
+	scale := r.resolutionScale
+	if r.enableAntiAliasing {
+		scale *= 2.0 // 2x supersampling when AA is enabled for stronger effect
+	}
 	w, h := int(width*scale), int(height*scale)
 	if w < 1 {
 		w = 1
@@ -234,48 +322,80 @@ func (r *ModelRenderer) renderFilled(width, height float64) {
 		depthRange = 0.1
 	}
 
-	// Simple lighting direction
-	lightDir := geometry.NewVector3(-0.5, -0.5, -1.0).Normalize()
+	// Use configurable lighting direction
+	lightDir := geometry.NewVector3(r.lightX, r.lightY, r.lightZ).Normalize()
 
-	// Draw triangles sequentially (parallel was causing flickering)
-	for _, tri := range triangles {
-		// Normalize depth
-		normalizedDepth := (maxZ - tri.depth) / depthRange
-
-		// Calculate lighting
-		lightIntensity := math.Max(0.35, -tri.normal.Dot(lightDir))
-
-		// Calculate color with lighting
-		baseColor := 170.0 + normalizedDepth*85.0
-		colorValue := uint8(baseColor * lightIntensity)
-
-		fillColor := color.RGBA{
-			R: uint8(float64(colorValue) * 0.6),
-			G: uint8(float64(colorValue) * 0.7),
-			B: colorValue,
-			A: 255,
-		}
-
-		// Fill triangle with depth testing
-		fillTriangleWithDepth(img, zbuffer,
-			tri.x1, tri.y1, tri.z1,
-			tri.x2, tri.y2, tri.z2,
-			tri.x3, tri.y3, tri.z3,
-			fillColor)
-
-		// Draw subtle edges only on very near triangles
-		if normalizedDepth > 0.75 {
-			edgeColor := color.RGBA{
-				R: uint8(float64(colorValue) * 0.3),
-				G: uint8(float64(colorValue) * 0.4),
-				B: uint8(float64(colorValue) * 0.6),
-				A: 80,
-			}
-			drawLine(img, int(tri.x1), int(tri.y1), int(tri.x2), int(tri.y2), edgeColor)
-			drawLine(img, int(tri.x2), int(tri.y2), int(tri.x3), int(tri.y3), edgeColor)
-			drawLine(img, int(tri.x3), int(tri.y3), int(tri.x1), int(tri.y1), edgeColor)
-		}
+	// Parallel rendering by horizontal bands
+	numWorkers := runtime.NumCPU()
+	if numWorkers > 8 {
+		numWorkers = 8 // Cap at 8 workers
 	}
+
+	var wg sync.WaitGroup
+	bandHeight := h / numWorkers
+
+	for workerID := 0; workerID < numWorkers; workerID++ {
+		wg.Add(1)
+		yStart := workerID * bandHeight
+		yEnd := yStart + bandHeight
+		if workerID == numWorkers-1 {
+			yEnd = h // Last worker takes remaining rows
+		}
+
+		go func(yMin, yMax int) {
+			defer wg.Done()
+
+			// Each worker processes all triangles but only for its y-range
+			for _, tri := range triangles {
+				// Viewport culling - skip if triangle is completely outside this band
+				triMinY := math.Min(tri.y1, math.Min(tri.y2, tri.y3))
+				triMaxY := math.Max(tri.y1, math.Max(tri.y2, tri.y3))
+
+				if triMaxY < float64(yMin) || triMinY > float64(yMax) {
+					continue // Triangle doesn't intersect this band
+				}
+
+				// Normalize depth
+				normalizedDepth := (maxZ - tri.depth) / depthRange
+
+				// Calculate lighting
+				lightIntensity := math.Max(0.35, -tri.normal.Dot(lightDir))
+
+				// Calculate color with lighting
+				baseColor := 170.0 + normalizedDepth*85.0
+				colorValue := uint8(baseColor * lightIntensity)
+
+				fillColor := color.RGBA{
+					R: uint8(float64(colorValue) * 0.6),
+					G: uint8(float64(colorValue) * 0.7),
+					B: colorValue,
+					A: 255,
+				}
+
+				// Fill triangle with depth testing, limited to this band
+				fillTriangleWithDepthBanded(img, zbuffer, w,
+					tri.x1, tri.y1, tri.z1,
+					tri.x2, tri.y2, tri.z2,
+					tri.x3, tri.y3, tri.z3,
+					fillColor, yMin, yMax)
+
+				// Draw edges on filled surfaces if enabled with depth testing
+				if r.showFilledEdges {
+					edgeColor := color.RGBA{
+						R: uint8(float64(colorValue) * 0.3),
+						G: uint8(float64(colorValue) * 0.4),
+						B: uint8(float64(colorValue) * 0.6),
+						A: 120,
+					}
+					drawLineBandedWithDepth(img, zbuffer, w, int(tri.x1), int(tri.y1), tri.z1, int(tri.x2), int(tri.y2), tri.z2, edgeColor, yMin, yMax)
+					drawLineBandedWithDepth(img, zbuffer, w, int(tri.x2), int(tri.y2), tri.z2, int(tri.x3), int(tri.y3), tri.z3, edgeColor, yMin, yMax)
+					drawLineBandedWithDepth(img, zbuffer, w, int(tri.x3), int(tri.y3), tri.z3, int(tri.x1), int(tri.y1), tri.z1, edgeColor, yMin, yMax)
+				}
+			}
+		}(yStart, yEnd)
+	}
+
+	wg.Wait()
 
 	// Create canvas image
 	r.rasterImage = canvas.NewImageFromImage(img)
@@ -289,8 +409,8 @@ func (r *ModelRenderer) updatePointMarkers() {
 	r.pointMarkers = make([]*canvas.Circle, 0)
 
 	colors := []color.Color{
-		color.RGBA{255, 0, 0, 255},   // Red for first point
-		color.RGBA{0, 255, 0, 255},   // Green for second point
+		color.RGBA{255, 0, 0, 255}, // Red for first point
+		color.RGBA{0, 255, 0, 255}, // Green for second point
 	}
 
 	for i, point := range r.selectedPoints {
@@ -304,6 +424,73 @@ func (r *ModelRenderer) updatePointMarkers() {
 		marker.Move(fyne.NewPos(float32(x)-size/2, float32(y)-size/2))
 
 		r.pointMarkers = append(r.pointMarkers, marker)
+	}
+}
+
+// updateHoverMarker updates the visual marker for the hovered point
+func (r *ModelRenderer) updateHoverMarker() {
+	if r.hoverPoint == nil {
+		r.hoverMarker = nil
+		return
+	}
+
+	x, y, _ := r.camera.Project(*r.hoverPoint, r.width, r.height)
+
+	// Create semi-transparent yellow circle for hover preview
+	marker := canvas.NewCircle(color.RGBA{255, 255, 0, 180})
+	marker.StrokeColor = color.RGBA{255, 255, 255, 200}
+	marker.StrokeWidth = 2
+	size := float32(12)
+	marker.Resize(fyne.NewSize(size, size))
+	marker.Move(fyne.NewPos(float32(x)-size/2, float32(y)-size/2))
+
+	r.hoverMarker = marker
+}
+
+// updateMeasurementTexts updates the in-place measurement text labels
+func (r *ModelRenderer) updateMeasurementTexts() {
+	r.measurementTexts = make([]*canvas.Text, 0)
+
+	if !r.showInPlaceMeasurement || len(r.selectedPoints) < 2 {
+		return
+	}
+
+	p1 := r.selectedPoints[0]
+	p2 := r.selectedPoints[1]
+
+	// Project points to screen
+	x1, y1, _ := r.camera.Project(p1, r.width, r.height)
+	x2, y2, _ := r.camera.Project(p2, r.width, r.height)
+
+	// Calculate midpoint for text placement
+	midX := (x1 + x2) / 2
+	midY := (y1 + y2) / 2
+
+	// Calculate measurements
+	v := p2.Sub(p1)
+	totalDist := p1.Distance(p2)
+
+	if totalDist < 0.0001 {
+		return // Don't show if distance is zero
+	}
+
+	// Distance label at midpoint
+	distText := canvas.NewText(fmt.Sprintf("%.1f", totalDist), color.RGBA{255, 255, 0, 255})
+	distText.TextSize = 14
+	distText.TextStyle = fyne.TextStyle{Bold: true}
+	distText.Move(fyne.NewPos(float32(midX)+10, float32(midY)-20))
+	r.measurementTexts = append(r.measurementTexts, distText)
+
+	// Elevation angle (if not zero)
+	horizontalDist := math.Sqrt(v.X*v.X + v.Y*v.Y)
+	elevationRad := math.Atan2(v.Z, horizontalDist)
+	elevationDeg := elevationRad * 180.0 / math.Pi
+
+	if math.Abs(elevationDeg) > 0.01 {
+		angleText := canvas.NewText(fmt.Sprintf("%.1f°", elevationDeg), color.RGBA{0, 255, 255, 255})
+		angleText.TextSize = 12
+		angleText.Move(fyne.NewPos(float32(midX)+10, float32(midY)+5))
+		r.measurementTexts = append(r.measurementTexts, angleText)
 	}
 }
 
@@ -406,6 +593,38 @@ func (r *ModelRenderer) Scrolled(event *fyne.ScrollEvent) {
 	r.Render(r.width, r.height)
 }
 
+// MouseMoved handles mouse movement for hover preview
+func (r *ModelRenderer) MouseMoved(event *desktop.MouseEvent) {
+	if r.isDragging {
+		return
+	}
+
+	// Find nearest vertex to mouse position
+	nearestVertex, minDist := r.findNearestVertex(float64(event.Position.X), float64(event.Position.Y))
+
+	// Only show preview if reasonably close (within 20 pixels)
+	if minDist < 20 {
+		r.hoverPoint = &nearestVertex
+	} else {
+		r.hoverPoint = nil
+	}
+
+	r.updateHoverMarker()
+	r.Refresh()
+}
+
+// MouseIn handles mouse entering the widget
+func (r *ModelRenderer) MouseIn(*desktop.MouseEvent) {
+	// Nothing special needed
+}
+
+// MouseOut handles mouse leaving the widget
+func (r *ModelRenderer) MouseOut() {
+	r.hoverPoint = nil
+	r.hoverMarker = nil
+	r.Refresh()
+}
+
 // modelWidgetRenderer implements fyne.WidgetRenderer
 type modelWidgetRenderer struct {
 	renderer *ModelRenderer
@@ -433,9 +652,33 @@ func (m *modelWidgetRenderer) Refresh() {
 		m.objects = append(m.objects, line)
 	}
 
+	// Add line between selected points if we have 2 points
+	if len(m.renderer.selectedPoints) == 2 {
+		p1 := m.renderer.selectedPoints[0]
+		p2 := m.renderer.selectedPoints[1]
+		x1, y1, _ := m.renderer.camera.Project(p1, m.renderer.width, m.renderer.height)
+		x2, y2, _ := m.renderer.camera.Project(p2, m.renderer.width, m.renderer.height)
+
+		measureLine := canvas.NewLine(color.RGBA{255, 255, 0, 255})
+		measureLine.StrokeWidth = 2
+		measureLine.Position1 = fyne.NewPos(float32(x1), float32(y1))
+		measureLine.Position2 = fyne.NewPos(float32(x2), float32(y2))
+		m.objects = append(m.objects, measureLine)
+	}
+
+	// Add hover marker (if hovering over a point)
+	if m.renderer.hoverMarker != nil {
+		m.objects = append(m.objects, m.renderer.hoverMarker)
+	}
+
 	// Add point markers (always on top)
 	for _, marker := range m.renderer.pointMarkers {
 		m.objects = append(m.objects, marker)
+	}
+
+	// Add measurement text labels (on top of everything)
+	for _, text := range m.renderer.measurementTexts {
+		m.objects = append(m.objects, text)
 	}
 
 	canvas.Refresh(m.renderer)

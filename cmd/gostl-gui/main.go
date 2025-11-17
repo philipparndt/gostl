@@ -25,13 +25,15 @@ type App struct {
 }
 
 type MeasurementInfo struct {
-	point1Label    *widget.Label
-	point2Label    *widget.Label
-	distanceXLabel *widget.Label
-	distanceYLabel *widget.Label
-	distanceZLabel *widget.Label
-	totalDistLabel *widget.Label
-	modelInfoLabel *widget.Label
+	point1Label      *widget.Label
+	point2Label      *widget.Label
+	distanceXLabel   *widget.Label
+	distanceYLabel   *widget.Label
+	distanceZLabel   *widget.Label
+	totalDistLabel   *widget.Label
+	elevationLabel   *widget.Label
+	azimuthLabel     *widget.Label
+	modelInfoLabel   *widget.Label
 }
 
 func main() {
@@ -110,11 +112,14 @@ func (a *App) setupMainUI() {
 		distanceYLabel: widget.NewLabel("Distance Y: -"),
 		distanceZLabel: widget.NewLabel("Distance Z: -"),
 		totalDistLabel: widget.NewLabel("Total Distance: -"),
+		elevationLabel: widget.NewLabel("Elevation Angle: -"),
+		azimuthLabel:   widget.NewLabel("Azimuth: -"),
 		modelInfoLabel: widget.NewLabel(""),
 	}
 
-	// Style the total distance label
+	// Style the total distance and angle labels
 	a.measurementInfo.totalDistLabel.TextStyle = fyne.TextStyle{Bold: true}
+	a.measurementInfo.elevationLabel.TextStyle = fyne.TextStyle{Bold: true}
 
 	// Create 3D renderer
 	a.renderer = viewer.NewModelRenderer(a.model)
@@ -132,11 +137,75 @@ func (a *App) setupMainUI() {
 		a.updateMeasurements()
 	})
 
-	// Create filled mode checkbox
-	filledModeCheck := widget.NewCheck("Show Filled", func(checked bool) {
-		a.renderer.SetFilledMode(checked)
+	// Create mesh checkbox
+	meshCheck := widget.NewCheck("Show Mesh", func(checked bool) {
+		a.renderer.SetShowMesh(checked)
 	})
-	filledModeCheck.SetChecked(false)
+	meshCheck.SetChecked(false) // Start with mesh hidden
+
+	// Create filled mode checkbox
+	fillCheck := widget.NewCheck("Show Fill", func(checked bool) {
+		a.renderer.SetShowFilled(checked)
+	})
+	fillCheck.SetChecked(true) // Start with fill enabled
+
+	// Create filled edges checkbox
+	fillEdgesCheck := widget.NewCheck("Show Filled Edges", func(checked bool) {
+		a.renderer.SetShowFilledEdges(checked)
+	})
+	fillEdgesCheck.SetChecked(false)
+
+	// Create in-place measurement checkbox
+	inPlaceCheck := widget.NewCheck("Show Measurements In-Place", func(checked bool) {
+		a.renderer.SetShowInPlaceMeasurement(checked)
+	})
+	inPlaceCheck.SetChecked(true) // Start with in-place measurements enabled
+
+	// Create anti-aliasing checkbox
+	aaCheck := widget.NewCheck("Anti-Aliasing (Supersampling)", func(checked bool) {
+		a.renderer.SetEnableAntiAliasing(checked)
+	})
+	aaCheck.SetChecked(true) // Start with AA enabled
+
+	// Create resolution slider
+	resolutionLabel := widget.NewLabel("Resolution: 85%")
+	resolutionSlider := widget.NewSlider(0.3, 1.0)
+	resolutionSlider.SetValue(0.85)
+	resolutionSlider.Step = 0.05
+	resolutionSlider.OnChanged = func(value float64) {
+		a.renderer.SetResolutionScale(value)
+		resolutionLabel.SetText(fmt.Sprintf("Resolution: %.0f%%", value*100))
+	}
+
+	// Create lighting control sliders
+	lightXLabel := widget.NewLabel("Light X: -0.50")
+	lightXSlider := widget.NewSlider(-1.0, 1.0)
+	lightXSlider.SetValue(-0.5)
+	lightXSlider.Step = 0.1
+
+	lightYLabel := widget.NewLabel("Light Y: -0.50")
+	lightYSlider := widget.NewSlider(-1.0, 1.0)
+	lightYSlider.SetValue(-0.5)
+	lightYSlider.Step = 0.1
+
+	lightZLabel := widget.NewLabel("Light Z: -1.00")
+	lightZSlider := widget.NewSlider(-1.0, 1.0)
+	lightZSlider.SetValue(-1.0)
+	lightZSlider.Step = 0.1
+
+	updateLighting := func() {
+		x := lightXSlider.Value
+		y := lightYSlider.Value
+		z := lightZSlider.Value
+		a.renderer.SetLightDirection(x, y, z)
+		lightXLabel.SetText(fmt.Sprintf("Light X: %.2f", x))
+		lightYLabel.SetText(fmt.Sprintf("Light Y: %.2f", y))
+		lightZLabel.SetText(fmt.Sprintf("Light Z: %.2f", z))
+	}
+
+	lightXSlider.OnChanged = func(float64) { updateLighting() }
+	lightYSlider.OnChanged = func(float64) { updateLighting() }
+	lightZSlider.OnChanged = func(float64) { updateLighting() }
 
 	// Model info
 	result := analysis.AnalyzeModel(a.model)
@@ -158,7 +227,7 @@ func (a *App) setupMainUI() {
 			"• Click on vertices to select points\n" +
 			"• Drag to rotate the view\n" +
 			"• Scroll to zoom in/out\n" +
-			"• Select 2 points to measure distance",
+			"• Select 2 points to measure distance and angles",
 	)
 	instructions.Wrapping = fyne.TextWrapWord
 
@@ -178,8 +247,26 @@ func (a *App) setupMainUI() {
 		a.measurementInfo.distanceZLabel,
 		a.measurementInfo.totalDistLabel,
 		widget.NewSeparator(),
+		a.measurementInfo.elevationLabel,
+		a.measurementInfo.azimuthLabel,
+		widget.NewSeparator(),
 		widget.NewLabel("Display Options:"),
-		filledModeCheck,
+		meshCheck,
+		fillCheck,
+		fillEdgesCheck,
+		inPlaceCheck,
+		aaCheck,
+		widget.NewSeparator(),
+		resolutionLabel,
+		resolutionSlider,
+		widget.NewSeparator(),
+		widget.NewLabel("Lighting:"),
+		lightXLabel,
+		lightXSlider,
+		lightYLabel,
+		lightYSlider,
+		lightZLabel,
+		lightZSlider,
 		widget.NewSeparator(),
 		instructions,
 		widget.NewSeparator(),
@@ -216,6 +303,8 @@ func (a *App) updateMeasurements() {
 		a.measurementInfo.distanceYLabel.SetText("Distance Y: -")
 		a.measurementInfo.distanceZLabel.SetText("Distance Z: -")
 		a.measurementInfo.totalDistLabel.SetText("Total Distance: -")
+		a.measurementInfo.elevationLabel.SetText("Elevation Angle: -")
+		a.measurementInfo.azimuthLabel.SetText("Azimuth: -")
 		return
 	}
 
@@ -229,6 +318,8 @@ func (a *App) updateMeasurements() {
 		a.measurementInfo.distanceYLabel.SetText("Distance Y: -")
 		a.measurementInfo.distanceZLabel.SetText("Distance Z: -")
 		a.measurementInfo.totalDistLabel.SetText("Total Distance: -")
+		a.measurementInfo.elevationLabel.SetText("Elevation Angle: -")
+		a.measurementInfo.azimuthLabel.SetText("Azimuth: -")
 		return
 	}
 
@@ -242,8 +333,32 @@ func (a *App) updateMeasurements() {
 	deltaZ := math.Abs(p2.Z - p1.Z)
 	totalDist := p1.Distance(p2)
 
-	a.measurementInfo.distanceXLabel.SetText(fmt.Sprintf("Distance X: %.6f units", deltaX))
-	a.measurementInfo.distanceYLabel.SetText(fmt.Sprintf("Distance Y: %.6f units", deltaY))
-	a.measurementInfo.distanceZLabel.SetText(fmt.Sprintf("Distance Z: %.6f units", deltaZ))
-	a.measurementInfo.totalDistLabel.SetText(fmt.Sprintf("Total Distance: %.6f units", totalDist))
+	a.measurementInfo.distanceXLabel.SetText(fmt.Sprintf("Distance X: %.1f units", deltaX))
+	a.measurementInfo.distanceYLabel.SetText(fmt.Sprintf("Distance Y: %.1f units", deltaY))
+	a.measurementInfo.distanceZLabel.SetText(fmt.Sprintf("Distance Z: %.1f units", deltaZ))
+	a.measurementInfo.totalDistLabel.SetText(fmt.Sprintf("Total Distance: %.1f units", totalDist))
+
+	// Calculate angles relative to horizontal
+	v := p2.Sub(p1)
+
+	// Elevation angle (angle from horizontal plane)
+	// 0° = horizontal, 90° = straight up, -90° = straight down
+	horizontalDist := math.Sqrt(v.X*v.X + v.Y*v.Y)
+	if totalDist > 0.0001 {
+		elevationRad := math.Atan2(v.Z, horizontalDist)
+		elevationDeg := elevationRad * 180.0 / math.Pi
+		a.measurementInfo.elevationLabel.SetText(fmt.Sprintf("Elevation Angle: %.2f°", elevationDeg))
+	} else {
+		a.measurementInfo.elevationLabel.SetText("Elevation Angle: Points too close")
+	}
+
+	// Azimuth angle (direction in XY plane)
+	// 0° = +X axis, 90° = +Y axis
+	if horizontalDist > 0.0001 {
+		azimuthRad := math.Atan2(v.Y, v.X)
+		azimuthDeg := azimuthRad * 180.0 / math.Pi
+		a.measurementInfo.azimuthLabel.SetText(fmt.Sprintf("Azimuth: %.2f°", azimuthDeg))
+	} else {
+		a.measurementInfo.azimuthLabel.SetText("Azimuth: Vertical line")
+	}
 }
