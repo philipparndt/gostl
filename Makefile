@@ -63,7 +63,7 @@ run: build ## Build and run CLI with help
 
 run-gui: build-gui ## Build and run GUI with example
 	@echo "Running $(GUI_BINARY_NAME)..."
-	@./$(GUI_BINARY_NAME) examples/cube.stl
+	@./$(GUI_BINARY_NAME) ./h2d-named/Large_Insert_13_6.stl
 
 fmt: ## Format code
 	@echo "Formatting code..."

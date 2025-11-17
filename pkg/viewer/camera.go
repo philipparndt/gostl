@@ -21,13 +21,13 @@ type Camera struct {
 func NewCamera(bbox geometry.BoundingBox) *Camera {
 	center := bbox.Center()
 	size := bbox.Size()
-	distance := math.Max(size.X, math.Max(size.Y, size.Z)) * 2.0
+	distance := math.Max(size.X, math.Max(size.Y, size.Z)) * 2.5
 
 	return &Camera{
 		Position:  center.Add(geometry.NewVector3(0, 0, distance)),
 		Target:    center,
 		Up:        geometry.NewVector3(0, 1, 0),
-		FOV:       math.Pi / 4, // 45 degrees
+		FOV:       math.Pi / 8, // 22.5 degrees - much less distortion
 		Distance:  distance,
 		RotationX: 0,
 		RotationY: 0,

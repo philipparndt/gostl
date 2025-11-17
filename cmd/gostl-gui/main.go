@@ -132,6 +132,12 @@ func (a *App) setupMainUI() {
 		a.updateMeasurements()
 	})
 
+	// Create filled mode checkbox
+	filledModeCheck := widget.NewCheck("Show Filled", func(checked bool) {
+		a.renderer.SetFilledMode(checked)
+	})
+	filledModeCheck.SetChecked(false)
+
 	// Model info
 	result := analysis.AnalyzeModel(a.model)
 	modelInfo := fmt.Sprintf(
@@ -171,6 +177,9 @@ func (a *App) setupMainUI() {
 		a.measurementInfo.distanceYLabel,
 		a.measurementInfo.distanceZLabel,
 		a.measurementInfo.totalDistLabel,
+		widget.NewSeparator(),
+		widget.NewLabel("Display Options:"),
+		filledModeCheck,
 		widget.NewSeparator(),
 		instructions,
 		widget.NewSeparator(),
