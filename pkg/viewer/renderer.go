@@ -7,6 +7,7 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -36,6 +37,10 @@ type ModelRenderer struct {
 	showInPlaceMeasurement bool
 	enableAntiAliasing     bool
 	unlimitedPoints        bool
+	isInteracting          bool
+	aaBeforeInteraction    bool // Track AA state before interaction to restore it
+	targetResolution       float64
+	interactiveResolution  float64
 	width                  float64
 	height                 float64
 	resolutionScale        float64
@@ -58,9 +63,12 @@ func NewModelRenderer(model *stl.Model) *ModelRenderer {
 		showMesh:               false, // Start with mesh hidden
 		showFilledEdges:        false, // Start without edges on filled surfaces
 		showInPlaceMeasurement: true,  // Start with in-place measurements enabled
-		enableAntiAliasing:     true,  // Start with anti-aliasing enabled
+		enableAntiAliasing:     false, // Start with AA disabled for performance
 		unlimitedPoints:        false, // Start with 2-point limit
-		resolutionScale:        0.85,
+		isInteracting:          false,
+		targetResolution:       0.6,   // User's desired resolution
+		interactiveResolution:  0.4,   // Lower resolution during interaction
+		resolutionScale:        0.6,   // Current resolution
 		lightX:                 -0.5,
 		lightY:                 -0.5,
 		lightZ:                 -1.0,
@@ -139,8 +147,35 @@ func (r *ModelRenderer) IsUnlimitedPoints() bool {
 
 // SetResolutionScale sets the rendering resolution scale
 func (r *ModelRenderer) SetResolutionScale(scale float64) {
-	r.resolutionScale = scale
-	r.Render(r.width, r.height)
+	r.targetResolution = scale
+	r.interactiveResolution = 0.4 // Interactive resolution is always 40%
+	if !r.isInteracting {
+		r.resolutionScale = scale
+		r.Render(r.width, r.height)
+	}
+}
+
+// startInteraction lowers resolution and disables AA for smooth interaction
+func (r *ModelRenderer) startInteraction() {
+	if !r.isInteracting {
+		r.isInteracting = true
+		r.aaBeforeInteraction = r.enableAntiAliasing // Save AA state
+		r.enableAntiAliasing = false                  // Disable AA during interaction
+		r.resolutionScale = r.interactiveResolution
+	}
+}
+
+// endInteraction restores full resolution and AA after a delay
+func (r *ModelRenderer) endInteraction() {
+	// Delay restoration to avoid flickering during continuous interaction
+	time.AfterFunc(150*time.Millisecond, func() {
+		if r.isInteracting {
+			r.isInteracting = false
+			r.enableAntiAliasing = r.aaBeforeInteraction // Restore AA state
+			r.resolutionScale = r.targetResolution
+			r.Render(r.width, r.height)
+		}
+	})
 }
 
 // SetLightDirection sets the lighting direction
@@ -523,6 +558,8 @@ func (r *ModelRenderer) updateMeasurementTexts() {
 
 // Dragged handles mouse drag events for rotation
 func (r *ModelRenderer) Dragged(event *fyne.DragEvent) {
+	r.startInteraction() // Lower resolution for smooth rotation
+
 	if r.dragStart != nil {
 		deltaX := event.Position.X - r.dragStart.X
 		deltaY := event.Position.Y - r.dragStart.Y
@@ -538,6 +575,7 @@ func (r *ModelRenderer) Dragged(event *fyne.DragEvent) {
 func (r *ModelRenderer) DragEnd() {
 	r.dragStart = nil
 	r.isDragging = false
+	r.endInteraction() // Restore full resolution after delay
 }
 
 // Tapped handles tap events for point selection
@@ -617,9 +655,13 @@ func (r *ModelRenderer) ClearSelection() {
 
 // Scrolled handles scroll events for zooming
 func (r *ModelRenderer) Scrolled(event *fyne.ScrollEvent) {
+	r.startInteraction() // Lower resolution for smooth zooming
+
 	delta := -float64(event.Scrolled.DY) * 0.001
 	r.camera.Zoom(delta)
 	r.Render(r.width, r.height)
+
+	r.endInteraction() // Restore full resolution after delay
 }
 
 // MouseMoved handles mouse movement for hover preview

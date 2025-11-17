@@ -165,7 +165,7 @@ func (a *App) setupMainUI() {
 	aaCheck := widget.NewCheck("Anti-Aliasing (Supersampling)", func(checked bool) {
 		a.renderer.SetEnableAntiAliasing(checked)
 	})
-	aaCheck.SetChecked(true) // Start with AA enabled
+	aaCheck.SetChecked(false) // Start with AA disabled for performance
 
 	// Create unlimited points checkbox
 	unlimitedPointsCheck := widget.NewCheck("Unlimited Points (Polyline)", func(checked bool) {
@@ -174,9 +174,9 @@ func (a *App) setupMainUI() {
 	unlimitedPointsCheck.SetChecked(false) // Start with 2-point limit
 
 	// Create resolution slider
-	resolutionLabel := widget.NewLabel("Resolution: 85%")
-	resolutionSlider := widget.NewSlider(0.3, 1.0)
-	resolutionSlider.SetValue(0.85)
+	resolutionLabel := widget.NewLabel("Resolution: 60%")
+	resolutionSlider := widget.NewSlider(0.3, 1.5) // Allow up to 150% for high quality
+	resolutionSlider.SetValue(0.6)
 	resolutionSlider.Step = 0.05
 	resolutionSlider.OnChanged = func(value float64) {
 		a.renderer.SetResolutionScale(value)
