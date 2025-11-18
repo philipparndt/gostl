@@ -586,18 +586,18 @@ func (app *App) handleInput() {
 		app.constraintActive = true
 	}
 
-	// Check if Alt+click on axis labels to set constraint directly
-	if rl.IsMouseButtonPressed(rl.MouseLeftButton) && altPressed && len(app.selectedPoints) == 1 && app.hoveredAxisLabel >= 0 {
-		// Use the already-detected hovered label
-		app.constraintAxis = app.hoveredAxisLabel
-		app.constraintActive = true
-	}
-
-	// Clear constraint when Alt is released
-	if !altPressed && app.constraintActive {
-		app.constraintActive = false
-		app.horizontalSnap = nil
-		app.horizontalPreview = nil
+	// Click on axis labels to set/toggle constraint (no Alt key needed)
+	if rl.IsMouseButtonPressed(rl.MouseLeftButton) && len(app.selectedPoints) == 1 && app.hoveredAxisLabel >= 0 {
+		// If clicking the same axis that's already constrained, deactivate constraint
+		if app.constraintActive && app.constraintAxis == app.hoveredAxisLabel {
+			app.constraintActive = false
+			app.horizontalSnap = nil
+			app.horizontalPreview = nil
+		} else {
+			// Activate or switch to the clicked axis
+			app.constraintAxis = app.hoveredAxisLabel
+			app.constraintActive = true
+		}
 	}
 
 	// Measurement preview mode when first point is selected (always show line preview)
@@ -643,7 +643,10 @@ func (app *App) handleInput() {
 			// Check if clicked on a segment label
 			clickedSegment := app.getSegmentAtMouse(currentPos)
 
-			if len(app.selectedPoints) == 1 && app.constraintActive && app.horizontalPreview != nil {
+			// Skip point creation if click was on an axis label (constraint toggle)
+			if app.hoveredAxisLabel >= 0 {
+				// Axis label click was already handled in handleInput, do nothing
+			} else if len(app.selectedPoints) == 1 && app.constraintActive && app.horizontalPreview != nil {
 				// In constrained mode: measure from first point to constrained point (only along specified axis)
 				firstPoint := app.selectedPoints[0]
 				constrainedPoint := *app.horizontalPreview

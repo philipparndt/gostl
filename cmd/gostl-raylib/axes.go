@@ -134,9 +134,13 @@ func (app *App) drawCoordinateAxes3D() {
 		// Principal axes (X, Y, Z)
 		if e.axis >= 0 && e.axis <= 2 {
 			if app.constraintActive && app.constraintAxis != e.axis {
-				// Dim non-constrained axes
-				// Reduce brightness to create emphasis on the active axis
-				color = rl.NewColor(50, 50, 50, 100)
+				// Dim non-constrained axes to 50% brightness
+				color = rl.NewColor(
+					baseColor.R/2,
+					baseColor.G/2,
+					baseColor.B/2,
+					180, // Keep alpha fairly visible
+				)
 				thickness = lineThickness * 0.5
 			} else {
 				// Bright color for unconstrained axes or the active constraint axis
@@ -175,17 +179,20 @@ func (app *App) drawCoordinateAxes3D() {
 
 	if app.constraintActive {
 		if app.constraintAxis != 0 {
-			labelColorX = rl.NewColor(50, 50, 50, 100)
+			// Dim X label to 50% of red
+			labelColorX = rl.NewColor(128, 0, 0, 200)
 		} else {
 			bgColorX = rl.NewColor(40, 20, 20, 220) // Highlighted background for active axis
 		}
 		if app.constraintAxis != 1 {
-			labelColorY = rl.NewColor(50, 50, 50, 100)
+			// Dim Y label to 50% of green
+			labelColorY = rl.NewColor(0, 128, 0, 200)
 		} else {
 			bgColorY = rl.NewColor(20, 40, 20, 220) // Highlighted background for active axis
 		}
 		if app.constraintAxis != 2 {
-			labelColorZ = rl.NewColor(50, 50, 50, 100)
+			// Dim Z label to 50% of blue
+			labelColorZ = rl.NewColor(0, 0, 128, 200)
 		} else {
 			bgColorZ = rl.NewColor(20, 20, 40, 220) // Highlighted background for active axis
 		}
