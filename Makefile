@@ -71,11 +71,11 @@ run: build ## Build and run CLI with help
 
 run-gui: build-gui ## Build and run GUI with example
 	@echo "Running $(GUI_BINARY_NAME)..."
-	@./$(GUI_BINARY_NAME) ./h2d-named/Large_Insert_13_6.stl
+	@./$(GUI_BINARY_NAME) ./examples/h2d-named/Large_Insert_13_6.stl
 
 run-raylib: build-raylib ## Build and run Raylib GPU viewer with example
 	@echo "Running $(RAYLIB_BINARY_NAME)..."
-	@./$(RAYLIB_BINARY_NAME) ./h2d-named/Large_Insert_13_6.stl
+	@./$(RAYLIB_BINARY_NAME) ./examples/h2d-named/Large_Insert_13_6.stl
 
 fmt: ## Format code
 	@echo "Formatting code..."

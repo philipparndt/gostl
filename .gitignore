@@ -34,3 +34,4 @@ gostl-gui
 # OS
 .DS_Store
 Thumbs.db
+gostl-raylib
