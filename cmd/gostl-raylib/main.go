@@ -239,11 +239,7 @@ func main() {
 				projectedScreenPos := rl.GetWorldToScreen(rl.Vector3{X: float32(projectedPoint.X), Y: float32(projectedPoint.Y), Z: float32(projectedPoint.Z)}, app.camera)
 
 				// Draw line from point 1 to the projected endpoint (represents distance along axis only)
-				for j := -lineThickness / 2; j <= lineThickness/2; j++ {
-					offsetP1 := rl.Vector2{X: firstScreenPos.X, Y: firstScreenPos.Y + float32(j)}
-					offsetP2 := rl.Vector2{X: projectedScreenPos.X, Y: projectedScreenPos.Y + float32(j)}
-					rl.DrawLineV(offsetP1, offsetP2, rl.Yellow)
-				}
+				rl.DrawLineEx(firstScreenPos, projectedScreenPos, lineThickness, rl.Yellow)
 
 				// Draw preview point marker at the projected endpoint
 				rl.DrawCircleLines(int32(projectedScreenPos.X), int32(projectedScreenPos.Y), markerRadius, rl.Yellow)
@@ -251,11 +247,7 @@ func main() {
 
 				// Also draw a red line from projected point to the actual snapped point to show the difference
 				redColor := rl.NewColor(255, 0, 0, 255)
-				for j := -lineThickness / 2; j <= lineThickness/2; j++ {
-					offsetP1 := rl.Vector2{X: projectedScreenPos.X + float32(j), Y: projectedScreenPos.Y}
-					offsetP2 := rl.Vector2{X: constrainedScreenPos.X + float32(j), Y: constrainedScreenPos.Y}
-					rl.DrawLineV(offsetP1, offsetP2, redColor)
-				}
+				rl.DrawLineEx(projectedScreenPos, constrainedScreenPos, lineThickness, redColor)
 
 				// Draw red marker at the actual snapped point
 				rl.DrawCircleLines(int32(constrainedScreenPos.X), int32(constrainedScreenPos.Y), markerRadius, redColor)
@@ -266,11 +258,7 @@ func main() {
 					snappedPoint := *app.horizontalSnap
 					snappedScreenPos := rl.GetWorldToScreen(rl.Vector3{X: float32(snappedPoint.X), Y: float32(snappedPoint.Y), Z: float32(snappedPoint.Z)}, app.camera)
 
-					for j := -lineThickness / 2; j <= lineThickness/2; j++ {
-						offsetP1 := rl.Vector2{X: firstScreenPos.X, Y: firstScreenPos.Y + float32(j)}
-						offsetP2 := rl.Vector2{X: snappedScreenPos.X, Y: snappedScreenPos.Y + float32(j)}
-						rl.DrawLineV(offsetP1, offsetP2, rl.Yellow)
-					}
+					rl.DrawLineEx(firstScreenPos, snappedScreenPos, lineThickness, rl.Yellow)
 
 					// Draw preview point marker
 					rl.DrawCircleLines(int32(snappedScreenPos.X), int32(snappedScreenPos.Y), markerRadius, rl.Yellow)
@@ -279,26 +267,14 @@ func main() {
 			}
 		}
 
-		// Draw measurement lines in screen space with anti-aliasing
+		// Draw measurement lines in screen space
 		if len(screenPoints) >= 2 {
 			for i := 0; i < len(screenPoints)-1; i++ {
 				p1 := screenPoints[i]
 				p2 := screenPoints[i+1]
 
-				// Draw anti-aliased edges first (semi-transparent)
-				edgeColor := rl.NewColor(255, 255, 0, 100) // Semi-transparent yellow
-				for j := -lineThickness/2 - 1; j <= lineThickness/2+1; j++ {
-					offsetP1 := rl.Vector2{X: p1.X, Y: p1.Y + float32(j)}
-					offsetP2 := rl.Vector2{X: p2.X, Y: p2.Y + float32(j)}
-					rl.DrawLineV(offsetP1, offsetP2, edgeColor)
-				}
-
-				// Draw main line (fully opaque)
-				for j := -lineThickness / 2; j <= lineThickness/2; j++ {
-					offsetP1 := rl.Vector2{X: p1.X, Y: p1.Y + float32(j)}
-					offsetP2 := rl.Vector2{X: p2.X, Y: p2.Y + float32(j)}
-					rl.DrawLineV(offsetP1, offsetP2, rl.Yellow)
-				}
+				// Draw line with proper thickness
+				rl.DrawLineEx(p1, p2, lineThickness, rl.Yellow)
 			}
 		}
 
@@ -918,20 +894,8 @@ func (app *App) drawMeasurementSegmentWithLabel(segment MeasurementSegment, colo
 	const markerRadius = 3
 	const lineThickness = 2
 
-	// Draw anti-aliased edges first (semi-transparent)
-	edgeColor := rl.NewColor(color.R, color.G, color.B, 100)
-	for j := -lineThickness/2 - 1; j <= lineThickness/2+1; j++ {
-		offsetP1 := rl.Vector2{X: screenP1.X, Y: screenP1.Y + float32(j)}
-		offsetP2 := rl.Vector2{X: screenP2.X, Y: screenP2.Y + float32(j)}
-		rl.DrawLineV(offsetP1, offsetP2, edgeColor)
-	}
-
-	// Draw main line (fully opaque)
-	for j := -lineThickness / 2; j <= lineThickness/2; j++ {
-		offsetP1 := rl.Vector2{X: screenP1.X, Y: screenP1.Y + float32(j)}
-		offsetP2 := rl.Vector2{X: screenP2.X, Y: screenP2.Y + float32(j)}
-		rl.DrawLineV(offsetP1, offsetP2, color)
-	}
+	// Draw line with proper thickness
+	rl.DrawLineEx(screenP1, screenP2, lineThickness, color)
 
 	// Draw endpoint markers
 	rl.DrawCircleLines(int32(screenP1.X), int32(screenP1.Y), markerRadius, color)
