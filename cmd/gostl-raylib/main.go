@@ -11,15 +11,6 @@ import (
 	"github.com/philipparndt/gostl/pkg/stl"
 )
 
-type MeasurementSegment struct {
-	start geometry.Vector3
-	end   geometry.Vector3
-}
-
-type MeasurementLine struct {
-	segments []MeasurementSegment
-}
-
 type App struct {
 	model              *stl.Model
 	mesh               rl.Mesh
@@ -298,31 +289,71 @@ func main() {
 		// Clear segment labels for this frame
 		app.segmentLabels = make(map[[2]int]rl.Rectangle)
 
-	// Draw all stored measurement lines
+	// Collect all segments to draw with their priorities
+	type segmentToDraw struct {
+		segment  MeasurementSegment
+		color    rl.Color
+		segIdx   [2]int
+		priority int
+	}
+	segments := []segmentToDraw{}
+
+	// Collect all stored measurement lines
 	for lineIdx, line := range app.measurementLines {
 		for segIdx, segment := range line.segments {
 			color := rl.NewColor(100, 200, 255, 255) // Cyan for completed lines
+			priority := 1                            // Normal priority
 			// Highlight selected segment
 			if app.selectedSegment != nil && app.selectedSegment[0] == lineIdx && app.selectedSegment[1] == segIdx {
 				color = rl.NewColor(255, 0, 0, 255) // Red for selected
+				priority = 3                        // Highest priority
 			} else if app.hoveredSegment != nil && app.hoveredSegment[0] == lineIdx && app.hoveredSegment[1] == segIdx {
 				color = rl.NewColor(0, 255, 255, 255) // Bright cyan for hovered
+				priority = 2                          // Medium priority
 			}
-			app.drawMeasurementSegmentWithLabel(segment, color, [2]int{lineIdx, segIdx})
+			segments = append(segments, segmentToDraw{segment, color, [2]int{lineIdx, segIdx}, priority})
 		}
 	}
 
-	// Draw current line segments (in progress)
+	// Collect current line segments (in progress)
 	if app.currentLine != nil {
 		for segIdx, segment := range app.currentLine.segments {
 			color := rl.Yellow // Yellow for current line
+			priority := 1      // Normal priority
 			// Highlight selected segment (current line is at index len(app.measurementLines))
 			if app.selectedSegment != nil && app.selectedSegment[0] == len(app.measurementLines) && app.selectedSegment[1] == segIdx {
 				color = rl.NewColor(255, 0, 0, 255) // Red for selected
+				priority = 3                        // Highest priority
 			} else if app.hoveredSegment != nil && app.hoveredSegment[0] == len(app.measurementLines) && app.hoveredSegment[1] == segIdx {
 				color = rl.NewColor(0, 255, 255, 255) // Bright cyan for hovered
+				priority = 2                          // Medium priority
 			}
-			app.drawMeasurementSegmentWithLabel(segment, color, [2]int{len(app.measurementLines), segIdx})
+			segments = append(segments, segmentToDraw{segment, color, [2]int{len(app.measurementLines), segIdx}, priority})
+		}
+	}
+
+	// Sort segments by priority (highest first)
+	for i := 0; i < len(segments); i++ {
+		for j := i + 1; j < len(segments); j++ {
+			if segments[j].priority > segments[i].priority {
+				segments[i], segments[j] = segments[j], segments[i]
+			}
+		}
+	}
+
+	// First pass: Draw all lines and markers (so labels will be on top)
+	for _, seg := range segments {
+		app.drawMeasurementSegmentLine(seg.segment, seg.color)
+	}
+
+	// Second pass: Draw all labels in priority order, tracking drawn labels to avoid overlap
+	drawnLabels := []rl.Rectangle{}
+	for _, seg := range segments {
+		if app.drawMeasurementSegmentLabel(seg.segment, seg.color, seg.segIdx, drawnLabels) {
+			// Label was drawn, add it to the list
+			if labelRect, exists := app.segmentLabels[seg.segIdx]; exists {
+				drawnLabels = append(drawnLabels, labelRect)
+			}
 		}
 	}
 
@@ -882,53 +913,6 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 
 	// FPS
 	rl.DrawTextEx(app.font, fmt.Sprintf("FPS: %d", rl.GetFPS()), rl.Vector2{X: 10, Y: float32(rl.GetScreenHeight()) - 30}, fontSize20, 1, rl.Lime)
-}
-
-// drawMeasurementSegmentWithLabel draws a segment and stores its label bounding box
-func (app *App) drawMeasurementSegmentWithLabel(segment MeasurementSegment, color rl.Color, segIdx [2]int) {
-	p1 := rl.Vector3{X: float32(segment.start.X), Y: float32(segment.start.Y), Z: float32(segment.start.Z)}
-	p2 := rl.Vector3{X: float32(segment.end.X), Y: float32(segment.end.Y), Z: float32(segment.end.Z)}
-	screenP1 := rl.GetWorldToScreen(p1, app.camera)
-	screenP2 := rl.GetWorldToScreen(p2, app.camera)
-
-	const markerRadius = 3
-	const lineThickness = 2
-
-	// Draw line with proper thickness
-	rl.DrawLineEx(screenP1, screenP2, lineThickness, color)
-
-	// Draw endpoint markers
-	rl.DrawCircleLines(int32(screenP1.X), int32(screenP1.Y), markerRadius, color)
-	rl.DrawCircle(int32(screenP1.X), int32(screenP1.Y), markerRadius-1, color)
-	rl.DrawCircleLines(int32(screenP2.X), int32(screenP2.Y), markerRadius, color)
-	rl.DrawCircle(int32(screenP2.X), int32(screenP2.Y), markerRadius-1, color)
-
-	// Draw measurement text at midpoint and store label bounding box
-	distance := math.Sqrt(
-		(segment.end.X-segment.start.X)*(segment.end.X-segment.start.X) +
-			(segment.end.Y-segment.start.Y)*(segment.end.Y-segment.start.Y) +
-			(segment.end.Z-segment.start.Z)*(segment.end.Z-segment.start.Z),
-	)
-	midX := (screenP1.X + screenP2.X) / 2
-	midY := (screenP1.Y + screenP2.Y) / 2
-	distanceText := fmt.Sprintf("%.2f", distance)
-	textSize := rl.MeasureTextEx(app.font, distanceText, 12, 1)
-	labelRect := rl.Rectangle{
-		X:      midX - textSize.X/2 - 6,
-		Y:      midY - textSize.Y/2 - 4,
-		Width:  textSize.X + 12,
-		Height: textSize.Y + 8,
-	}
-	app.segmentLabels[segIdx] = labelRect
-
-	// Draw background box for label
-	bgColor := rl.NewColor(20, 20, 20, 200) // Dark background
-	rl.DrawRectangleRec(labelRect, bgColor)
-	// Draw border
-	rl.DrawRectangleLinesEx(labelRect, 1.5, color)
-
-	// Draw text
-	rl.DrawTextEx(app.font, distanceText, rl.Vector2{X: midX - textSize.X/2, Y: midY - textSize.Y/2}, 12, 1, color)
 }
 
 // getPointColor returns a color for a point marker
