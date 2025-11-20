@@ -45,13 +45,22 @@ type App struct {
 	constrainingPoint  *geometry.Vector3 // Point to constrain direction to (when alt+hovering a point)
 	constraintType     int               // 0=axis, 1=point (which type of constraint is active)
 	altWasPressedLast  bool              // Track if Alt was pressed in previous frame
-	measurementLines   []MeasurementLine  // All measurement lines (multiple segments per line)
-	currentLine        *MeasurementLine   // Current measurement line being drawn
-	selectedSegment    *[2]int            // [lineIndex, segmentIndex] for selected segment, nil if none
-	hoveredSegment     *[2]int            // [lineIndex, segmentIndex] for hovered segment, nil if none
-	segmentLabels      map[[2]int]rl.Rectangle // Map of segment indices to label bounding boxes
-	lastMousePos       rl.Vector2         // Last known mouse position
-	radiusMeasurement  *RadiusMeasurement // Active radius measurement, nil if none
+	measurementLines    []MeasurementLine  // All measurement lines (multiple segments per line)
+	currentLine         *MeasurementLine   // Current measurement line being drawn
+	selectedSegment     *[2]int            // [lineIndex, segmentIndex] for selected segment, nil if none
+	hoveredSegment      *[2]int            // [lineIndex, segmentIndex] for hovered segment, nil if none
+	segmentLabels       map[[2]int]rl.Rectangle // Map of segment indices to label bounding boxes
+	lastMousePos              rl.Vector2              // Last known mouse position
+	radiusMeasurement          *RadiusMeasurement      // Active radius measurement being created, nil if none
+	radiusMeasurements         []RadiusMeasurement     // All completed radius measurements
+	selectedRadiusMeasurement  *int                    // Index of selected radius measurement, nil if none
+	hoveredRadiusMeasurement   *int                    // Index of hovered radius measurement, nil if none
+	radiusLabels               map[int]rl.Rectangle    // Map of radius measurement indices to label bounding boxes
+	selectedSegments           [][2]int                // Multiple selected segments for multi-select
+	selectedRadiusMeasurements []int                   // Multiple selected radius measurements for multi-select
+	isSelectingWithRect        bool                    // Whether Ctrl+drag selection is active
+	selectionRectStart         rl.Vector2              // Start position of selection rectangle
+	selectionRectEnd           rl.Vector2              // End position of selection rectangle
 }
 
 func main() {
@@ -84,6 +93,7 @@ func main() {
 		measurementLines: make([]MeasurementLine, 0),
 		currentLine:      &MeasurementLine{},
 		segmentLabels:    make(map[[2]int]rl.Rectangle),
+		radiusLabels:     make(map[int]rl.Rectangle),
 	}
 
 	// Load JetBrains Mono font with Unicode support
@@ -340,18 +350,29 @@ func main() {
 	}
 	segments := []segmentToDraw{}
 
+	// Helper function to check if segment is in multi-select
+	isSegmentSelected := func(lineIdx, segIdx int) bool {
+		for _, sel := range app.selectedSegments {
+			if sel[0] == lineIdx && sel[1] == segIdx {
+				return true
+			}
+		}
+		return false
+	}
+
 	// Collect all stored measurement lines
 	for lineIdx, line := range app.measurementLines {
 		for segIdx, segment := range line.segments {
 			color := rl.NewColor(100, 200, 255, 255) // Cyan for completed lines
 			priority := 1                            // Normal priority
-			// Highlight selected segment
-			if app.selectedSegment != nil && app.selectedSegment[0] == lineIdx && app.selectedSegment[1] == segIdx {
-				color = rl.NewColor(255, 0, 0, 255) // Red for selected
-				priority = 3                        // Highest priority
+			// Highlight selected segment (single or multi-select)
+			if (app.selectedSegment != nil && app.selectedSegment[0] == lineIdx && app.selectedSegment[1] == segIdx) ||
+				isSegmentSelected(lineIdx, segIdx) {
+				color = rl.Yellow // Yellow for selected
+				priority = 3      // Highest priority
 			} else if app.hoveredSegment != nil && app.hoveredSegment[0] == lineIdx && app.hoveredSegment[1] == segIdx {
-				color = rl.NewColor(0, 255, 255, 255) // Bright cyan for hovered
-				priority = 2                          // Medium priority
+				color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
+				priority = 2                            // Medium priority
 			}
 			segments = append(segments, segmentToDraw{segment, color, [2]int{lineIdx, segIdx}, priority})
 		}
@@ -360,15 +381,16 @@ func main() {
 	// Collect current line segments (in progress)
 	if app.currentLine != nil {
 		for segIdx, segment := range app.currentLine.segments {
-			color := rl.Yellow // Yellow for current line
-			priority := 1      // Normal priority
+			color := rl.NewColor(100, 200, 255, 255) // Cyan for current line
+			priority := 1                            // Normal priority
 			// Highlight selected segment (current line is at index len(app.measurementLines))
-			if app.selectedSegment != nil && app.selectedSegment[0] == len(app.measurementLines) && app.selectedSegment[1] == segIdx {
-				color = rl.NewColor(255, 0, 0, 255) // Red for selected
-				priority = 3                        // Highest priority
+			if (app.selectedSegment != nil && app.selectedSegment[0] == len(app.measurementLines) && app.selectedSegment[1] == segIdx) ||
+				isSegmentSelected(len(app.measurementLines), segIdx) {
+				color = rl.Yellow // Yellow for selected
+				priority = 3      // Highest priority
 			} else if app.hoveredSegment != nil && app.hoveredSegment[0] == len(app.measurementLines) && app.hoveredSegment[1] == segIdx {
-				color = rl.NewColor(0, 255, 255, 255) // Bright cyan for hovered
-				priority = 2                          // Medium priority
+				color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
+				priority = 2                            // Medium priority
 			}
 			segments = append(segments, segmentToDraw{segment, color, [2]int{len(app.measurementLines), segIdx}, priority})
 		}
@@ -391,7 +413,7 @@ func main() {
 	// Second pass: Draw all labels in priority order, tracking drawn labels to avoid overlap
 	drawnLabels := []rl.Rectangle{}
 	for _, seg := range segments {
-		if app.drawMeasurementSegmentLabel(seg.segment, seg.color, seg.segIdx, drawnLabels) {
+		if app.drawMeasurementSegmentLabel(seg.segment, seg.segIdx, drawnLabels) {
 			// Label was drawn, add it to the list
 			if labelRect, exists := app.segmentLabels[seg.segIdx]; exists {
 				drawnLabels = append(drawnLabels, labelRect)
@@ -593,6 +615,9 @@ func (app *App) handleInput() {
 	// Check if mouse is over a segment label
 	app.hoveredSegment = app.getSegmentAtMouse(app.lastMousePos)
 
+	// Check if mouse is over a radius measurement label
+	app.hoveredRadiusMeasurement = app.getRadiusMeasurementAtMouse(app.lastMousePos)
+
 	// Check if Alt key is pressed
 	altPressed := rl.IsKeyDown(rl.KeyLeftAlt) || rl.IsKeyDown(rl.KeyRightAlt)
 
@@ -603,6 +628,14 @@ func (app *App) handleInput() {
 		// Pan if Shift is pressed (works in any mode)
 		shiftPressed := rl.IsKeyDown(rl.KeyLeftShift) || rl.IsKeyDown(rl.KeyRightShift)
 		app.isPanning = shiftPressed
+
+		// Check if Ctrl is pressed for multi-select rectangle mode
+		ctrlPressed := rl.IsKeyDown(rl.KeyLeftControl) || rl.IsKeyDown(rl.KeyRightControl)
+		if ctrlPressed && !app.isPanning && app.radiusMeasurement == nil {
+			app.isSelectingWithRect = true
+			app.selectionRectStart = app.mouseDownPos
+			app.selectionRectEnd = app.mouseDownPos
+		}
 	}
 
 	// Camera panning with Shift + mouse drag or middle mouse button drag (works in any mode)
@@ -671,8 +704,15 @@ func (app *App) handleInput() {
 		app.horizontalPreview = nil
 	}
 
-	// Camera rotation with mouse drag (when Alt not pressed)
-	if rl.IsMouseButtonDown(rl.MouseLeftButton) && !app.isPanning {
+	// Update selection rectangle while dragging with Ctrl
+	if app.isSelectingWithRect && rl.IsMouseButtonDown(rl.MouseLeftButton) {
+		app.selectionRectEnd = rl.GetMousePosition()
+		delta := rl.Vector2Subtract(app.selectionRectEnd, app.selectionRectStart)
+		if math.Abs(float64(delta.X)) > 1.0 || math.Abs(float64(delta.Y)) > 1.0 {
+			app.mouseMoved = true
+		}
+	} else if rl.IsMouseButtonDown(rl.MouseLeftButton) && !app.isPanning {
+		// Camera rotation with mouse drag (when Alt not pressed)
 		delta := rl.GetMouseDelta()
 		// Only count as moved if delta is significant (threshold of 1.0 pixels)
 		if math.Abs(float64(delta.X)) > 1.0 || math.Abs(float64(delta.Y)) > 1.0 {
@@ -696,7 +736,12 @@ func (app *App) handleInput() {
 	if rl.IsMouseButtonReleased(rl.MouseLeftButton) {
 		currentPos := rl.GetMousePosition()
 		dragDistance := rl.Vector2Distance(app.mouseDownPos, currentPos)
-		if !app.mouseMoved && !app.isPanning && dragDistance < 5.0 { // Less than 5 pixels moved = click
+
+		// Handle selection rectangle completion
+		if app.isSelectingWithRect {
+			app.selectLabelsInRectangle()
+			app.isSelectingWithRect = false
+		} else if !app.mouseMoved && !app.isPanning && dragDistance < 5.0 { // Less than 5 pixels moved = click
 			// Priority 1: Radius measurement mode
 			if app.radiusMeasurement != nil {
 				// In radius measurement mode, just add the hovered point
@@ -732,15 +777,46 @@ func (app *App) handleInput() {
 						fmt.Printf("Layer constraint: %s = %.3f (± %.3f)\n",
 							axisName, app.radiusMeasurement.constraintValue, app.radiusMeasurement.tolerance)
 					}
+
+					// After adding third point, automatically calculate and finish
+					if len(app.radiusMeasurement.points) == 3 {
+						fit, err := geometry.FitCircleToPoints3D(app.radiusMeasurement.points, app.radiusMeasurement.constraintAxis)
+						if err == nil {
+							app.radiusMeasurement.center = fit.Center
+							app.radiusMeasurement.radius = fit.Radius
+							app.radiusMeasurement.normal = fit.Normal
+							fmt.Printf("Fitted radius: %.2f (stdDev: %.4f)\n", fit.Radius, fit.StdDev)
+
+							// Save completed measurement and start a new one
+							app.radiusMeasurements = append(app.radiusMeasurements, *app.radiusMeasurement)
+							app.radiusMeasurement = &RadiusMeasurement{
+								points:         []geometry.Vector3{},
+								constraintAxis: -1,
+							}
+							fmt.Println("Starting new radius measurement. Select 3 points on the arc.")
+						} else {
+							fmt.Printf("Error fitting circle: %v\n", err)
+							app.radiusMeasurement = nil
+						}
+					}
 				}
 			} else {
 				// Normal measurement mode
 
-				// Check if clicked on a segment label
+				// Check if clicked on a segment label or radius measurement label
 				clickedSegment := app.getSegmentAtMouse(currentPos)
+				clickedRadiusMeasurement := app.getRadiusMeasurementAtMouse(currentPos)
 
-				// Skip point creation if click was on an axis label (constraint toggle)
-				if app.hoveredAxisLabel >= 0 {
+				// Priority: radius measurement selection
+				if clickedRadiusMeasurement != nil {
+					app.selectedRadiusMeasurement = clickedRadiusMeasurement
+					app.selectedSegment = nil // Deselect segment
+					fmt.Printf("Selected radius measurement %d\n", *clickedRadiusMeasurement)
+				} else if clickedSegment != nil {
+					app.selectedSegment = clickedSegment
+					app.selectedRadiusMeasurement = nil // Deselect radius measurement
+					fmt.Printf("Selected segment [%d, %d]\n", clickedSegment[0], clickedSegment[1])
+				} else if app.hoveredAxisLabel >= 0 {
 					// Axis label click was already handled in handleInput, do nothing
 				} else if len(app.selectedPoints) == 1 && app.constraintActive && app.horizontalPreview != nil {
 				// In constrained mode: measure from first point to constrained point
@@ -788,9 +864,12 @@ func (app *App) handleInput() {
 				// User clicked on a segment label to select it
 				app.selectedSegment = clickedSegment
 				fmt.Printf("Selected segment [%d, %d]\n", clickedSegment[0], clickedSegment[1])
-			} else if len(app.selectedPoints) == 0 && clickedSegment == nil {
-				// Clicked on empty space - deselect segment and try to select point
+			} else if len(app.selectedPoints) == 0 && clickedSegment == nil && clickedRadiusMeasurement == nil {
+				// Clicked on empty space - deselect all and try to select point
 				app.selectedSegment = nil
+				app.selectedRadiusMeasurement = nil
+				app.selectedSegments = nil
+				app.selectedRadiusMeasurements = nil
 				app.selectPoint()
 			} else {
 				app.selectPoint()
@@ -823,9 +902,9 @@ func (app *App) handleInput() {
 		app.showFilled = !app.showFilled
 	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
-		// Priority 1: Cancel radius measurement mode
+		// Priority 1: Exit radius measurement mode
 		if app.radiusMeasurement != nil {
-			fmt.Println("Cancelled radius measurement")
+			fmt.Println("Exited radius measurement mode")
 			app.radiusMeasurement = nil
 		} else {
 			// Normal mode: Finish current measurement line and start a new one
@@ -841,17 +920,27 @@ func (app *App) handleInput() {
 	}
 	if rl.IsKeyPressed(rl.KeyC) {
 		// Only clear all measurements when not in selection mode (0 points selected)
-		if len(app.selectedPoints) == 0 {
-			// Clear all measurements
+		if len(app.selectedPoints) == 0 && app.radiusMeasurement == nil {
+			// Clear all measurements including radius measurements
 			app.measurementLines = make([]MeasurementLine, 0)
 			app.currentLine = &MeasurementLine{}
+			app.radiusMeasurements = make([]RadiusMeasurement, 0)
 			fmt.Printf("Cleared all measurements\n")
 		}
-		// If in selection mode, C does nothing (user should use ESC to finish line, then C to clear)
+		// If in selection mode or radius mode, C does nothing (user should use ESC first)
 	}
 	if rl.IsKeyPressed(rl.KeyBackspace) {
-		// Delete a selected segment
-		if app.selectedSegment != nil {
+		// Delete all multi-selected items first (highest priority)
+		if len(app.selectedSegments) > 0 || len(app.selectedRadiusMeasurements) > 0 {
+			app.deleteAllSelectedItems()
+			app.selectedSegments = nil
+			app.selectedRadiusMeasurements = nil
+		} else if app.selectedRadiusMeasurement != nil {
+			// Delete a single selected radius measurement
+			app.deleteSelectedRadiusMeasurement()
+			app.selectedRadiusMeasurement = nil
+		} else if app.selectedSegment != nil {
+			// Delete a single selected segment
 			app.deleteSelectedSegment()
 			app.selectedSegment = nil
 		} else if len(app.selectedPoints) > 0 {
@@ -886,24 +975,7 @@ func (app *App) handleInput() {
 				points:         []geometry.Vector3{},
 				constraintAxis: -1, // No constraint initially
 			}
-			fmt.Println("Radius measurement mode: Select first point, last point, and points in between on the arc. Press R to finish or ESC to cancel")
-		} else {
-			// Finish radius measurement and calculate
-			if len(app.radiusMeasurement.points) >= 3 {
-				center, radius, normal, err := FitCircleToPoints(app.radiusMeasurement.points, app.radiusMeasurement.constraintAxis)
-				if err == nil {
-					app.radiusMeasurement.center = center
-					app.radiusMeasurement.radius = radius
-					app.radiusMeasurement.normal = normal
-					fmt.Printf("Fitted radius: %.2f\n", radius)
-				} else {
-					fmt.Printf("Error fitting circle: %v\n", err)
-					app.radiusMeasurement = nil
-				}
-			} else {
-				fmt.Println("Need at least 3 points to calculate radius")
-				app.radiusMeasurement = nil
-			}
+			fmt.Println("Radius measurement mode: Select 3 points on the arc. Calculation happens automatically.")
 		}
 	}
 }
@@ -1015,18 +1087,16 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		// Radius measurement mode
 		rl.DrawTextEx(app.font, "  RADIUS MODE", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Magenta)
 		y += lineHeight
-		pointsText := fmt.Sprintf("  Points: %d/%d+", len(app.radiusMeasurement.points), 3)
+		pointsText := fmt.Sprintf("  Points: %d/3", len(app.radiusMeasurement.points))
 		rl.DrawTextEx(app.font, pointsText, rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
 		y += lineHeight
-		rl.DrawTextEx(app.font, "  Left Click: Select first, last, and middle points", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
-		y += lineHeight
-		if len(app.radiusMeasurement.points) >= 3 {
-			rl.DrawTextEx(app.font, "  R: Calculate and finish", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
+		if len(app.radiusMeasurement.points) < 3 {
+			rl.DrawTextEx(app.font, "  Left Click: Select 3 points on arc", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
 		} else {
-			rl.DrawTextEx(app.font, "  R: Finish (need 3+ points)", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Gray)
+			rl.DrawTextEx(app.font, "  Radius calculated!", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 255, 100, 255))
 		}
 		y += lineHeight
-		rl.DrawTextEx(app.font, "  ESC: Cancel radius mode", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
+		rl.DrawTextEx(app.font, "  ESC: Cancel/close", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
 		y += lineHeight
 	} else if len(app.selectedPoints) == 0 {
 		rl.DrawTextEx(app.font, "  Left Click: Select point or segment", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
@@ -1057,6 +1127,20 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		y += lineHeight
 		rl.DrawTextEx(app.font, "  Backspace: Delete last point", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
 		y += lineHeight
+	}
+
+	// Draw selection rectangle if active
+	if app.isSelectingWithRect {
+		minX := float32(math.Min(float64(app.selectionRectStart.X), float64(app.selectionRectEnd.X)))
+		maxX := float32(math.Max(float64(app.selectionRectStart.X), float64(app.selectionRectEnd.X)))
+		minY := float32(math.Min(float64(app.selectionRectStart.Y), float64(app.selectionRectEnd.Y)))
+		maxY := float32(math.Max(float64(app.selectionRectStart.Y), float64(app.selectionRectEnd.Y)))
+		rect := rl.Rectangle{X: minX, Y: minY, Width: maxX - minX, Height: maxY - minY}
+
+		// Draw semi-transparent fill
+		rl.DrawRectangleRec(rect, rl.NewColor(100, 150, 255, 50))
+		// Draw border
+		rl.DrawRectangleLinesEx(rect, 2, rl.NewColor(100, 150, 255, 200))
 	}
 
 	// FPS

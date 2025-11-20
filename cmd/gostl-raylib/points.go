@@ -452,6 +452,126 @@ func (app *App) getSegmentAtMouse(mousePos rl.Vector2) *[2]int {
 	return nil
 }
 
+// getRadiusMeasurementAtMouse returns the radius measurement at the given mouse position (checks label bounding boxes)
+func (app *App) getRadiusMeasurementAtMouse(mousePos rl.Vector2) *int {
+	for idx, labelRect := range app.radiusLabels {
+		if rl.CheckCollisionPointRec(mousePos, labelRect) {
+			result := idx
+			return &result
+		}
+	}
+	return nil
+}
+
+// deleteSelectedRadiusMeasurement deletes the selected radius measurement
+func (app *App) deleteSelectedRadiusMeasurement() {
+	if app.selectedRadiusMeasurement == nil {
+		return
+	}
+
+	idx := *app.selectedRadiusMeasurement
+
+	if idx >= 0 && idx < len(app.radiusMeasurements) {
+		app.radiusMeasurements = append(app.radiusMeasurements[:idx], app.radiusMeasurements[idx+1:]...)
+		fmt.Printf("Deleted radius measurement %d. Measurements remaining: %d\n", idx, len(app.radiusMeasurements))
+	}
+}
+
+// deleteAllSelectedItems deletes all multi-selected segments and radius measurements
+func (app *App) deleteAllSelectedItems() {
+	// Sort radius measurements in descending order to delete from end to start
+	sortedRadiusMeasurements := make([]int, len(app.selectedRadiusMeasurements))
+	copy(sortedRadiusMeasurements, app.selectedRadiusMeasurements)
+	for i := 0; i < len(sortedRadiusMeasurements); i++ {
+		for j := i + 1; j < len(sortedRadiusMeasurements); j++ {
+			if sortedRadiusMeasurements[j] > sortedRadiusMeasurements[i] {
+				sortedRadiusMeasurements[i], sortedRadiusMeasurements[j] = sortedRadiusMeasurements[j], sortedRadiusMeasurements[i]
+			}
+		}
+	}
+
+	// Delete radius measurements (from end to start to maintain indices)
+	for _, idx := range sortedRadiusMeasurements {
+		if idx >= 0 && idx < len(app.radiusMeasurements) {
+			app.radiusMeasurements = append(app.radiusMeasurements[:idx], app.radiusMeasurements[idx+1:]...)
+		}
+	}
+
+	// Sort segments by line index descending, then segment index descending
+	sortedSegments := make([][2]int, len(app.selectedSegments))
+	copy(sortedSegments, app.selectedSegments)
+	for i := 0; i < len(sortedSegments); i++ {
+		for j := i + 1; j < len(sortedSegments); j++ {
+			// Sort by line index first, then segment index (both descending)
+			if sortedSegments[j][0] > sortedSegments[i][0] ||
+				(sortedSegments[j][0] == sortedSegments[i][0] && sortedSegments[j][1] > sortedSegments[i][1]) {
+				sortedSegments[i], sortedSegments[j] = sortedSegments[j], sortedSegments[i]
+			}
+		}
+	}
+
+	// Delete segments (from end to start)
+	for _, segIdx := range sortedSegments {
+		lineIdx := segIdx[0]
+		idx := segIdx[1]
+
+		if lineIdx == len(app.measurementLines) {
+			// Current line
+			if idx >= 0 && idx < len(app.currentLine.segments) {
+				app.currentLine.segments = append(app.currentLine.segments[:idx], app.currentLine.segments[idx+1:]...)
+			}
+		} else {
+			// Completed line
+			if lineIdx >= 0 && lineIdx < len(app.measurementLines) && idx >= 0 && idx < len(app.measurementLines[lineIdx].segments) {
+				app.measurementLines[lineIdx].segments = append(app.measurementLines[lineIdx].segments[:idx], app.measurementLines[lineIdx].segments[idx+1:]...)
+			}
+		}
+	}
+
+	// Remove empty lines
+	filteredLines := []MeasurementLine{}
+	for _, line := range app.measurementLines {
+		if len(line.segments) > 0 {
+			filteredLines = append(filteredLines, line)
+		}
+	}
+	app.measurementLines = filteredLines
+
+	fmt.Printf("Deleted %d segments and %d radius measurements\n", len(sortedSegments), len(sortedRadiusMeasurements))
+}
+
+// selectLabelsInRectangle selects all labels (segments and radius measurements) within the selection rectangle
+func (app *App) selectLabelsInRectangle() {
+	// Create normalized rectangle
+	minX := float32(math.Min(float64(app.selectionRectStart.X), float64(app.selectionRectEnd.X)))
+	maxX := float32(math.Max(float64(app.selectionRectStart.X), float64(app.selectionRectEnd.X)))
+	minY := float32(math.Min(float64(app.selectionRectStart.Y), float64(app.selectionRectEnd.Y)))
+	maxY := float32(math.Max(float64(app.selectionRectStart.Y), float64(app.selectionRectEnd.Y)))
+	selectionRect := rl.Rectangle{X: minX, Y: minY, Width: maxX - minX, Height: maxY - minY}
+
+	// Clear previous selections
+	app.selectedSegments = [][2]int{}
+	app.selectedRadiusMeasurements = []int{}
+	app.selectedSegment = nil
+	app.selectedRadiusMeasurement = nil
+
+	// Check all segment labels
+	for segIdx, labelRect := range app.segmentLabels {
+		if rl.CheckCollisionRecs(selectionRect, labelRect) {
+			app.selectedSegments = append(app.selectedSegments, segIdx)
+		}
+	}
+
+	// Check all radius measurement labels
+	for idx, labelRect := range app.radiusLabels {
+		if rl.CheckCollisionRecs(selectionRect, labelRect) {
+			app.selectedRadiusMeasurements = append(app.selectedRadiusMeasurements, idx)
+		}
+	}
+
+	fmt.Printf("Selected %d segments and %d radius measurements\n", len(app.selectedSegments), len(app.selectedRadiusMeasurements))
+}
+
 // deleteSelectedSegment deletes the selected segment
 func (app *App) deleteSelectedSegment() {
 	if app.selectedSegment == nil {
