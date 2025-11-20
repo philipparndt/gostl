@@ -45,12 +45,13 @@ type App struct {
 	constrainingPoint  *geometry.Vector3 // Point to constrain direction to (when alt+hovering a point)
 	constraintType     int               // 0=axis, 1=point (which type of constraint is active)
 	altWasPressedLast  bool              // Track if Alt was pressed in previous frame
-	measurementLines   []MeasurementLine // All measurement lines (multiple segments per line)
-	currentLine        *MeasurementLine  // Current measurement line being drawn
-	selectedSegment    *[2]int           // [lineIndex, segmentIndex] for selected segment, nil if none
-	hoveredSegment     *[2]int           // [lineIndex, segmentIndex] for hovered segment, nil if none
+	measurementLines   []MeasurementLine  // All measurement lines (multiple segments per line)
+	currentLine        *MeasurementLine   // Current measurement line being drawn
+	selectedSegment    *[2]int            // [lineIndex, segmentIndex] for selected segment, nil if none
+	hoveredSegment     *[2]int            // [lineIndex, segmentIndex] for hovered segment, nil if none
 	segmentLabels      map[[2]int]rl.Rectangle // Map of segment indices to label bounding boxes
-	lastMousePos       rl.Vector2        // Last known mouse position
+	lastMousePos       rl.Vector2         // Last known mouse position
+	radiusMeasurement  *RadiusMeasurement // Active radius measurement, nil if none
 }
 
 func main() {
@@ -193,6 +194,12 @@ func main() {
 
 		// Draw 3D coordinate axes at a fixed screen position (after 3D mode)
 		app.drawCoordinateAxes3D()
+
+		// Draw radius measurement in 2D screen space (after 3D mode)
+		app.drawRadiusMeasurement()
+
+		// Draw radius measurement label in 2D
+		app.drawRadiusMeasurementLabel()
 
 		// Draw measurement lines and points in 2D screen space (fixed pixel size)
 		const markerRadius = 3    // Fixed pixel radius for markers
@@ -690,13 +697,52 @@ func (app *App) handleInput() {
 		currentPos := rl.GetMousePosition()
 		dragDistance := rl.Vector2Distance(app.mouseDownPos, currentPos)
 		if !app.mouseMoved && !app.isPanning && dragDistance < 5.0 { // Less than 5 pixels moved = click
-			// Check if clicked on a segment label
-			clickedSegment := app.getSegmentAtMouse(currentPos)
+			// Priority 1: Radius measurement mode
+			if app.radiusMeasurement != nil {
+				// In radius measurement mode, just add the hovered point
+				if app.hasHoveredVertex {
+					p := app.hoveredVertex
+					app.radiusMeasurement.points = append(app.radiusMeasurement.points, p)
 
-			// Skip point creation if click was on an axis label (constraint toggle)
-			if app.hoveredAxisLabel >= 0 {
-				// Axis label click was already handled in handleInput, do nothing
-			} else if len(app.selectedPoints) == 1 && app.constraintActive && app.horizontalPreview != nil {
+					// After adding second point, determine which axis is most constrained
+					if len(app.radiusMeasurement.points) == 2 {
+						p1 := app.radiusMeasurement.points[0]
+						p2 := app.radiusMeasurement.points[1]
+
+						// Find which axis varies the least (most constrained)
+						diffX := math.Abs(p2.X - p1.X)
+						diffY := math.Abs(p2.Y - p1.Y)
+						diffZ := math.Abs(p2.Z - p1.Z)
+
+						if diffX <= diffY && diffX <= diffZ {
+							app.radiusMeasurement.constraintAxis = 0 // X is most constant
+							app.radiusMeasurement.constraintValue = (p1.X + p2.X) / 2.0
+						} else if diffY <= diffX && diffY <= diffZ {
+							app.radiusMeasurement.constraintAxis = 1 // Y is most constant
+							app.radiusMeasurement.constraintValue = (p1.Y + p2.Y) / 2.0
+						} else {
+							app.radiusMeasurement.constraintAxis = 2 // Z is most constant
+							app.radiusMeasurement.constraintValue = (p1.Z + p2.Z) / 2.0
+						}
+
+						// Set tolerance based on model size
+						app.radiusMeasurement.tolerance = float64(app.modelSize) * 0.01
+
+						axisName := []string{"X", "Y", "Z"}[app.radiusMeasurement.constraintAxis]
+						fmt.Printf("Layer constraint: %s = %.3f (± %.3f)\n",
+							axisName, app.radiusMeasurement.constraintValue, app.radiusMeasurement.tolerance)
+					}
+				}
+			} else {
+				// Normal measurement mode
+
+				// Check if clicked on a segment label
+				clickedSegment := app.getSegmentAtMouse(currentPos)
+
+				// Skip point creation if click was on an axis label (constraint toggle)
+				if app.hoveredAxisLabel >= 0 {
+					// Axis label click was already handled in handleInput, do nothing
+				} else if len(app.selectedPoints) == 1 && app.constraintActive && app.horizontalPreview != nil {
 				// In constrained mode: measure from first point to constrained point
 				firstPoint := app.selectedPoints[0]
 				constrainedPoint := *app.horizontalPreview
@@ -749,6 +795,7 @@ func (app *App) handleInput() {
 			} else {
 				app.selectPoint()
 			}
+			}
 		}
 		app.isPanning = false
 	}
@@ -776,15 +823,21 @@ func (app *App) handleInput() {
 		app.showFilled = !app.showFilled
 	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
-		// Finish current measurement line and start a new one
-		if app.currentLine != nil && len(app.currentLine.segments) > 0 {
-			app.measurementLines = append(app.measurementLines, *app.currentLine)
+		// Priority 1: Cancel radius measurement mode
+		if app.radiusMeasurement != nil {
+			fmt.Println("Cancelled radius measurement")
+			app.radiusMeasurement = nil
+		} else {
+			// Normal mode: Finish current measurement line and start a new one
+			if app.currentLine != nil && len(app.currentLine.segments) > 0 {
+				app.measurementLines = append(app.measurementLines, *app.currentLine)
+			}
+			app.currentLine = &MeasurementLine{}
+			app.selectedPoints = make([]geometry.Vector3, 0)
+			app.horizontalSnap = nil
+			app.horizontalPreview = nil
+			app.constraintActive = false
 		}
-		app.currentLine = &MeasurementLine{}
-		app.selectedPoints = make([]geometry.Vector3, 0)
-		app.horizontalSnap = nil
-		app.horizontalPreview = nil
-		app.constraintActive = false
 	}
 	if rl.IsKeyPressed(rl.KeyC) {
 		// Only clear all measurements when not in selection mode (0 points selected)
@@ -825,6 +878,33 @@ func (app *App) handleInput() {
 	}
 	if rl.IsKeyPressed(rl.KeyM) {
 		app.showMeasurement = !app.showMeasurement
+	}
+	if rl.IsKeyPressed(rl.KeyR) {
+		if app.radiusMeasurement == nil {
+			// Start radius measurement mode
+			app.radiusMeasurement = &RadiusMeasurement{
+				points:         []geometry.Vector3{},
+				constraintAxis: -1, // No constraint initially
+			}
+			fmt.Println("Radius measurement mode: Select first point, last point, and points in between on the arc. Press R to finish or ESC to cancel")
+		} else {
+			// Finish radius measurement and calculate
+			if len(app.radiusMeasurement.points) >= 3 {
+				center, radius, normal, err := FitCircleToPoints(app.radiusMeasurement.points, app.radiusMeasurement.constraintAxis)
+				if err == nil {
+					app.radiusMeasurement.center = center
+					app.radiusMeasurement.radius = radius
+					app.radiusMeasurement.normal = normal
+					fmt.Printf("Fitted radius: %.2f\n", radius)
+				} else {
+					fmt.Printf("Error fitting circle: %v\n", err)
+					app.radiusMeasurement = nil
+				}
+			} else {
+				fmt.Println("Need at least 3 points to calculate radius")
+				app.radiusMeasurement = nil
+			}
+		}
 	}
 }
 
@@ -931,8 +1011,27 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	y += lineHeight
 
 	// Context-specific measurement controls
-	if len(app.selectedPoints) == 0 {
+	if app.radiusMeasurement != nil {
+		// Radius measurement mode
+		rl.DrawTextEx(app.font, "  RADIUS MODE", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Magenta)
+		y += lineHeight
+		pointsText := fmt.Sprintf("  Points: %d/%d+", len(app.radiusMeasurement.points), 3)
+		rl.DrawTextEx(app.font, pointsText, rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
+		y += lineHeight
+		rl.DrawTextEx(app.font, "  Left Click: Select first, last, and middle points", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
+		y += lineHeight
+		if len(app.radiusMeasurement.points) >= 3 {
+			rl.DrawTextEx(app.font, "  R: Calculate and finish", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
+		} else {
+			rl.DrawTextEx(app.font, "  R: Finish (need 3+ points)", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Gray)
+		}
+		y += lineHeight
+		rl.DrawTextEx(app.font, "  ESC: Cancel radius mode", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
+		y += lineHeight
+	} else if len(app.selectedPoints) == 0 {
 		rl.DrawTextEx(app.font, "  Left Click: Select point or segment", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
+		y += lineHeight
+		rl.DrawTextEx(app.font, "  R: Measure radius (arc/circle)", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
 		y += lineHeight
 		if app.selectedSegment != nil {
 			rl.DrawTextEx(app.font, "  Backspace: Delete selected segment", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
