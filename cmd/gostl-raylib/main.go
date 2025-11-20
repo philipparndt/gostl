@@ -42,6 +42,9 @@ type App struct {
 	axisLength         float32           // Length of axis lines
 	axisLabelBounds    [3]rl.Rectangle   // Bounding boxes for X, Y, Z axis labels (for hit detection)
 	hoveredAxisLabel   int               // -1=none, 0=X, 1=Y, 2=Z (for highlighting on hover)
+	constrainingPoint  *geometry.Vector3 // Point to constrain direction to (when alt+hovering a point)
+	constraintType     int               // 0=axis, 1=point (which type of constraint is active)
+	altWasPressedLast  bool              // Track if Alt was pressed in previous frame
 	measurementLines   []MeasurementLine // All measurement lines (multiple segments per line)
 	currentLine        *MeasurementLine  // Current measurement line being drawn
 	selectedSegment    *[2]int           // [lineIndex, segmentIndex] for selected segment, nil if none
@@ -212,37 +215,69 @@ func main() {
 			constrainedScreenPos := rl.GetWorldToScreen(rl.Vector3{X: float32(constrainedPoint.X), Y: float32(constrainedPoint.Y), Z: float32(constrainedPoint.Z)}, app.camera)
 
 			if app.constraintActive {
-				// Constrained mode: draw measurement line only along the constrained axis
-				// Calculate the endpoint that represents the distance only along the constraint axis
-				var projectedPoint geometry.Vector3
-				if app.constraintAxis == 0 {
-					// X axis: only X changes, Y and Z stay same as first point
-					projectedPoint = geometry.NewVector3(constrainedPoint.X, firstPoint.Y, firstPoint.Z)
-				} else if app.constraintAxis == 1 {
-					// Y axis: only Y changes, X and Z stay same as first point
-					projectedPoint = geometry.NewVector3(firstPoint.X, constrainedPoint.Y, firstPoint.Z)
-				} else {
-					// Z axis: only Z changes, X and Y stay same as first point
-					projectedPoint = geometry.NewVector3(firstPoint.X, firstPoint.Y, constrainedPoint.Z)
+				if app.constraintType == 0 {
+					// Axis constraint mode: draw measurement line only along the constrained axis
+					// Calculate the endpoint that represents the distance only along the constraint axis
+					var projectedPoint geometry.Vector3
+					if app.constraintAxis == 0 {
+						// X axis: only X changes, Y and Z stay same as first point
+						projectedPoint = geometry.NewVector3(constrainedPoint.X, firstPoint.Y, firstPoint.Z)
+					} else if app.constraintAxis == 1 {
+						// Y axis: only Y changes, X and Z stay same as first point
+						projectedPoint = geometry.NewVector3(firstPoint.X, constrainedPoint.Y, firstPoint.Z)
+					} else {
+						// Z axis: only Z changes, X and Y stay same as first point
+						projectedPoint = geometry.NewVector3(firstPoint.X, firstPoint.Y, constrainedPoint.Z)
+					}
+
+					// Project the constrained endpoint to screen space
+					projectedScreenPos := rl.GetWorldToScreen(rl.Vector3{X: float32(projectedPoint.X), Y: float32(projectedPoint.Y), Z: float32(projectedPoint.Z)}, app.camera)
+
+					// Draw line from point 1 to the projected endpoint (represents distance along axis only)
+					rl.DrawLineEx(firstScreenPos, projectedScreenPos, lineThickness, rl.Yellow)
+
+					// Draw preview point marker at the projected endpoint
+					rl.DrawCircleLines(int32(projectedScreenPos.X), int32(projectedScreenPos.Y), markerRadius, rl.Yellow)
+					rl.DrawCircle(int32(projectedScreenPos.X), int32(projectedScreenPos.Y), markerRadius-1, rl.Yellow)
+
+					// Also draw a red line from projected point to the actual snapped point to show the difference
+					redColor := rl.NewColor(255, 0, 0, 255)
+					rl.DrawLineEx(projectedScreenPos, constrainedScreenPos, lineThickness, redColor)
+
+					// Draw red marker at the actual snapped point
+					rl.DrawCircleLines(int32(constrainedScreenPos.X), int32(constrainedScreenPos.Y), markerRadius, redColor)
+					rl.DrawCircle(int32(constrainedScreenPos.X), int32(constrainedScreenPos.Y), markerRadius-1, redColor)
+				} else if app.constraintType == 1 {
+					// Point constraint mode: draw line constrained to direction of constraining point
+					// Draw yellow line from first point to projected point (constrained)
+					rl.DrawLineEx(firstScreenPos, constrainedScreenPos, lineThickness, rl.Yellow)
+
+					// Draw preview point marker at projected point
+					rl.DrawCircleLines(int32(constrainedScreenPos.X), int32(constrainedScreenPos.Y), markerRadius, rl.Yellow)
+					rl.DrawCircle(int32(constrainedScreenPos.X), int32(constrainedScreenPos.Y), markerRadius-1, rl.Yellow)
+
+					// Also draw a red line from projected point to the actual snapped point to show the difference
+					// (like axis constraint does)
+					if app.horizontalSnap != nil {
+						snappedPoint := *app.horizontalSnap
+						snappedScreenPos := rl.GetWorldToScreen(rl.Vector3{X: float32(snappedPoint.X), Y: float32(snappedPoint.Y), Z: float32(snappedPoint.Z)}, app.camera)
+						redColor := rl.NewColor(255, 0, 0, 255)
+						rl.DrawLineEx(constrainedScreenPos, snappedScreenPos, lineThickness, redColor)
+
+						// Draw red marker at the actual snapped point
+						rl.DrawCircleLines(int32(snappedScreenPos.X), int32(snappedScreenPos.Y), markerRadius, redColor)
+						rl.DrawCircle(int32(snappedScreenPos.X), int32(snappedScreenPos.Y), markerRadius-1, redColor)
+					}
+
+					// Draw the constraining point with a distinct color for highlighting
+					if app.constrainingPoint != nil {
+						constrainingScreenPos := rl.GetWorldToScreen(rl.Vector3{X: float32(app.constrainingPoint.X), Y: float32(app.constrainingPoint.Y), Z: float32(app.constrainingPoint.Z)}, app.camera)
+						highlightColor := rl.NewColor(0, 255, 0, 255) // Green for constraining point
+						// Draw larger circle to highlight constraining point
+						rl.DrawCircleLines(int32(constrainingScreenPos.X), int32(constrainingScreenPos.Y), markerRadius+3, highlightColor)
+						rl.DrawCircle(int32(constrainingScreenPos.X), int32(constrainingScreenPos.Y), markerRadius, highlightColor)
+					}
 				}
-
-				// Project the constrained endpoint to screen space
-				projectedScreenPos := rl.GetWorldToScreen(rl.Vector3{X: float32(projectedPoint.X), Y: float32(projectedPoint.Y), Z: float32(projectedPoint.Z)}, app.camera)
-
-				// Draw line from point 1 to the projected endpoint (represents distance along axis only)
-				rl.DrawLineEx(firstScreenPos, projectedScreenPos, lineThickness, rl.Yellow)
-
-				// Draw preview point marker at the projected endpoint
-				rl.DrawCircleLines(int32(projectedScreenPos.X), int32(projectedScreenPos.Y), markerRadius, rl.Yellow)
-				rl.DrawCircle(int32(projectedScreenPos.X), int32(projectedScreenPos.Y), markerRadius-1, rl.Yellow)
-
-				// Also draw a red line from projected point to the actual snapped point to show the difference
-				redColor := rl.NewColor(255, 0, 0, 255)
-				rl.DrawLineEx(projectedScreenPos, constrainedScreenPos, lineThickness, redColor)
-
-				// Draw red marker at the actual snapped point
-				rl.DrawCircleLines(int32(constrainedScreenPos.X), int32(constrainedScreenPos.Y), markerRadius, redColor)
-				rl.DrawCircle(int32(constrainedScreenPos.X), int32(constrainedScreenPos.Y), markerRadius-1, redColor)
 			} else {
 				// Normal mode: draw line directly to snapped point (no constraints)
 				if app.horizontalSnap != nil {
@@ -572,37 +607,40 @@ func (app *App) handleInput() {
 		}
 	}
 
-	// Check if Alt was just pressed with a hovered point (to set constraint axis)
-	if altPressed && !app.constraintActive && len(app.selectedPoints) == 1 && app.hasHoveredVertex {
-		// Determine constraint axis based on hovered point relative to first point
-		firstPoint := app.selectedPoints[0]
-		hoveredPoint := &app.hoveredVertex
-
-		// Calculate which axis has the largest difference
-		diffX := math.Abs(hoveredPoint.X - firstPoint.X)
-		diffY := math.Abs(hoveredPoint.Y - firstPoint.Y)
-		diffZ := math.Abs(hoveredPoint.Z - firstPoint.Z)
-
-		if diffX >= diffY && diffX >= diffZ {
-			app.constraintAxis = 0 // X axis
-		} else if diffY >= diffX && diffY >= diffZ {
-			app.constraintAxis = 1 // Y axis
+	// Handle Alt key for point-based constraint toggle
+	// Alt press with hovered vertex: set point constraint
+	// Alt press again: toggle constraint off
+	if altPressed && !app.altWasPressedLast && len(app.selectedPoints) == 1 && app.hasHoveredVertex {
+		// Alt was just pressed
+		if app.constraintActive && app.constraintType == 1 {
+			// Already have a point constraint - deactivate it
+			app.constraintActive = false
+			app.constrainingPoint = nil
 		} else {
-			app.constraintAxis = 2 // Z axis
+			// Create a new point constraint on the hovered vertex
+			hoveredPoint := app.hoveredVertex
+			app.constrainingPoint = &hoveredPoint
+			app.constraintType = 1 // point constraint
+			app.constraintActive = true
 		}
-		app.constraintActive = true
+		// Clear the axis label selection (so Alt-based constraint takes effect visually)
+		app.hoveredAxisLabel = -1
 	}
+
+	// Track Alt key state for next frame
+	app.altWasPressedLast = altPressed
 
 	// Click on axis labels to set/toggle constraint (no Alt key needed)
 	if rl.IsMouseButtonPressed(rl.MouseLeftButton) && len(app.selectedPoints) == 1 && app.hoveredAxisLabel >= 0 {
 		// If clicking the same axis that's already constrained, deactivate constraint
-		if app.constraintActive && app.constraintAxis == app.hoveredAxisLabel {
+		if app.constraintActive && app.constraintType == 0 && app.constraintAxis == app.hoveredAxisLabel {
 			app.constraintActive = false
 			app.horizontalSnap = nil
 			app.horizontalPreview = nil
 		} else {
 			// Activate or switch to the clicked axis
 			app.constraintAxis = app.hoveredAxisLabel
+			app.constraintType = 0 // axis constraint
 			app.constraintActive = true
 		}
 	}
@@ -610,8 +648,13 @@ func (app *App) handleInput() {
 	// Measurement preview mode when first point is selected (always show line preview)
 	if len(app.selectedPoints) == 1 {
 		if app.constraintActive {
-			// Constrained mode: snap along specified axis
-			app.updateConstrainedMeasurement()
+			if app.constraintType == 0 {
+				// Axis constraint: snap along specified axis
+				app.updateConstrainedMeasurement()
+			} else if app.constraintType == 1 {
+				// Point constraint: snap along the direction to the constraining point
+				app.updatePointConstrainedMeasurement()
+			}
 		} else {
 			// Normal mode: free movement with snap to nearest point
 			app.updateNormalMeasurement()
@@ -654,21 +697,26 @@ func (app *App) handleInput() {
 			if app.hoveredAxisLabel >= 0 {
 				// Axis label click was already handled in handleInput, do nothing
 			} else if len(app.selectedPoints) == 1 && app.constraintActive && app.horizontalPreview != nil {
-				// In constrained mode: measure from first point to constrained point (only along specified axis)
+				// In constrained mode: measure from first point to constrained point
 				firstPoint := app.selectedPoints[0]
 				constrainedPoint := *app.horizontalPreview
 
-				// Create the second point by constraining the distance to only the specified axis
 				var secondPoint geometry.Vector3
-				if app.constraintAxis == 0 {
-					// X axis: only X changes
-					secondPoint = geometry.NewVector3(constrainedPoint.X, firstPoint.Y, firstPoint.Z)
-				} else if app.constraintAxis == 1 {
-					// Y axis: only Y changes
-					secondPoint = geometry.NewVector3(firstPoint.X, constrainedPoint.Y, firstPoint.Z)
-				} else {
-					// Z axis: only Z changes
-					secondPoint = geometry.NewVector3(firstPoint.X, firstPoint.Y, constrainedPoint.Z)
+				if app.constraintType == 0 {
+					// Axis constraint: only the constrained axis changes
+					if app.constraintAxis == 0 {
+						// X axis: only X changes
+						secondPoint = geometry.NewVector3(constrainedPoint.X, firstPoint.Y, firstPoint.Z)
+					} else if app.constraintAxis == 1 {
+						// Y axis: only Y changes
+						secondPoint = geometry.NewVector3(firstPoint.X, constrainedPoint.Y, firstPoint.Z)
+					} else {
+						// Z axis: only Z changes
+						secondPoint = geometry.NewVector3(firstPoint.X, firstPoint.Y, constrainedPoint.Z)
+					}
+				} else if app.constraintType == 1 {
+					// Point constraint: use the constrained point as the end point
+					secondPoint = constrainedPoint
 				}
 
 				// Add segment to current line
@@ -683,6 +731,7 @@ func (app *App) handleInput() {
 				// Start new segment from the end point
 				app.selectedPoints = []geometry.Vector3{secondPoint}
 				app.constraintActive = false
+				app.constrainingPoint = nil
 				app.horizontalSnap = nil
 				app.horizontalPreview = nil
 			} else if len(app.selectedPoints) == 1 && app.hoveredAxis >= 0 {

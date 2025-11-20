@@ -288,6 +288,107 @@ func (app *App) updateNormalMeasurement() {
 	}
 }
 
+// updatePointConstrainedMeasurement updates the preview for point-constrained measurement
+// Works with three points:
+// 1. Start point (first selected point) - measurement origin
+// 2. Constraining point (defines direction line) - strictly constrains direction
+// 3. Current hover point (snapped vertex) - sets the length by projecting onto constraint line
+func (app *App) updatePointConstrainedMeasurement() {
+	if len(app.selectedPoints) != 1 || app.constrainingPoint == nil {
+		return
+	}
+
+	mousePos := rl.GetMousePosition()
+	ray := rl.GetMouseRay(mousePos, app.camera)
+
+	// Direction from start point to constraining point (defines the constraint line)
+	startPt := app.selectedPoints[0]
+	constrainingPt := app.constrainingPoint
+
+	direction := geometry.NewVector3(
+		constrainingPt.X-startPt.X,
+		constrainingPt.Y-startPt.Y,
+		constrainingPt.Z-startPt.Z,
+	)
+
+	// Calculate direction magnitude
+	dirLen := math.Sqrt(direction.X*direction.X + direction.Y*direction.Y + direction.Z*direction.Z)
+	if dirLen < 1e-6 {
+		// Constraining point is same as start point, can't constrain
+		app.horizontalSnap = nil
+		app.horizontalPreview = nil
+		return
+	}
+
+	// Normalize direction
+	normDir := geometry.NewVector3(
+		direction.X/dirLen,
+		direction.Y/dirLen,
+		direction.Z/dirLen,
+	)
+
+	// First, find the nearest vertex to the ray (like normal mode)
+	selectionThreshold := app.getSelectionThreshold()
+
+	var nearestVertex geometry.Vector3
+	minDistToRay := float64(math.MaxFloat32)
+	vertexFound := false
+
+	vertexMap := make(map[geometry.Vector3]bool)
+	for _, triangle := range app.model.Triangles {
+		vertices := []geometry.Vector3{triangle.V1, triangle.V2, triangle.V3}
+		for _, vertex := range vertices {
+			if vertexMap[vertex] {
+				continue
+			}
+			vertexMap[vertex] = true
+
+			// Distance from vertex to the ray
+			vertexPos := rl.Vector3{X: float32(vertex.X), Y: float32(vertex.Y), Z: float32(vertex.Z)}
+			dist := rayToPointDistance(ray, vertexPos)
+
+			if dist < minDistToRay && dist < selectionThreshold {
+				minDistToRay = dist
+				nearestVertex = vertex
+				vertexFound = true
+			}
+		}
+	}
+
+	if vertexFound {
+		// Project the nearest vertex onto the constraint line
+		toVertex := geometry.NewVector3(
+			nearestVertex.X-startPt.X,
+			nearestVertex.Y-startPt.Y,
+			nearestVertex.Z-startPt.Z,
+		)
+
+		// Project vertex onto constraint line using dot product
+		t := toVertex.X*normDir.X + toVertex.Y*normDir.Y + toVertex.Z*normDir.Z
+
+		// Clamp t based on the vertex distance along the constraint direction
+		// Calculate the vertex projection distance
+		vertexProjectDist := toVertex.X*normDir.X + toVertex.Y*normDir.Y + toVertex.Z*normDir.Z
+		if t > vertexProjectDist {
+			t = vertexProjectDist
+		}
+
+		// Calculate the projected point on the constraint line
+		projectedPoint := geometry.NewVector3(
+			startPt.X+t*normDir.X,
+			startPt.Y+t*normDir.Y,
+			startPt.Z+t*normDir.Z,
+		)
+
+		// Use the projected point as preview and the actual vertex as snap target
+		app.horizontalPreview = &projectedPoint
+		app.horizontalSnap = &nearestVertex
+	} else {
+		app.horizontalSnap = nil
+		app.horizontalPreview = nil
+	}
+}
+
 // rayToPointDistance calculates distance from ray to point
 func rayToPointDistance(ray rl.Ray, point rl.Vector3) float64 {
 	// Vector from ray origin to point
