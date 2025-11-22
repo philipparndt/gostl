@@ -75,6 +75,14 @@ type App struct {
 	needsReload         bool                 // Flag to indicate model needs reloading
 	isLoading           bool                 // Flag to indicate a reload is in progress
 	loadingStartTime    time.Time            // When loading started
+	loadedModel         *stl.Model           // Model loaded in background, ready to upload
+	loadedSTLFile       string               // STL file path for loaded model
+	loadedIsOpenSCAD    bool                 // Whether loaded model is from OpenSCAD
+
+	// Default camera settings (for reset)
+	defaultCameraDistance float32
+	defaultCameraAngleX   float32
+	defaultCameraAngleY   float32
 }
 
 // loadModel loads a model from either STL or OpenSCAD file
@@ -166,6 +174,56 @@ func (app *App) setupFileWatcher() error {
 	return nil
 }
 
+// resetCameraView resets the camera to the default view
+func (app *App) resetCameraView() {
+	app.cameraDistance = app.defaultCameraDistance
+	app.cameraAngleX = app.defaultCameraAngleX
+	app.cameraAngleY = app.defaultCameraAngleY
+	app.cameraTarget = app.modelCenter
+}
+
+// setCameraTopView sets the camera to look down from the top (along -Z axis)
+func (app *App) setCameraTopView() {
+	app.cameraAngleX = math.Pi / 2 // 90 degrees (looking straight down)
+	app.cameraAngleY = 0
+	app.cameraTarget = app.modelCenter
+}
+
+// setCameraBottomView sets the camera to look up from the bottom (along +Z axis)
+func (app *App) setCameraBottomView() {
+	app.cameraAngleX = -math.Pi / 2 // -90 degrees (looking straight up)
+	app.cameraAngleY = 0
+	app.cameraTarget = app.modelCenter
+}
+
+// setCameraFrontView sets the camera to look from the front (along -Y axis)
+func (app *App) setCameraFrontView() {
+	app.cameraAngleX = 0
+	app.cameraAngleY = 0
+	app.cameraTarget = app.modelCenter
+}
+
+// setCameraBackView sets the camera to look from the back (along +Y axis)
+func (app *App) setCameraBackView() {
+	app.cameraAngleX = 0
+	app.cameraAngleY = math.Pi // 180 degrees
+	app.cameraTarget = app.modelCenter
+}
+
+// setCameraLeftView sets the camera to look from the left (along +X axis)
+func (app *App) setCameraLeftView() {
+	app.cameraAngleX = 0
+	app.cameraAngleY = -math.Pi / 2 // -90 degrees
+	app.cameraTarget = app.modelCenter
+}
+
+// setCameraRightView sets the camera to look from the right (along -X axis)
+func (app *App) setCameraRightView() {
+	app.cameraAngleX = 0
+	app.cameraAngleY = math.Pi / 2 // 90 degrees
+	app.cameraTarget = app.modelCenter
+}
+
 // reloadModel reloads the model from the source file in the background
 func (app *App) reloadModel() {
 	// If already loading, skip
@@ -177,13 +235,7 @@ func (app *App) reloadModel() {
 	app.loadingStartTime = time.Now()
 	fmt.Println("Reloading model...")
 
-	// Preserve current camera state
-	savedCameraDistance := app.cameraDistance
-	savedCameraAngleX := app.cameraAngleX
-	savedCameraAngleY := app.cameraAngleY
-	savedCameraTarget := app.cameraTarget
-
-	// Load in background
+	// Load in background (but don't create mesh - that must be on main thread)
 	go func() {
 		// Load the model
 		model, stlFile, isOpenSCAD, err := loadModel(app.sourceFile)
@@ -193,64 +245,88 @@ func (app *App) reloadModel() {
 			return
 		}
 
-		// Convert to mesh (this can take time for large models)
-		newMesh := stlToRaylibMesh(model)
-
-		// Now we're ready to switch - do this in a way that Raylib can handle
-		// (Raylib operations should be on the main thread, but we can set flags)
-
-		// Clean up old temp file if exists
-		oldTempFile := app.tempSTLFile
-		if app.isOpenSCAD && oldTempFile != "" && oldTempFile != stlFile {
-			defer os.Remove(oldTempFile)
-		}
-
-		// Calculate new model info
-		bbox := model.BoundingBox()
-		center := bbox.Center()
-		size := bbox.Size()
-		maxDim := math.Max(size.X, math.Max(size.Y, size.Z))
-
-		newModelCenter := rl.Vector3{X: float32(center.X), Y: float32(center.Y), Z: float32(center.Z)}
-		newModelSize := float32(maxDim)
-		newAvgVertexSpacing := calculateAvgVertexSpacing(model)
-
-		// Adjust camera target based on model center change
-		centerDelta := rl.Vector3{
-			X: newModelCenter.X - app.modelCenter.X,
-			Y: newModelCenter.Y - app.modelCenter.Y,
-			Z: newModelCenter.Z - app.modelCenter.Z,
-		}
-		adjustedCameraTarget := rl.Vector3{
-			X: savedCameraTarget.X + centerDelta.X,
-			Y: savedCameraTarget.Y + centerDelta.Y,
-			Z: savedCameraTarget.Z + centerDelta.Z,
-		}
-
-		// Switch to new model (this should be quick)
-		oldMesh := app.mesh
-		app.mesh = newMesh
-		app.model = model
-		app.tempSTLFile = stlFile
-		app.isOpenSCAD = isOpenSCAD
-		app.modelCenter = newModelCenter
-		app.modelSize = newModelSize
-		app.avgVertexSpacing = newAvgVertexSpacing
-		app.axisOrigin = newModelCenter
-
-		// Restore camera state with adjusted target
-		app.cameraDistance = savedCameraDistance
-		app.cameraAngleX = savedCameraAngleX
-		app.cameraAngleY = savedCameraAngleY
-		app.cameraTarget = adjustedCameraTarget
-
-		// Unload old mesh after switching
-		rl.UnloadMesh(&oldMesh)
-
-		elapsed := time.Since(app.loadingStartTime)
-		fmt.Printf("Model reloaded successfully in %.2fs!\n", elapsed.Seconds())
-		app.isLoading = false
+		// Store loaded model - mesh creation will happen on main thread
+		app.loadedModel = model
+		app.loadedSTLFile = stlFile
+		app.loadedIsOpenSCAD = isOpenSCAD
 	}()
+}
+
+// applyLoadedModel applies a loaded model (must be called on main thread)
+func (app *App) applyLoadedModel() {
+	if app.loadedModel == nil {
+		return
+	}
+
+	// Preserve current camera state
+	savedCameraDistance := app.cameraDistance
+	savedCameraAngleX := app.cameraAngleX
+	savedCameraAngleY := app.cameraAngleY
+	savedCameraTarget := app.cameraTarget
+
+	model := app.loadedModel
+	stlFile := app.loadedSTLFile
+	isOpenSCAD := app.loadedIsOpenSCAD
+
+	// Convert to mesh (must be on main thread for Raylib)
+	newMesh := stlToRaylibMesh(model)
+
+	// Clean up old temp file if exists
+	oldTempFile := app.tempSTLFile
+	if app.isOpenSCAD && oldTempFile != "" && oldTempFile != stlFile {
+		os.Remove(oldTempFile)
+	}
+
+	// Calculate new model info
+	bbox := model.BoundingBox()
+	center := bbox.Center()
+	size := bbox.Size()
+	maxDim := math.Max(size.X, math.Max(size.Y, size.Z))
+
+	newModelCenter := rl.Vector3{X: float32(center.X), Y: float32(center.Y), Z: float32(center.Z)}
+	newModelSize := float32(maxDim)
+	newAvgVertexSpacing := calculateAvgVertexSpacing(model)
+
+	// Adjust camera target based on model center change
+	centerDelta := rl.Vector3{
+		X: newModelCenter.X - app.modelCenter.X,
+		Y: newModelCenter.Y - app.modelCenter.Y,
+		Z: newModelCenter.Z - app.modelCenter.Z,
+	}
+	adjustedCameraTarget := rl.Vector3{
+		X: savedCameraTarget.X + centerDelta.X,
+		Y: savedCameraTarget.Y + centerDelta.Y,
+		Z: savedCameraTarget.Z + centerDelta.Z,
+	}
+
+	// Switch to new model (this should be quick)
+	oldMesh := app.mesh
+	app.mesh = newMesh
+	app.model = model
+	app.tempSTLFile = stlFile
+	app.isOpenSCAD = isOpenSCAD
+	app.modelCenter = newModelCenter
+	app.modelSize = newModelSize
+	app.avgVertexSpacing = newAvgVertexSpacing
+	app.axisOrigin = newModelCenter
+
+	// Restore camera state with adjusted target
+	app.cameraDistance = savedCameraDistance
+	app.cameraAngleX = savedCameraAngleX
+	app.cameraAngleY = savedCameraAngleY
+	app.cameraTarget = adjustedCameraTarget
+
+	// Unload old mesh after switching
+	rl.UnloadMesh(&oldMesh)
+
+	elapsed := time.Since(app.loadingStartTime)
+	fmt.Printf("Model reloaded successfully in %.2fs!\n", elapsed.Seconds())
+
+	// Clear loaded model and finish loading
+	app.loadedModel = nil
+	app.loadedSTLFile = ""
+	app.loadedIsOpenSCAD = false
+	app.isLoading = false
 }
 
 func main() {
@@ -342,6 +418,11 @@ func main() {
 	app.cameraAngleX = 0.3
 	app.cameraAngleY = 0.3
 
+	// Save default camera settings for reset
+	app.defaultCameraDistance = distance
+	app.defaultCameraAngleX = 0.3
+	app.defaultCameraAngleY = 0.3
+
 	app.camera = rl.Camera3D{
 		Position:   rl.Vector3{X: 0, Y: 0, Z: distance},
 		Target:     app.cameraTarget,
@@ -371,6 +452,9 @@ func main() {
 			app.needsReload = false
 			app.reloadModel()
 		}
+
+		// Apply loaded model if ready (must be on main thread)
+		app.applyLoadedModel()
 
 		// Update
 		app.handleInput()
@@ -833,6 +917,29 @@ func (app *App) handleInput() {
 	// Check if mouse is over a radius measurement label
 	app.hoveredRadiusMeasurement = app.getRadiusMeasurementAtMouse(app.lastMousePos)
 
+	// Camera view preset shortcuts
+	if rl.IsKeyPressed(rl.KeyHome) {
+		app.resetCameraView()
+	}
+	if rl.IsKeyPressed(rl.KeyT) {
+		app.setCameraTopView()
+	}
+	if rl.IsKeyPressed(rl.KeyB) {
+		app.setCameraBottomView()
+	}
+	if rl.IsKeyPressed(rl.KeyOne) {
+		app.setCameraFrontView()
+	}
+	if rl.IsKeyPressed(rl.KeyTwo) {
+		app.setCameraBackView()
+	}
+	if rl.IsKeyPressed(rl.KeyThree) {
+		app.setCameraLeftView()
+	}
+	if rl.IsKeyPressed(rl.KeyFour) {
+		app.setCameraRightView()
+	}
+
 	// Check if Alt key is pressed
 	altPressed := rl.IsKeyDown(rl.KeyLeftAlt) || rl.IsKeyDown(rl.KeyRightAlt)
 
@@ -1193,6 +1300,61 @@ func (app *App) handleInput() {
 			fmt.Println("Radius measurement mode: Select 3 points on the arc. Calculation happens automatically.")
 		}
 	}
+
+	// Axis constraint shortcuts (when measuring)
+	// Use character input instead of physical keys to work across all keyboard layouts
+	if len(app.selectedPoints) == 1 && app.radiusMeasurement == nil {
+		char := rl.GetCharPressed()
+		if char != 0 {
+			// Convert to lowercase for consistency
+			charLower := rune(char)
+			if charLower >= 'A' && charLower <= 'Z' {
+				charLower = charLower + ('a' - 'A')
+			}
+
+			switch charLower {
+			case 'x':
+				if app.constraintActive && app.constraintType == 0 && app.constraintAxis == 0 {
+					// Already on X axis - toggle off
+					app.constraintActive = false
+					fmt.Println("Constraint disabled")
+				} else {
+					// Set X axis constraint
+					app.constraintAxis = 0
+					app.constraintType = 0
+					app.constraintActive = true
+					app.constrainingPoint = nil
+					fmt.Println("Constraint: X axis")
+				}
+			case 'y':
+				if app.constraintActive && app.constraintType == 0 && app.constraintAxis == 1 {
+					// Already on Y axis - toggle off
+					app.constraintActive = false
+					fmt.Println("Constraint disabled")
+				} else {
+					// Set Y axis constraint
+					app.constraintAxis = 1
+					app.constraintType = 0
+					app.constraintActive = true
+					app.constrainingPoint = nil
+					fmt.Println("Constraint: Y axis")
+				}
+			case 'z':
+				if app.constraintActive && app.constraintType == 0 && app.constraintAxis == 2 {
+					// Already on Z axis - toggle off
+					app.constraintActive = false
+					fmt.Println("Constraint disabled")
+				} else {
+					// Set Z axis constraint
+					app.constraintAxis = 2
+					app.constraintType = 0
+					app.constraintActive = true
+					app.constrainingPoint = nil
+					fmt.Println("Constraint: Z axis")
+				}
+			}
+		}
+	}
 }
 
 // updateCamera updates camera position based on angles
@@ -1236,10 +1398,56 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	fontSize14 := float32(14)
 	fontSize20 := float32(20)
 
+	screenWidth := float32(rl.GetScreenWidth())
+	screenHeight := float32(rl.GetScreenHeight())
+
+	// Live measurement preview (bottom-right corner)
+	if len(app.selectedPoints) == 1 && app.horizontalPreview != nil {
+		p1 := app.selectedPoints[0]
+		p2 := *app.horizontalPreview
+
+		var distance float64
+		var previewText string
+
+		if app.constraintActive && app.constraintType == 0 {
+			// Axis constraint - show distance along axis only
+			switch app.constraintAxis {
+			case 0: // X axis
+				distance = math.Abs(p2.X - p1.X)
+				previewText = fmt.Sprintf("ΔX: %.2f mm", distance)
+			case 1: // Y axis
+				distance = math.Abs(p2.Y - p1.Y)
+				previewText = fmt.Sprintf("ΔY: %.2f mm", distance)
+			case 2: // Z axis
+				distance = math.Abs(p2.Z - p1.Z)
+				previewText = fmt.Sprintf("ΔZ: %.2f mm", distance)
+			}
+		} else {
+			// No constraint - show total distance
+			distance = p1.Distance(p2)
+			previewText = fmt.Sprintf("%.2f mm", distance)
+		}
+
+		// Draw preview box in bottom-right corner
+		boxPadding := float32(10)
+		textSize := rl.MeasureTextEx(app.font, previewText, fontSize16, 1)
+		boxWidth := textSize.X + boxPadding*2
+		boxHeight := textSize.Y + boxPadding*2
+		boxX := screenWidth - boxWidth - 20
+		boxY := screenHeight - boxHeight - 20
+
+		// Semi-transparent background
+		rl.DrawRectangle(int32(boxX), int32(boxY), int32(boxWidth), int32(boxHeight), rl.NewColor(0, 0, 0, 200))
+		rl.DrawRectangleLines(int32(boxX), int32(boxY), int32(boxWidth), int32(boxHeight), rl.Yellow)
+
+		// Draw distance text
+		textX := boxX + boxPadding
+		textY := boxY + boxPadding
+		rl.DrawTextEx(app.font, previewText, rl.Vector2{X: textX, Y: textY}, fontSize16, 1, rl.Yellow)
+	}
+
 	// Loading indicator
 	if app.isLoading {
-		screenWidth := float32(rl.GetScreenWidth())
-
 		// Calculate loading text and spinner
 		elapsed := time.Since(app.loadingStartTime).Seconds()
 		spinnerChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -1263,71 +1471,88 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		rl.DrawTextEx(app.font, loadingText, rl.Vector2{X: textX, Y: textY}, fontSize18, 1, rl.Yellow)
 	}
 
-	// Model info
-	rl.DrawTextEx(app.font, fmt.Sprintf("Model: %s", app.model.Name), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.White)
+	// === DIMENSIONS ===
+	rl.DrawTextEx(app.font, "Dimensions:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("Triangles: %d", result.TriangleCount), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.White)
+	rl.DrawTextEx(app.font, fmt.Sprintf("  Model: %s", app.model.Name), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
 	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("Surface Area: %.2f", result.SurfaceArea), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.White)
+	rl.DrawTextEx(app.font, fmt.Sprintf("  Triangles: %d", result.TriangleCount), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
+	y += lineHeight
+	rl.DrawTextEx(app.font, fmt.Sprintf("  Surface Area: %.2f mm²", result.SurfaceArea), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
+	y += lineHeight
+	rl.DrawTextEx(app.font, fmt.Sprintf("  Volume: %.2f mm³", result.Volume), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
+	y += lineHeight
+	rl.DrawTextEx(app.font, fmt.Sprintf("  Size: %.2f × %.2f × %.2f mm", result.Dimensions.X, result.Dimensions.Y, result.Dimensions.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
+	y += lineHeight
+	rl.DrawTextEx(app.font, fmt.Sprintf("  PLA Weight (100%%): %.2f g", result.WeightPLA100), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 200, 255, 255))
+	y += lineHeight
+	rl.DrawTextEx(app.font, fmt.Sprintf("  PLA Weight (15%%):  %.2f g", result.WeightPLA15), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 200, 255, 255))
 	y += lineHeight * 2
 
-	// Dimensions
-	rl.DrawTextEx(app.font, fmt.Sprintf("Dimensions:"), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
-	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  X: %.2f", result.Dimensions.X), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.White)
-	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  Y: %.2f", result.Dimensions.Y), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.White)
-	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  Z: %.2f", result.Dimensions.Z), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.White)
-	y += lineHeight * 2
-
-	// Measurements
+	// === MEASURE ===
 	if len(app.selectedPoints) > 0 {
-		p1 := app.selectedPoints[0]
-		rl.DrawTextEx(app.font, fmt.Sprintf("Point 1: (%.2f, %.2f, %.2f)", p1.X, p1.Y, p1.Z), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Green)
-		y += lineHeight
-	}
-
-	if len(app.selectedPoints) >= 2 {
-		p2 := app.selectedPoints[1]
-		rl.DrawTextEx(app.font, fmt.Sprintf("Point 2: (%.2f, %.2f, %.2f)", p2.X, p2.Y, p2.Z), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Green)
+		rl.DrawTextEx(app.font, "Measure:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 		y += lineHeight
 
 		p1 := app.selectedPoints[0]
-		distance := p1.Distance(p2)
-		rl.DrawTextEx(app.font, fmt.Sprintf("Distance: %.1f units", distance), rl.Vector2{X: 10, Y: y}, fontSize18, 1, rl.Yellow)
+		rl.DrawTextEx(app.font, fmt.Sprintf("  Point 1: (%.2f, %.2f, %.2f)", p1.X, p1.Y, p1.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
 		y += lineHeight
 
-		// Calculate elevation angle
-		v := p2.Sub(p1)
-		horizontalDist := math.Sqrt(v.X*v.X + v.Y*v.Y)
-		elevationRad := math.Atan2(v.Z, horizontalDist)
-		elevationDeg := elevationRad * 180.0 / math.Pi
-		rl.DrawTextEx(app.font, fmt.Sprintf("Elevation: %.1f°", elevationDeg), rl.Vector2{X: 10, Y: y}, fontSize18, 1, rl.NewColor(0, 255, 255, 255))
+		if len(app.selectedPoints) >= 2 {
+			p2 := app.selectedPoints[1]
+			rl.DrawTextEx(app.font, fmt.Sprintf("  Point 2: (%.2f, %.2f, %.2f)", p2.X, p2.Y, p2.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
+			y += lineHeight
+
+			distance := p1.Distance(p2)
+			rl.DrawTextEx(app.font, fmt.Sprintf("  Distance: %.1f units", distance), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+			y += lineHeight
+
+			// Calculate elevation angle
+			v := p2.Sub(p1)
+			horizontalDist := math.Sqrt(v.X*v.X + v.Y*v.Y)
+			elevationRad := math.Atan2(v.Z, horizontalDist)
+			elevationDeg := elevationRad * 180.0 / math.Pi
+			rl.DrawTextEx(app.font, fmt.Sprintf("  Elevation: %.1f°", elevationDeg), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(0, 255, 255, 255))
+			y += lineHeight
+		}
 		y += lineHeight
 	}
 
-	// Context-specific Controls
+	// === VIEW ===
+	rl.DrawTextEx(app.font, "View:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 	y += lineHeight
-	rl.DrawTextEx(app.font, "Controls:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+	rl.DrawTextEx(app.font, "  Home: Reset | T: Top | B: Bottom", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
+	rl.DrawTextEx(app.font, "  1: Front | 2: Back | 3: Left | 4: Right", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	y += lineHeight * 2
 
-	// Basic navigation controls
-	rl.DrawTextEx(app.font, "  Left Drag: Rotate view", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	// === NAVIGATE ===
+	rl.DrawTextEx(app.font, "Navigate:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 	y += lineHeight
-	rl.DrawTextEx(app.font, "  Shift+Drag: Pan view", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	rl.DrawTextEx(app.font, "  Left Drag: Rotate | Shift+Drag: Pan", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
-	rl.DrawTextEx(app.font, "  Mouse Wheel: Zoom", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	rl.DrawTextEx(app.font, "  Mouse Wheel: Zoom | Middle: Pan", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
-	rl.DrawTextEx(app.font, "  Middle Mouse: Pan view", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
-	y += lineHeight
-	rl.DrawTextEx(app.font, "  W: Toggle wireframe | F: Toggle fill", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	rl.DrawTextEx(app.font, "  W: Wireframe | F: Fill", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
 
 	// Context-specific measurement controls
-	if app.radiusMeasurement != nil {
+	if len(app.selectedPoints) == 1 && app.radiusMeasurement == nil {
+		// Line measurement mode - show constraint shortcuts
+		y += lineHeight
+		rl.DrawTextEx(app.font, "Constraints:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+		y += lineHeight
+		rl.DrawTextEx(app.font, "  X, Y, Z: Constrain to axis", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+		y += lineHeight
+		if app.constraintActive && app.constraintType == 0 {
+			axisName := []string{"X", "Y", "Z"}[app.constraintAxis]
+			rl.DrawTextEx(app.font, fmt.Sprintf("  Active: %s axis", axisName), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
+			y += lineHeight
+		}
+	} else if app.radiusMeasurement != nil {
 		// Radius measurement mode
-		rl.DrawTextEx(app.font, "  RADIUS MODE", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Magenta)
+		y += lineHeight
+		rl.DrawTextEx(app.font, "RADIUS MODE", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Magenta)
 		y += lineHeight
 		pointsText := fmt.Sprintf("  Points: %d/3", len(app.radiusMeasurement.points))
 		rl.DrawTextEx(app.font, pointsText, rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
