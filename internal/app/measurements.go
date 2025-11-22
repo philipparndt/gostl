@@ -97,11 +97,11 @@ func (app *App) drawRadiusMeasurement() {
 	color := rl.Magenta
 
 	// Draw all completed radius measurements
-	for _, rm := range app.radiusMeasurements {
+	for _, rm := range app.Measurement.radiusMeasurements {
 		// Draw selected points as 2D circles
 		for _, point := range rm.points {
 			pos3D := rl.Vector3{X: float32(point.X), Y: float32(point.Y), Z: float32(point.Z)}
-			screenPos := rl.GetWorldToScreen(pos3D, app.camera)
+			screenPos := rl.GetWorldToScreen(pos3D, app.Camera.camera)
 			rl.DrawCircleLines(int32(screenPos.X), int32(screenPos.Y), markerRadius, color)
 			rl.DrawCircle(int32(screenPos.X), int32(screenPos.Y), markerRadius-1, color)
 		}
@@ -113,7 +113,7 @@ func (app *App) drawRadiusMeasurement() {
 
 			// Draw center point as 2D circle (slightly larger)
 			centerPos3D := rl.Vector3{X: float32(center.X), Y: float32(center.Y), Z: float32(center.Z)}
-			centerScreen := rl.GetWorldToScreen(centerPos3D, app.camera)
+			centerScreen := rl.GetWorldToScreen(centerPos3D, app.Camera.camera)
 			rl.DrawCircleLines(int32(centerScreen.X), int32(centerScreen.Y), markerRadius+2, rl.NewColor(255, 100, 255, 255))
 			rl.DrawCircle(int32(centerScreen.X), int32(centerScreen.Y), markerRadius+1, rl.NewColor(255, 100, 255, 255))
 
@@ -145,8 +145,8 @@ func (app *App) drawRadiusMeasurement() {
 				// Project to 2D screen space
 				pos1 := rl.Vector3{X: float32(p1_3D.X), Y: float32(p1_3D.Y), Z: float32(p1_3D.Z)}
 				pos2 := rl.Vector3{X: float32(p2_3D.X), Y: float32(p2_3D.Y), Z: float32(p2_3D.Z)}
-				screenP1 := rl.GetWorldToScreen(pos1, app.camera)
-				screenP2 := rl.GetWorldToScreen(pos2, app.camera)
+				screenP1 := rl.GetWorldToScreen(pos1, app.Camera.camera)
+				screenP2 := rl.GetWorldToScreen(pos2, app.Camera.camera)
 
 				// Draw 2D line segment
 				rl.DrawLineEx(screenP1, screenP2, lineThickness, rl.NewColor(255, 150, 255, 200))
@@ -155,23 +155,23 @@ func (app *App) drawRadiusMeasurement() {
 	}
 
 	// Draw the current radius measurement being created
-	if app.radiusMeasurement != nil {
+	if app.Measurement.radiusMeasurement != nil {
 		// Draw selected points as 2D circles (larger for radius measurements)
-		for _, point := range app.radiusMeasurement.points {
+		for _, point := range app.Measurement.radiusMeasurement.points {
 			pos3D := rl.Vector3{X: float32(point.X), Y: float32(point.Y), Z: float32(point.Z)}
-			screenPos := rl.GetWorldToScreen(pos3D, app.camera)
+			screenPos := rl.GetWorldToScreen(pos3D, app.Camera.camera)
 			rl.DrawCircleLines(int32(screenPos.X), int32(screenPos.Y), markerRadius, color)
 			rl.DrawCircle(int32(screenPos.X), int32(screenPos.Y), markerRadius-1, color)
 		}
 
 		// If we have enough points and a fitted circle, draw it
-		if len(app.radiusMeasurement.points) >= 3 && app.radiusMeasurement.radius > 0 {
-			center := app.radiusMeasurement.center
-			radius := app.radiusMeasurement.radius
+		if len(app.Measurement.radiusMeasurement.points) >= 3 && app.Measurement.radiusMeasurement.radius > 0 {
+			center := app.Measurement.radiusMeasurement.center
+			radius := app.Measurement.radiusMeasurement.radius
 
 			// Draw center point as 2D circle (slightly larger)
 			centerPos3D := rl.Vector3{X: float32(center.X), Y: float32(center.Y), Z: float32(center.Z)}
-			centerScreen := rl.GetWorldToScreen(centerPos3D, app.camera)
+			centerScreen := rl.GetWorldToScreen(centerPos3D, app.Camera.camera)
 			rl.DrawCircleLines(int32(centerScreen.X), int32(centerScreen.Y), markerRadius+2, rl.NewColor(255, 100, 255, 255))
 			rl.DrawCircle(int32(centerScreen.X), int32(centerScreen.Y), markerRadius+1, rl.NewColor(255, 100, 255, 255))
 
@@ -188,7 +188,7 @@ func (app *App) drawRadiusMeasurement() {
 
 				// Calculate 3D points on the circle
 				var p1_3D, p2_3D geometry.Vector3
-				switch app.radiusMeasurement.constraintAxis {
+				switch app.Measurement.radiusMeasurement.constraintAxis {
 				case 0: // X constant, circle in YZ plane
 					p1_3D = geometry.NewVector3(center.X, center.Y+cos1, center.Z+sin1)
 					p2_3D = geometry.NewVector3(center.X, center.Y+cos2, center.Z+sin2)
@@ -203,8 +203,8 @@ func (app *App) drawRadiusMeasurement() {
 				// Project to 2D screen space
 				pos1 := rl.Vector3{X: float32(p1_3D.X), Y: float32(p1_3D.Y), Z: float32(p1_3D.Z)}
 				pos2 := rl.Vector3{X: float32(p2_3D.X), Y: float32(p2_3D.Y), Z: float32(p2_3D.Z)}
-				screenP1 := rl.GetWorldToScreen(pos1, app.camera)
-				screenP2 := rl.GetWorldToScreen(pos2, app.camera)
+				screenP1 := rl.GetWorldToScreen(pos1, app.Camera.camera)
+				screenP2 := rl.GetWorldToScreen(pos2, app.Camera.camera)
 
 				// Draw 2D line segment
 				rl.DrawLineEx(screenP1, screenP2, lineThickness, rl.NewColor(255, 150, 255, 200))
@@ -220,7 +220,7 @@ func (app *App) drawRadiusMeasurementLabel() {
 	const yOffset = float32(30)
 
 	// Draw labels for all completed radius measurements
-	for idx, rm := range app.radiusMeasurements {
+	for idx, rm := range app.Measurement.radiusMeasurements {
 		if rm.radius <= 0 {
 			continue
 		}
@@ -231,19 +231,19 @@ func (app *App) drawRadiusMeasurementLabel() {
 			Y: float32(rm.center.Y),
 			Z: float32(rm.center.Z),
 		}
-		screenPos := rl.GetWorldToScreen(centerPos, app.camera)
+		screenPos := rl.GetWorldToScreen(centerPos, app.Camera.camera)
 		screenPos.Y -= yOffset // Offset above the center point
 
 		// Check if this radius measurement is in multi-select
-		isSelected := (app.selectedRadiusMeasurement != nil && *app.selectedRadiusMeasurement == idx)
-		for _, selIdx := range app.selectedRadiusMeasurements {
+		isSelected := (app.Measurement.selectedRadiusMeasurement != nil && *app.Measurement.selectedRadiusMeasurement == idx)
+		for _, selIdx := range app.Measurement.selectedRadiusMeasurements {
 			if selIdx == idx {
 				isSelected = true
 				break
 			}
 		}
 
-		isHovered := app.hoveredRadiusMeasurement != nil && *app.hoveredRadiusMeasurement == idx
+		isHovered := app.Measurement.hoveredRadiusMeasurement != nil && *app.Measurement.hoveredRadiusMeasurement == idx
 
 		// Create and draw label
 		label := MeasurementLabel{
@@ -255,24 +255,24 @@ func (app *App) drawRadiusMeasurementLabel() {
 			IsHovered:  isHovered,
 		}
 
-		bgRect := label.Draw(app.font, fontSize, padding)
-		app.radiusLabels[idx] = bgRect
+		bgRect := label.Draw(app.UI.font, fontSize, padding)
+		app.Measurement.radiusLabels[idx] = bgRect
 	}
 
 	// Draw label for the current radius measurement being created
-	if app.radiusMeasurement != nil && app.radiusMeasurement.radius > 0 {
+	if app.Measurement.radiusMeasurement != nil && app.Measurement.radiusMeasurement.radius > 0 {
 		// Project center to screen
 		centerPos := rl.Vector3{
-			X: float32(app.radiusMeasurement.center.X),
-			Y: float32(app.radiusMeasurement.center.Y),
-			Z: float32(app.radiusMeasurement.center.Z),
+			X: float32(app.Measurement.radiusMeasurement.center.X),
+			Y: float32(app.Measurement.radiusMeasurement.center.Y),
+			Z: float32(app.Measurement.radiusMeasurement.center.Z),
 		}
-		screenPos := rl.GetWorldToScreen(centerPos, app.camera)
+		screenPos := rl.GetWorldToScreen(centerPos, app.Camera.camera)
 		screenPos.Y -= yOffset
 
 		// Create and draw label (current measurement is never selected/hovered)
 		label := MeasurementLabel{
-			Text:       fmt.Sprintf("R: %.2f", app.radiusMeasurement.radius),
+			Text:       fmt.Sprintf("R: %.2f", app.Measurement.radiusMeasurement.radius),
 			ScreenPos:  screenPos,
 			BaseColor:  rl.Magenta,
 			HoverColor: rl.NewColor(255, 100, 255, 255),
@@ -280,7 +280,7 @@ func (app *App) drawRadiusMeasurementLabel() {
 			IsHovered:  false,
 		}
 
-		label.Draw(app.font, fontSize, padding)
+		label.Draw(app.UI.font, fontSize, padding)
 	}
 }
 
@@ -288,8 +288,8 @@ func (app *App) drawRadiusMeasurementLabel() {
 func (app *App) drawMeasurementSegmentLine(segment MeasurementSegment, color rl.Color) {
 	p1 := rl.Vector3{X: float32(segment.start.X), Y: float32(segment.start.Y), Z: float32(segment.start.Z)}
 	p2 := rl.Vector3{X: float32(segment.end.X), Y: float32(segment.end.Y), Z: float32(segment.end.Z)}
-	screenP1 := rl.GetWorldToScreen(p1, app.camera)
-	screenP2 := rl.GetWorldToScreen(p2, app.camera)
+	screenP1 := rl.GetWorldToScreen(p1, app.Camera.camera)
+	screenP2 := rl.GetWorldToScreen(p2, app.Camera.camera)
 
 	const markerRadius = 3
 	const lineThickness = 2
@@ -311,8 +311,8 @@ func (app *App) drawMeasurementSegmentLabel(segment MeasurementSegment, segIdx [
 
 	p1 := rl.Vector3{X: float32(segment.start.X), Y: float32(segment.start.Y), Z: float32(segment.start.Z)}
 	p2 := rl.Vector3{X: float32(segment.end.X), Y: float32(segment.end.Y), Z: float32(segment.end.Z)}
-	screenP1 := rl.GetWorldToScreen(p1, app.camera)
-	screenP2 := rl.GetWorldToScreen(p2, app.camera)
+	screenP1 := rl.GetWorldToScreen(p1, app.Camera.camera)
+	screenP2 := rl.GetWorldToScreen(p2, app.Camera.camera)
 
 	// Calculate measurement text position
 	distance := math.Sqrt(
@@ -330,18 +330,18 @@ func (app *App) drawMeasurementSegmentLabel(segment MeasurementSegment, segIdx [
 	isHovered := false
 
 	// Check single selection
-	if app.selectedSegment != nil && app.selectedSegment[0] == segIdx[0] && app.selectedSegment[1] == segIdx[1] {
+	if app.Measurement.selectedSegment != nil && app.Measurement.selectedSegment[0] == segIdx[0] && app.Measurement.selectedSegment[1] == segIdx[1] {
 		isSelected = true
 	}
 	// Check multi-selection
-	for _, sel := range app.selectedSegments {
+	for _, sel := range app.Measurement.selectedSegments {
 		if sel[0] == segIdx[0] && sel[1] == segIdx[1] {
 			isSelected = true
 			break
 		}
 	}
 	// Check hover
-	if app.hoveredSegment != nil && app.hoveredSegment[0] == segIdx[0] && app.hoveredSegment[1] == segIdx[1] {
+	if app.Measurement.hoveredSegment != nil && app.Measurement.hoveredSegment[0] == segIdx[0] && app.Measurement.hoveredSegment[1] == segIdx[1] {
 		isHovered = true
 	}
 
@@ -355,8 +355,8 @@ func (app *App) drawMeasurementSegmentLabel(segment MeasurementSegment, segIdx [
 		IsHovered:  isHovered,
 	}
 
-	labelRect := label.Draw(app.font, fontSize, padding)
-	app.segmentLabels[segIdx] = labelRect
+	labelRect := label.Draw(app.UI.font, fontSize, padding)
+	app.Measurement.segmentLabels[segIdx] = labelRect
 
 	// Check for overlap with already drawn labels
 	for _, drawnRect := range drawnLabels {

@@ -22,16 +22,16 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	screenHeight := float32(rl.GetScreenHeight())
 
 	// Live measurement preview (bottom-right corner)
-	if len(app.selectedPoints) == 1 && app.horizontalPreview != nil {
-		p1 := app.selectedPoints[0]
-		p2 := *app.horizontalPreview
+	if len(app.Measurement.selectedPoints) == 1 && app.Measurement.horizontalPreview != nil {
+		p1 := app.Measurement.selectedPoints[0]
+		p2 := *app.Measurement.horizontalPreview
 
 		var distance float64
 		var previewText string
 
-		if app.constraintActive && app.constraintType == 0 {
+		if app.Constraint.active && app.Constraint.constraintType == 0 {
 			// Axis constraint - show distance along axis only
-			switch app.constraintAxis {
+			switch app.Constraint.axis {
 			case 0: // X axis
 				distance = math.Abs(p2.X - p1.X)
 				previewText = fmt.Sprintf("ΔX: %.2f mm", distance)
@@ -50,7 +50,7 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 
 		// Draw preview box in bottom-right corner
 		boxPadding := float32(10)
-		textSize := rl.MeasureTextEx(app.font, previewText, fontSize16, 1)
+		textSize := rl.MeasureTextEx(app.UI.font, previewText, fontSize16, 1)
 		boxWidth := textSize.X + boxPadding*2
 		boxHeight := textSize.Y + boxPadding*2
 		boxX := screenWidth - boxWidth - 20
@@ -63,13 +63,13 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		// Draw distance text
 		textX := boxX + boxPadding
 		textY := boxY + boxPadding
-		rl.DrawTextEx(app.font, previewText, rl.Vector2{X: textX, Y: textY}, fontSize16, 1, rl.Yellow)
+		rl.DrawTextEx(app.UI.font, previewText, rl.Vector2{X: textX, Y: textY}, fontSize16, 1, rl.Yellow)
 	}
 
 	// Loading indicator
-	if app.isLoading {
+	if app.FileWatch.isLoading {
 		// Calculate loading text and spinner
-		elapsed := time.Since(app.loadingStartTime).Seconds()
+		elapsed := time.Since(app.FileWatch.loadingStartTime).Seconds()
 		spinnerChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinnerIdx := int(elapsed*10) % len(spinnerChars)
 		loadingText := fmt.Sprintf("%s Loading... (%.1fs)", spinnerChars[spinnerIdx], elapsed)
@@ -85,46 +85,46 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		rl.DrawRectangleLines(int32(boxX), int32(boxY), int32(boxWidth), int32(boxHeight), rl.Yellow)
 
 		// Draw loading text
-		textSize := rl.MeasureTextEx(app.font, loadingText, fontSize18, 1)
+		textSize := rl.MeasureTextEx(app.UI.font, loadingText, fontSize18, 1)
 		textX := boxX + (boxWidth-textSize.X)/2
 		textY := boxY + (boxHeight-textSize.Y)/2
-		rl.DrawTextEx(app.font, loadingText, rl.Vector2{X: textX, Y: textY}, fontSize18, 1, rl.Yellow)
+		rl.DrawTextEx(app.UI.font, loadingText, rl.Vector2{X: textX, Y: textY}, fontSize18, 1, rl.Yellow)
 	}
 
 	// === DIMENSIONS ===
-	rl.DrawTextEx(app.font, "Dimensions:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+	rl.DrawTextEx(app.UI.font, "Dimensions:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  Model: %s", app.model.Name), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
+	rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Model: %s", app.Model.model.Name), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
 	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  Triangles: %d", result.TriangleCount), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
+	rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Triangles: %d", result.TriangleCount), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
 	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  Surface Area: %.2f mm²", result.SurfaceArea), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
+	rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Surface Area: %.2f mm²", result.SurfaceArea), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
 	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  Volume: %.2f mm³", result.Volume), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
+	rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Volume: %.2f mm³", result.Volume), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
 	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  Size: %.2f × %.2f × %.2f mm", result.Dimensions.X, result.Dimensions.Y, result.Dimensions.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
+	rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Size: %.2f × %.2f × %.2f mm", result.Dimensions.X, result.Dimensions.Y, result.Dimensions.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.White)
 	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  PLA Weight (100%%): %.2f g", result.WeightPLA100), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 200, 255, 255))
+	rl.DrawTextEx(app.UI.font, fmt.Sprintf("  PLA Weight (100%%): %.2f g", result.WeightPLA100), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 200, 255, 255))
 	y += lineHeight
-	rl.DrawTextEx(app.font, fmt.Sprintf("  PLA Weight (15%%):  %.2f g", result.WeightPLA15), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 200, 255, 255))
+	rl.DrawTextEx(app.UI.font, fmt.Sprintf("  PLA Weight (15%%):  %.2f g", result.WeightPLA15), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 200, 255, 255))
 	y += lineHeight * 2
 
 	// === MEASURE ===
-	if len(app.selectedPoints) > 0 {
-		rl.DrawTextEx(app.font, "Measure:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+	if len(app.Measurement.selectedPoints) > 0 {
+		rl.DrawTextEx(app.UI.font, "Measure:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 		y += lineHeight
 
-		p1 := app.selectedPoints[0]
-		rl.DrawTextEx(app.font, fmt.Sprintf("  Point 1: (%.2f, %.2f, %.2f)", p1.X, p1.Y, p1.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
+		p1 := app.Measurement.selectedPoints[0]
+		rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Point 1: (%.2f, %.2f, %.2f)", p1.X, p1.Y, p1.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
 		y += lineHeight
 
-		if len(app.selectedPoints) >= 2 {
-			p2 := app.selectedPoints[1]
-			rl.DrawTextEx(app.font, fmt.Sprintf("  Point 2: (%.2f, %.2f, %.2f)", p2.X, p2.Y, p2.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
+		if len(app.Measurement.selectedPoints) >= 2 {
+			p2 := app.Measurement.selectedPoints[1]
+			rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Point 2: (%.2f, %.2f, %.2f)", p2.X, p2.Y, p2.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
 			y += lineHeight
 
 			distance := p1.Distance(p2)
-			rl.DrawTextEx(app.font, fmt.Sprintf("  Distance: %.1f units", distance), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+			rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Distance: %.1f units", distance), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 			y += lineHeight
 
 			// Calculate elevation angle
@@ -132,96 +132,96 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 			horizontalDist := math.Sqrt(v.X*v.X + v.Y*v.Y)
 			elevationRad := math.Atan2(v.Z, horizontalDist)
 			elevationDeg := elevationRad * 180.0 / math.Pi
-			rl.DrawTextEx(app.font, fmt.Sprintf("  Elevation: %.1f°", elevationDeg), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(0, 255, 255, 255))
+			rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Elevation: %.1f°", elevationDeg), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(0, 255, 255, 255))
 			y += lineHeight
 		}
 		y += lineHeight
 	}
 
 	// === VIEW ===
-	rl.DrawTextEx(app.font, "View:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+	rl.DrawTextEx(app.UI.font, "View:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 	y += lineHeight
-	rl.DrawTextEx(app.font, "  Home: Reset | T: Top | B: Bottom", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	rl.DrawTextEx(app.UI.font, "  Home: Reset | T: Top | B: Bottom", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
-	rl.DrawTextEx(app.font, "  1: Front | 2: Back | 3: Left | 4: Right", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	rl.DrawTextEx(app.UI.font, "  1: Front | 2: Back | 3: Left | 4: Right", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight * 2
 
 	// === NAVIGATE ===
-	rl.DrawTextEx(app.font, "Navigate:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+	rl.DrawTextEx(app.UI.font, "Navigate:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 	y += lineHeight
-	rl.DrawTextEx(app.font, "  Left Drag: Rotate | Shift+Drag: Pan", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	rl.DrawTextEx(app.UI.font, "  Left Drag: Rotate | Shift+Drag: Pan", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
-	rl.DrawTextEx(app.font, "  Mouse Wheel: Zoom | Middle: Pan", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	rl.DrawTextEx(app.UI.font, "  Mouse Wheel: Zoom | Middle: Pan", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
-	rl.DrawTextEx(app.font, "  W: Wireframe | F: Fill", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	rl.DrawTextEx(app.UI.font, "  W: Wireframe | F: Fill", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
 
 	// Context-specific measurement controls
-	if len(app.selectedPoints) == 1 && app.radiusMeasurement == nil {
+	if len(app.Measurement.selectedPoints) == 1 && app.Measurement.radiusMeasurement == nil {
 		// Line measurement mode - show constraint shortcuts
 		y += lineHeight
-		rl.DrawTextEx(app.font, "Constraints:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+		rl.DrawTextEx(app.UI.font, "Constraints:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 		y += lineHeight
-		rl.DrawTextEx(app.font, "  X, Y, Z: Constrain to axis", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+		rl.DrawTextEx(app.UI.font, "  X, Y, Z: Constrain to axis", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 		y += lineHeight
-		if app.constraintActive && app.constraintType == 0 {
-			axisName := []string{"X", "Y", "Z"}[app.constraintAxis]
-			rl.DrawTextEx(app.font, fmt.Sprintf("  Active: %s axis", axisName), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
+		if app.Constraint.active && app.Constraint.constraintType == 0 {
+			axisName := []string{"X", "Y", "Z"}[app.Constraint.axis]
+			rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Active: %s axis", axisName), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
 			y += lineHeight
 		}
-	} else if app.radiusMeasurement != nil {
+	} else if app.Measurement.radiusMeasurement != nil {
 		// Radius measurement mode
 		y += lineHeight
-		rl.DrawTextEx(app.font, "RADIUS MODE", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Magenta)
+		rl.DrawTextEx(app.UI.font, "RADIUS MODE", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Magenta)
 		y += lineHeight
-		pointsText := fmt.Sprintf("  Points: %d/3", len(app.radiusMeasurement.points))
-		rl.DrawTextEx(app.font, pointsText, rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
+		pointsText := fmt.Sprintf("  Points: %d/3", len(app.Measurement.radiusMeasurement.points))
+		rl.DrawTextEx(app.UI.font, pointsText, rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
 		y += lineHeight
-		if len(app.radiusMeasurement.points) < 3 {
-			rl.DrawTextEx(app.font, "  Left Click: Select 3 points on arc", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
+		if len(app.Measurement.radiusMeasurement.points) < 3 {
+			rl.DrawTextEx(app.UI.font, "  Left Click: Select 3 points on arc", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
 		} else {
-			rl.DrawTextEx(app.font, "  Radius calculated!", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 255, 100, 255))
+			rl.DrawTextEx(app.UI.font, "  Radius calculated!", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 255, 100, 255))
 		}
 		y += lineHeight
-		rl.DrawTextEx(app.font, "  ESC: Cancel/close", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
+		rl.DrawTextEx(app.UI.font, "  ESC: Cancel/close", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
 		y += lineHeight
-	} else if len(app.selectedPoints) == 0 {
-		rl.DrawTextEx(app.font, "  Left Click: Select point or segment", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
+	} else if len(app.Measurement.selectedPoints) == 0 {
+		rl.DrawTextEx(app.UI.font, "  Left Click: Select point or segment", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
 		y += lineHeight
-		rl.DrawTextEx(app.font, "  R: Measure radius (arc/circle)", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
+		rl.DrawTextEx(app.UI.font, "  R: Measure radius (arc/circle)", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
 		y += lineHeight
-		if app.selectedSegment != nil {
-			rl.DrawTextEx(app.font, "  Backspace: Delete selected segment", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
+		if app.Measurement.selectedSegment != nil {
+			rl.DrawTextEx(app.UI.font, "  Backspace: Delete selected segment", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
 			y += lineHeight
 		}
-		if app.currentLine != nil && len(app.currentLine.segments) > 0 || len(app.measurementLines) > 0 {
-			rl.DrawTextEx(app.font, "  C: Clear all measurements", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
+		if app.Measurement.currentLine != nil && len(app.Measurement.currentLine.segments) > 0 || len(app.Measurement.measurementLines) > 0 {
+			rl.DrawTextEx(app.UI.font, "  C: Clear all measurements", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
 			y += lineHeight
 		}
-	} else if len(app.selectedPoints) == 1 {
-		rl.DrawTextEx(app.font, "  Left Click: Select second point", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
+	} else if len(app.Measurement.selectedPoints) == 1 {
+		rl.DrawTextEx(app.UI.font, "  Left Click: Select second point", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
 		y += lineHeight
-		rl.DrawTextEx(app.font, "  Click Axis: Constrain to X/Y/Z", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
+		rl.DrawTextEx(app.UI.font, "  Click Axis: Constrain to X/Y/Z", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
 		y += lineHeight
-		if app.constraintActive {
-			rl.DrawTextEx(app.font, "  Alt+Click: Complete constrained measurement", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
+		if app.Constraint.active {
+			rl.DrawTextEx(app.UI.font, "  Alt+Click: Complete constrained measurement", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
 			y += lineHeight
 		} else {
-			rl.DrawTextEx(app.font, "  Alt+Hover: Preview constrained measurement", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+			rl.DrawTextEx(app.UI.font, "  Alt+Hover: Preview constrained measurement", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 			y += lineHeight
 		}
-		rl.DrawTextEx(app.font, "  ESC: Complete measurement line", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
+		rl.DrawTextEx(app.UI.font, "  ESC: Complete measurement line", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
 		y += lineHeight
-		rl.DrawTextEx(app.font, "  Backspace: Delete last point", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
+		rl.DrawTextEx(app.UI.font, "  Backspace: Delete last point", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
 		y += lineHeight
 	}
 
 	// Draw selection rectangle if active
-	if app.isSelectingWithRect {
-		minX := float32(math.Min(float64(app.selectionRectStart.X), float64(app.selectionRectEnd.X)))
-		maxX := float32(math.Max(float64(app.selectionRectStart.X), float64(app.selectionRectEnd.X)))
-		minY := float32(math.Min(float64(app.selectionRectStart.Y), float64(app.selectionRectEnd.Y)))
-		maxY := float32(math.Max(float64(app.selectionRectStart.Y), float64(app.selectionRectEnd.Y)))
+	if app.Interaction.isSelectingWithRect {
+		minX := float32(math.Min(float64(app.Interaction.selectionRectStart.X), float64(app.Interaction.selectionRectEnd.X)))
+		maxX := float32(math.Max(float64(app.Interaction.selectionRectStart.X), float64(app.Interaction.selectionRectEnd.X)))
+		minY := float32(math.Min(float64(app.Interaction.selectionRectStart.Y), float64(app.Interaction.selectionRectEnd.Y)))
+		maxY := float32(math.Max(float64(app.Interaction.selectionRectStart.Y), float64(app.Interaction.selectionRectEnd.Y)))
 		rect := rl.Rectangle{X: minX, Y: minY, Width: maxX - minX, Height: maxY - minY}
 
 		// Draw semi-transparent fill
@@ -231,7 +231,7 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	}
 
 	// FPS
-	rl.DrawTextEx(app.font, fmt.Sprintf("FPS: %d", rl.GetFPS()), rl.Vector2{X: 10, Y: float32(rl.GetScreenHeight()) - 30}, fontSize20, 1, rl.Lime)
+	rl.DrawTextEx(app.UI.font, fmt.Sprintf("FPS: %d", rl.GetFPS()), rl.Vector2{X: 10, Y: float32(rl.GetScreenHeight()) - 30}, fontSize20, 1, rl.Lime)
 }
 
 // getPointColor returns a color for a point marker

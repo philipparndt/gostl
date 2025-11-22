@@ -9,8 +9,8 @@ import (
 // updateHoveredAxis checks which axis (if any) is under the mouse cursor
 func (app *App) updateHoveredAxis() {
 	// Only update when in measurement mode with one point selected
-	if len(app.selectedPoints) != 1 {
-		app.hoveredAxis = -1
+	if len(app.Measurement.selectedPoints) != 1 {
+		app.AxisGizmo.hoveredAxis = -1
 		return
 	}
 
@@ -24,10 +24,10 @@ func (app *App) updateHoveredAxis() {
 	origin := rl.Vector2{X: originX, Y: originY}
 
 	// Calculate rotation
-	cosX := float32(math.Cos(float64(app.cameraAngleX)))
-	sinX := float32(math.Sin(float64(app.cameraAngleX)))
-	cosY := float32(math.Cos(float64(app.cameraAngleY)))
-	sinY := float32(math.Sin(float64(app.cameraAngleY)))
+	cosX := float32(math.Cos(float64(app.Camera.angleX)))
+	sinX := float32(math.Sin(float64(app.Camera.angleX)))
+	cosY := float32(math.Cos(float64(app.Camera.angleY)))
+	sinY := float32(math.Sin(float64(app.Camera.angleY)))
 
 	// Project cube corners to 2D (same as in drawCoordinateAxes3D)
 	cubeCorners := [8]rl.Vector3{
@@ -68,5 +68,5 @@ func (app *App) updateHoveredAxis() {
 		}
 	}
 
-	app.hoveredAxis = hoveredAxis
+	app.AxisGizmo.hoveredAxis = hoveredAxis
 }

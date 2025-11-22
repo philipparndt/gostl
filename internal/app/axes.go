@@ -21,10 +21,10 @@ func (app *App) drawCoordinateAxes3D() {
 	origin := rl.Vector2{X: originX, Y: originY}
 
 	// Calculate 3D axis directions rotated by camera angles
-	cosX := float32(math.Cos(float64(app.cameraAngleX)))
-	sinX := float32(math.Sin(float64(app.cameraAngleX)))
-	cosY := float32(math.Cos(float64(app.cameraAngleY)))
-	sinY := float32(math.Sin(float64(app.cameraAngleY)))
+	cosX := float32(math.Cos(float64(app.Camera.angleX)))
+	sinX := float32(math.Sin(float64(app.Camera.angleX)))
+	cosY := float32(math.Cos(float64(app.Camera.angleY)))
+	sinY := float32(math.Sin(float64(app.Camera.angleY)))
 
 	// Project cube corners to 2D screen space
 	cubeCorners := [8]rl.Vector3{
@@ -133,7 +133,7 @@ func (app *App) drawCoordinateAxes3D() {
 
 		// Principal axes (X, Y, Z)
 		if e.axis >= 0 && e.axis <= 2 {
-			if app.constraintActive && app.constraintAxis != e.axis {
+			if app.Constraint.active && app.Constraint.axis != e.axis {
 				// Dim non-constrained axes to 50% brightness
 				color = rl.NewColor(
 					baseColor.R/2,
@@ -177,20 +177,20 @@ func (app *App) drawCoordinateAxes3D() {
 	bgColorY := rl.NewColor(20, 20, 20, 200)
 	bgColorZ := rl.NewColor(20, 20, 20, 200)
 
-	if app.constraintActive {
-		if app.constraintAxis != 0 {
+	if app.Constraint.active {
+		if app.Constraint.axis != 0 {
 			// Dim X label to 50% of red
 			labelColorX = rl.NewColor(128, 0, 0, 200)
 		} else {
 			bgColorX = rl.NewColor(40, 20, 20, 220) // Highlighted background for active axis
 		}
-		if app.constraintAxis != 1 {
+		if app.Constraint.axis != 1 {
 			// Dim Y label to 50% of green
 			labelColorY = rl.NewColor(0, 128, 0, 200)
 		} else {
 			bgColorY = rl.NewColor(20, 40, 20, 220) // Highlighted background for active axis
 		}
-		if app.constraintAxis != 2 {
+		if app.Constraint.axis != 2 {
 			// Dim Z label to 50% of blue
 			labelColorZ = rl.NewColor(0, 0, 128, 200)
 		} else {
@@ -199,13 +199,13 @@ func (app *App) drawCoordinateAxes3D() {
 	}
 
 	// Highlight labels on hover (brighten the background)
-	if app.hoveredAxisLabel == 0 {
+	if app.AxisGizmo.hoveredAxisLabel == 0 {
 		bgColorX = rl.NewColor(60, 40, 40, 250) // Brighter for hover
 	}
-	if app.hoveredAxisLabel == 1 {
+	if app.AxisGizmo.hoveredAxisLabel == 1 {
 		bgColorY = rl.NewColor(40, 60, 40, 250) // Brighter for hover
 	}
-	if app.hoveredAxisLabel == 2 {
+	if app.AxisGizmo.hoveredAxisLabel == 2 {
 		bgColorZ = rl.NewColor(40, 40, 60, 250) // Brighter for hover
 	}
 
@@ -215,7 +215,7 @@ func (app *App) drawCoordinateAxes3D() {
 
 	// X axis label at point 5
 	posX := rl.Vector2{X: screenCorners[5].pos.X + 5, Y: screenCorners[5].pos.Y}
-	textSizeX := rl.MeasureTextEx(app.font, "X", fontSize, 1)
+	textSizeX := rl.MeasureTextEx(app.UI.font, "X", fontSize, 1)
 	boundsX := rl.Rectangle{
 		X:      posX.X - padding,
 		Y:      posX.Y - padding,
@@ -223,11 +223,11 @@ func (app *App) drawCoordinateAxes3D() {
 		Height: textSizeX.Y + 2*padding,
 	}
 	rl.DrawRectangleRec(boundsX, bgColorX)
-	rl.DrawTextEx(app.font, "X", posX, fontSize, 1, labelColorX)
+	rl.DrawTextEx(app.UI.font, "X", posX, fontSize, 1, labelColorX)
 
 	// Y axis label at point 7
 	posY := rl.Vector2{X: screenCorners[7].pos.X - 15, Y: screenCorners[7].pos.Y - 12}
-	textSizeY := rl.MeasureTextEx(app.font, "Y", fontSize, 1)
+	textSizeY := rl.MeasureTextEx(app.UI.font, "Y", fontSize, 1)
 	boundsY := rl.Rectangle{
 		X:      posY.X - padding,
 		Y:      posY.Y - padding,
@@ -235,11 +235,11 @@ func (app *App) drawCoordinateAxes3D() {
 		Height: textSizeY.Y + 2*padding,
 	}
 	rl.DrawRectangleRec(boundsY, bgColorY)
-	rl.DrawTextEx(app.font, "Y", posY, fontSize, 1, labelColorY)
+	rl.DrawTextEx(app.UI.font, "Y", posY, fontSize, 1, labelColorY)
 
 	// Z axis label at point 0
 	posZ := rl.Vector2{X: screenCorners[0].pos.X - 15, Y: screenCorners[0].pos.Y}
-	textSizeZ := rl.MeasureTextEx(app.font, "Z", fontSize, 1)
+	textSizeZ := rl.MeasureTextEx(app.UI.font, "Z", fontSize, 1)
 	boundsZ := rl.Rectangle{
 		X:      posZ.X - padding,
 		Y:      posZ.Y - padding,
@@ -247,10 +247,10 @@ func (app *App) drawCoordinateAxes3D() {
 		Height: textSizeZ.Y + 2*padding,
 	}
 	rl.DrawRectangleRec(boundsZ, bgColorZ)
-	rl.DrawTextEx(app.font, "Z", posZ, fontSize, 1, labelColorZ)
+	rl.DrawTextEx(app.UI.font, "Z", posZ, fontSize, 1, labelColorZ)
 
 	// Store label bounds for hit detection in the app
-	app.axisLabelBounds = [3]rl.Rectangle{boundsX, boundsY, boundsZ}
+	app.AxisGizmo.labelBounds = [3]rl.Rectangle{boundsX, boundsY, boundsZ}
 }
 
 // rotateAxis rotates a 3D axis direction based on camera rotation angles

@@ -65,12 +65,12 @@ func (app *App) setupFileWatcher() error {
 
 	var filesToWatch []string
 
-	if app.isOpenSCAD {
+	if app.FileWatch.isOpenSCAD {
 		// For OpenSCAD files, watch the source file and all dependencies
-		workDir := filepath.Dir(app.sourceFile)
+		workDir := filepath.Dir(app.FileWatch.sourceFile)
 		renderer := openscad.NewRenderer(workDir)
 
-		deps, err := renderer.ResolveDependencies(app.sourceFile)
+		deps, err := renderer.ResolveDependencies(app.FileWatch.sourceFile)
 		if err != nil {
 			return fmt.Errorf("failed to resolve dependencies: %w", err)
 		}
@@ -82,14 +82,14 @@ func (app *App) setupFileWatcher() error {
 		}
 	} else {
 		// For STL files, just watch the source file
-		filesToWatch = []string{app.sourceFile}
-		fmt.Printf("Watching file for changes: %s\n", app.sourceFile)
+		filesToWatch = []string{app.FileWatch.sourceFile}
+		fmt.Printf("Watching file for changes: %s\n", app.FileWatch.sourceFile)
 	}
 
 	// Set up callback for file changes
 	callback := func(changedFile string) {
 		fmt.Printf("\nFile changed: %s\n", changedFile)
-		app.needsReload = true
+		app.FileWatch.needsReload = true
 	}
 
 	if err := fw.Watch(filesToWatch, callback); err != nil {
@@ -98,7 +98,7 @@ func (app *App) setupFileWatcher() error {
 	}
 
 	fw.Start()
-	app.fileWatcher = fw
+	app.FileWatch.fileWatcher = fw
 
 	return nil
 }
@@ -106,53 +106,53 @@ func (app *App) setupFileWatcher() error {
 // reloadModel reloads the model from the source file in the background
 func (app *App) reloadModel() {
 	// If already loading, skip
-	if app.isLoading {
+	if app.FileWatch.isLoading {
 		return
 	}
 
-	app.isLoading = true
-	app.loadingStartTime = time.Now()
+	app.FileWatch.isLoading = true
+	app.FileWatch.loadingStartTime = time.Now()
 	fmt.Println("Reloading model...")
 
 	// Load in background (but don't create mesh - that must be on main thread)
 	go func() {
 		// Load the model
-		model, stlFile, isOpenSCAD, err := loadModel(app.sourceFile)
+		model, stlFile, isOpenSCAD, err := loadModel(app.FileWatch.sourceFile)
 		if err != nil {
 			fmt.Printf("Error reloading model: %v\n", err)
-			app.isLoading = false
+			app.FileWatch.isLoading = false
 			return
 		}
 
 		// Store loaded model - mesh creation will happen on main thread
-		app.loadedModel = model
-		app.loadedSTLFile = stlFile
-		app.loadedIsOpenSCAD = isOpenSCAD
+		app.FileWatch.loadedModel = model
+		app.FileWatch.loadedSTLFile = stlFile
+		app.FileWatch.loadedIsOpenSCAD = isOpenSCAD
 	}()
 }
 
 // applyLoadedModel applies a loaded model (must be called on main thread)
 func (app *App) applyLoadedModel() {
-	if app.loadedModel == nil {
+	if app.FileWatch.loadedModel == nil {
 		return
 	}
 
 	// Preserve current camera state
-	savedCameraDistance := app.cameraDistance
-	savedCameraAngleX := app.cameraAngleX
-	savedCameraAngleY := app.cameraAngleY
-	savedCameraTarget := app.cameraTarget
+	savedCameraDistance := app.Camera.distance
+	savedCameraAngleX := app.Camera.angleX
+	savedCameraAngleY := app.Camera.angleY
+	savedCameraTarget := app.Camera.target
 
-	model := app.loadedModel
-	stlFile := app.loadedSTLFile
-	isOpenSCAD := app.loadedIsOpenSCAD
+	model := app.FileWatch.loadedModel
+	stlFile := app.FileWatch.loadedSTLFile
+	isOpenSCAD := app.FileWatch.loadedIsOpenSCAD
 
 	// Convert to mesh (must be on main thread for Raylib)
 	newMesh := stlToRaylibMesh(model)
 
 	// Clean up old temp file if exists
-	oldTempFile := app.tempSTLFile
-	if app.isOpenSCAD && oldTempFile != "" && oldTempFile != stlFile {
+	oldTempFile := app.FileWatch.tempSTLFile
+	if app.FileWatch.isOpenSCAD && oldTempFile != "" && oldTempFile != stlFile {
 		os.Remove(oldTempFile)
 	}
 
@@ -168,9 +168,9 @@ func (app *App) applyLoadedModel() {
 
 	// Adjust camera target based on model center change
 	centerDelta := rl.Vector3{
-		X: newModelCenter.X - app.modelCenter.X,
-		Y: newModelCenter.Y - app.modelCenter.Y,
-		Z: newModelCenter.Z - app.modelCenter.Z,
+		X: newModelCenter.X - app.Model.center.X,
+		Y: newModelCenter.Y - app.Model.center.Y,
+		Z: newModelCenter.Z - app.Model.center.Z,
 	}
 	adjustedCameraTarget := rl.Vector3{
 		X: savedCameraTarget.X + centerDelta.X,
@@ -179,31 +179,31 @@ func (app *App) applyLoadedModel() {
 	}
 
 	// Switch to new model (this should be quick)
-	oldMesh := app.mesh
-	app.mesh = newMesh
-	app.model = model
-	app.tempSTLFile = stlFile
-	app.isOpenSCAD = isOpenSCAD
-	app.modelCenter = newModelCenter
-	app.modelSize = newModelSize
-	app.avgVertexSpacing = newAvgVertexSpacing
-	app.axisOrigin = newModelCenter
+	oldMesh := app.Model.mesh
+	app.Model.mesh = newMesh
+	app.Model.model = model
+	app.FileWatch.tempSTLFile = stlFile
+	app.FileWatch.isOpenSCAD = isOpenSCAD
+	app.Model.center = newModelCenter
+	app.Model.size = newModelSize
+	app.Model.avgVertexSpacing = newAvgVertexSpacing
+	app.AxisGizmo.origin = newModelCenter
 
 	// Restore camera state with adjusted target
-	app.cameraDistance = savedCameraDistance
-	app.cameraAngleX = savedCameraAngleX
-	app.cameraAngleY = savedCameraAngleY
-	app.cameraTarget = adjustedCameraTarget
+	app.Camera.distance = savedCameraDistance
+	app.Camera.angleX = savedCameraAngleX
+	app.Camera.angleY = savedCameraAngleY
+	app.Camera.target = adjustedCameraTarget
 
 	// Unload old mesh after switching
 	rl.UnloadMesh(&oldMesh)
 
-	elapsed := time.Since(app.loadingStartTime)
+	elapsed := time.Since(app.FileWatch.loadingStartTime)
 	fmt.Printf("Model reloaded successfully in %.2fs!\n", elapsed.Seconds())
 
 	// Clear loaded model and finish loading
-	app.loadedModel = nil
-	app.loadedSTLFile = ""
-	app.loadedIsOpenSCAD = false
-	app.isLoading = false
+	app.FileWatch.loadedModel = nil
+	app.FileWatch.loadedSTLFile = ""
+	app.FileWatch.loadedIsOpenSCAD = false
+	app.FileWatch.isLoading = false
 }
