@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -17,45 +17,45 @@ import (
 )
 
 type App struct {
-	model              *stl.Model
-	mesh               rl.Mesh
-	material           rl.Material
-	camera             rl.Camera3D
-	selectedPoints     []geometry.Vector3
-	hoveredVertex      geometry.Vector3 // Vertex currently under mouse cursor
-	hasHoveredVertex   bool              // Whether hoveredVertex is valid
-	cameraDistance     float32
-	cameraAngleX       float32
-	cameraAngleY       float32
-	cameraTarget       rl.Vector3 // Current camera target (can be panned)
-	modelCenter        rl.Vector3 // Original model center
-	modelSize          float32    // For scaling markers appropriately
-	avgVertexSpacing   float32    // Average distance between vertices (for selection tolerance)
-	mouseDownPos       rl.Vector2
-	mouseMoved         bool
-	isPanning          bool
-	showWireframe      bool
-	showFilled         bool
-	showMeasurement    bool
-	font               rl.Font // JetBrains Mono font
-	horizontalSnap     *geometry.Vector3 // Snapped point for preview
-	horizontalPreview  *geometry.Vector3 // Preview point for measurement
-	constraintAxis     int               // 0=X, 1=Y, 2=Z (set when Alt is pressed with hovered point)
-	constraintActive   bool              // Whether axis constraint is active
-	hoveredAxis        int               // -1=none, 0=X, 1=Y, 2=Z
-	axisOrigin         rl.Vector3        // Origin point for the coordinate system display
-	axisLength         float32           // Length of axis lines
-	axisLabelBounds    [3]rl.Rectangle   // Bounding boxes for X, Y, Z axis labels (for hit detection)
-	hoveredAxisLabel   int               // -1=none, 0=X, 1=Y, 2=Z (for highlighting on hover)
-	constrainingPoint  *geometry.Vector3 // Point to constrain direction to (when alt+hovering a point)
-	constraintType     int               // 0=axis, 1=point (which type of constraint is active)
-	altWasPressedLast  bool              // Track if Alt was pressed in previous frame
-	measurementLines    []MeasurementLine  // All measurement lines (multiple segments per line)
-	currentLine         *MeasurementLine   // Current measurement line being drawn
-	selectedSegment     *[2]int            // [lineIndex, segmentIndex] for selected segment, nil if none
-	hoveredSegment      *[2]int            // [lineIndex, segmentIndex] for hovered segment, nil if none
-	segmentLabels       map[[2]int]rl.Rectangle // Map of segment indices to label bounding boxes
-	lastMousePos              rl.Vector2              // Last known mouse position
+	model                      *stl.Model
+	mesh                       rl.Mesh
+	material                   rl.Material
+	camera                     rl.Camera3D
+	selectedPoints             []geometry.Vector3
+	hoveredVertex              geometry.Vector3 // Vertex currently under mouse cursor
+	hasHoveredVertex           bool             // Whether hoveredVertex is valid
+	cameraDistance             float32
+	cameraAngleX               float32
+	cameraAngleY               float32
+	cameraTarget               rl.Vector3 // Current camera target (can be panned)
+	modelCenter                rl.Vector3 // Original model center
+	modelSize                  float32    // For scaling markers appropriately
+	avgVertexSpacing           float32    // Average distance between vertices (for selection tolerance)
+	mouseDownPos               rl.Vector2
+	mouseMoved                 bool
+	isPanning                  bool
+	showWireframe              bool
+	showFilled                 bool
+	showMeasurement            bool
+	font                       rl.Font                 // JetBrains Mono font
+	horizontalSnap             *geometry.Vector3       // Snapped point for preview
+	horizontalPreview          *geometry.Vector3       // Preview point for measurement
+	constraintAxis             int                     // 0=X, 1=Y, 2=Z (set when Alt is pressed with hovered point)
+	constraintActive           bool                    // Whether axis constraint is active
+	hoveredAxis                int                     // -1=none, 0=X, 1=Y, 2=Z
+	axisOrigin                 rl.Vector3              // Origin point for the coordinate system display
+	axisLength                 float32                 // Length of axis lines
+	axisLabelBounds            [3]rl.Rectangle         // Bounding boxes for X, Y, Z axis labels (for hit detection)
+	hoveredAxisLabel           int                     // -1=none, 0=X, 1=Y, 2=Z (for highlighting on hover)
+	constrainingPoint          *geometry.Vector3       // Point to constrain direction to (when alt+hovering a point)
+	constraintType             int                     // 0=axis, 1=point (which type of constraint is active)
+	altWasPressedLast          bool                    // Track if Alt was pressed in previous frame
+	measurementLines           []MeasurementLine       // All measurement lines (multiple segments per line)
+	currentLine                *MeasurementLine        // Current measurement line being drawn
+	selectedSegment            *[2]int                 // [lineIndex, segmentIndex] for selected segment, nil if none
+	hoveredSegment             *[2]int                 // [lineIndex, segmentIndex] for hovered segment, nil if none
+	segmentLabels              map[[2]int]rl.Rectangle // Map of segment indices to label bounding boxes
+	lastMousePos               rl.Vector2              // Last known mouse position
 	radiusMeasurement          *RadiusMeasurement      // Active radius measurement being created, nil if none
 	radiusMeasurements         []RadiusMeasurement     // All completed radius measurements
 	selectedRadiusMeasurement  *int                    // Index of selected radius measurement, nil if none
@@ -68,16 +68,16 @@ type App struct {
 	selectionRectEnd           rl.Vector2              // End position of selection rectangle
 
 	// OpenSCAD and file watching support
-	sourceFile          string               // Original file path (.stl or .scad)
-	isOpenSCAD          bool                 // Whether the source file is OpenSCAD
-	tempSTLFile         string               // Temporary STL file if rendering from OpenSCAD
-	fileWatcher         *watcher.FileWatcher // File watcher for auto-reload
-	needsReload         bool                 // Flag to indicate model needs reloading
-	isLoading           bool                 // Flag to indicate a reload is in progress
-	loadingStartTime    time.Time            // When loading started
-	loadedModel         *stl.Model           // Model loaded in background, ready to upload
-	loadedSTLFile       string               // STL file path for loaded model
-	loadedIsOpenSCAD    bool                 // Whether loaded model is from OpenSCAD
+	sourceFile       string               // Original file path (.stl or .scad)
+	isOpenSCAD       bool                 // Whether the source file is OpenSCAD
+	tempSTLFile      string               // Temporary STL file if rendering from OpenSCAD
+	fileWatcher      *watcher.FileWatcher // File watcher for auto-reload
+	needsReload      bool                 // Flag to indicate model needs reloading
+	isLoading        bool                 // Flag to indicate a reload is in progress
+	loadingStartTime time.Time            // When loading started
+	loadedModel      *stl.Model           // Model loaded in background, ready to upload
+	loadedSTLFile    string               // STL file path for loaded model
+	loadedIsOpenSCAD bool                 // Whether loaded model is from OpenSCAD
 
 	// Default camera settings (for reset)
 	defaultCameraDistance float32
@@ -329,9 +329,10 @@ func (app *App) applyLoadedModel() {
 	app.isLoading = false
 }
 
-func main() {
+// Run starts the application
+func Run() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: gostl-raylib <file>")
+		fmt.Println("Usage: gostl <file>")
 		fmt.Println("Supported formats: .stl, .scad")
 		os.Exit(1)
 	}
@@ -511,8 +512,8 @@ func main() {
 		app.drawRadiusMeasurementLabel()
 
 		// Draw measurement lines and points in 2D screen space (fixed pixel size)
-		const markerRadius = 3    // Fixed pixel radius for markers
-		const lineThickness = 2   // Fixed pixel thickness for lines
+		const markerRadius = 3  // Fixed pixel radius for markers
+		const lineThickness = 2 // Fixed pixel thickness for lines
 
 		// Project all points to screen space
 		screenPoints := make([]rl.Vector2, len(app.selectedPoints))
@@ -636,89 +637,88 @@ func main() {
 			rl.DrawCircle(int32(screenPos.X), int32(screenPos.Y), markerRadius+1, rl.NewColor(255, 255, 0, 80))
 		}
 
-
 		// Clear segment labels for this frame
 		app.segmentLabels = make(map[[2]int]rl.Rectangle)
 
-	// Collect all segments to draw with their priorities
-	type segmentToDraw struct {
-		segment  MeasurementSegment
-		color    rl.Color
-		segIdx   [2]int
-		priority int
-	}
-	segments := []segmentToDraw{}
+		// Collect all segments to draw with their priorities
+		type segmentToDraw struct {
+			segment  MeasurementSegment
+			color    rl.Color
+			segIdx   [2]int
+			priority int
+		}
+		segments := []segmentToDraw{}
 
-	// Helper function to check if segment is in multi-select
-	isSegmentSelected := func(lineIdx, segIdx int) bool {
-		for _, sel := range app.selectedSegments {
-			if sel[0] == lineIdx && sel[1] == segIdx {
-				return true
+		// Helper function to check if segment is in multi-select
+		isSegmentSelected := func(lineIdx, segIdx int) bool {
+			for _, sel := range app.selectedSegments {
+				if sel[0] == lineIdx && sel[1] == segIdx {
+					return true
+				}
+			}
+			return false
+		}
+
+		// Collect all stored measurement lines
+		for lineIdx, line := range app.measurementLines {
+			for segIdx, segment := range line.segments {
+				color := rl.NewColor(100, 200, 255, 255) // Cyan for completed lines
+				priority := 1                            // Normal priority
+				// Highlight selected segment (single or multi-select)
+				if (app.selectedSegment != nil && app.selectedSegment[0] == lineIdx && app.selectedSegment[1] == segIdx) ||
+					isSegmentSelected(lineIdx, segIdx) {
+					color = rl.Yellow // Yellow for selected
+					priority = 3      // Highest priority
+				} else if app.hoveredSegment != nil && app.hoveredSegment[0] == lineIdx && app.hoveredSegment[1] == segIdx {
+					color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
+					priority = 2                            // Medium priority
+				}
+				segments = append(segments, segmentToDraw{segment, color, [2]int{lineIdx, segIdx}, priority})
 			}
 		}
-		return false
-	}
 
-	// Collect all stored measurement lines
-	for lineIdx, line := range app.measurementLines {
-		for segIdx, segment := range line.segments {
-			color := rl.NewColor(100, 200, 255, 255) // Cyan for completed lines
-			priority := 1                            // Normal priority
-			// Highlight selected segment (single or multi-select)
-			if (app.selectedSegment != nil && app.selectedSegment[0] == lineIdx && app.selectedSegment[1] == segIdx) ||
-				isSegmentSelected(lineIdx, segIdx) {
-				color = rl.Yellow // Yellow for selected
-				priority = 3      // Highest priority
-			} else if app.hoveredSegment != nil && app.hoveredSegment[0] == lineIdx && app.hoveredSegment[1] == segIdx {
-				color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
-				priority = 2                            // Medium priority
-			}
-			segments = append(segments, segmentToDraw{segment, color, [2]int{lineIdx, segIdx}, priority})
-		}
-	}
-
-	// Collect current line segments (in progress)
-	if app.currentLine != nil {
-		for segIdx, segment := range app.currentLine.segments {
-			color := rl.NewColor(100, 200, 255, 255) // Cyan for current line
-			priority := 1                            // Normal priority
-			// Highlight selected segment (current line is at index len(app.measurementLines))
-			if (app.selectedSegment != nil && app.selectedSegment[0] == len(app.measurementLines) && app.selectedSegment[1] == segIdx) ||
-				isSegmentSelected(len(app.measurementLines), segIdx) {
-				color = rl.Yellow // Yellow for selected
-				priority = 3      // Highest priority
-			} else if app.hoveredSegment != nil && app.hoveredSegment[0] == len(app.measurementLines) && app.hoveredSegment[1] == segIdx {
-				color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
-				priority = 2                            // Medium priority
-			}
-			segments = append(segments, segmentToDraw{segment, color, [2]int{len(app.measurementLines), segIdx}, priority})
-		}
-	}
-
-	// Sort segments by priority (highest first)
-	for i := 0; i < len(segments); i++ {
-		for j := i + 1; j < len(segments); j++ {
-			if segments[j].priority > segments[i].priority {
-				segments[i], segments[j] = segments[j], segments[i]
+		// Collect current line segments (in progress)
+		if app.currentLine != nil {
+			for segIdx, segment := range app.currentLine.segments {
+				color := rl.NewColor(100, 200, 255, 255) // Cyan for current line
+				priority := 1                            // Normal priority
+				// Highlight selected segment (current line is at index len(app.measurementLines))
+				if (app.selectedSegment != nil && app.selectedSegment[0] == len(app.measurementLines) && app.selectedSegment[1] == segIdx) ||
+					isSegmentSelected(len(app.measurementLines), segIdx) {
+					color = rl.Yellow // Yellow for selected
+					priority = 3      // Highest priority
+				} else if app.hoveredSegment != nil && app.hoveredSegment[0] == len(app.measurementLines) && app.hoveredSegment[1] == segIdx {
+					color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
+					priority = 2                            // Medium priority
+				}
+				segments = append(segments, segmentToDraw{segment, color, [2]int{len(app.measurementLines), segIdx}, priority})
 			}
 		}
-	}
 
-	// First pass: Draw all lines and markers (so labels will be on top)
-	for _, seg := range segments {
-		app.drawMeasurementSegmentLine(seg.segment, seg.color)
-	}
-
-	// Second pass: Draw all labels in priority order, tracking drawn labels to avoid overlap
-	drawnLabels := []rl.Rectangle{}
-	for _, seg := range segments {
-		if app.drawMeasurementSegmentLabel(seg.segment, seg.segIdx, drawnLabels) {
-			// Label was drawn, add it to the list
-			if labelRect, exists := app.segmentLabels[seg.segIdx]; exists {
-				drawnLabels = append(drawnLabels, labelRect)
+		// Sort segments by priority (highest first)
+		for i := 0; i < len(segments); i++ {
+			for j := i + 1; j < len(segments); j++ {
+				if segments[j].priority > segments[i].priority {
+					segments[i], segments[j] = segments[j], segments[i]
+				}
 			}
 		}
-	}
+
+		// First pass: Draw all lines and markers (so labels will be on top)
+		for _, seg := range segments {
+			app.drawMeasurementSegmentLine(seg.segment, seg.color)
+		}
+
+		// Second pass: Draw all labels in priority order, tracking drawn labels to avoid overlap
+		drawnLabels := []rl.Rectangle{}
+		for _, seg := range segments {
+			if app.drawMeasurementSegmentLabel(seg.segment, seg.segIdx, drawnLabels) {
+				// Label was drawn, add it to the list
+				if labelRect, exists := app.segmentLabels[seg.segIdx]; exists {
+					drawnLabels = append(drawnLabels, labelRect)
+				}
+			}
+		}
 
 		// Draw in-place measurement text (in 2D screen space)
 		if len(app.selectedPoints) >= 2 {
@@ -1141,61 +1141,61 @@ func (app *App) handleInput() {
 				} else if app.hoveredAxisLabel >= 0 {
 					// Axis label click was already handled in handleInput, do nothing
 				} else if len(app.selectedPoints) == 1 && app.constraintActive && app.horizontalPreview != nil {
-				// In constrained mode: measure from first point to constrained point
-				firstPoint := app.selectedPoints[0]
-				constrainedPoint := *app.horizontalPreview
+					// In constrained mode: measure from first point to constrained point
+					firstPoint := app.selectedPoints[0]
+					constrainedPoint := *app.horizontalPreview
 
-				var secondPoint geometry.Vector3
-				if app.constraintType == 0 {
-					// Axis constraint: only the constrained axis changes
-					if app.constraintAxis == 0 {
-						// X axis: only X changes
-						secondPoint = geometry.NewVector3(constrainedPoint.X, firstPoint.Y, firstPoint.Z)
-					} else if app.constraintAxis == 1 {
-						// Y axis: only Y changes
-						secondPoint = geometry.NewVector3(firstPoint.X, constrainedPoint.Y, firstPoint.Z)
-					} else {
-						// Z axis: only Z changes
-						secondPoint = geometry.NewVector3(firstPoint.X, firstPoint.Y, constrainedPoint.Z)
+					var secondPoint geometry.Vector3
+					if app.constraintType == 0 {
+						// Axis constraint: only the constrained axis changes
+						if app.constraintAxis == 0 {
+							// X axis: only X changes
+							secondPoint = geometry.NewVector3(constrainedPoint.X, firstPoint.Y, firstPoint.Z)
+						} else if app.constraintAxis == 1 {
+							// Y axis: only Y changes
+							secondPoint = geometry.NewVector3(firstPoint.X, constrainedPoint.Y, firstPoint.Z)
+						} else {
+							// Z axis: only Z changes
+							secondPoint = geometry.NewVector3(firstPoint.X, firstPoint.Y, constrainedPoint.Z)
+						}
+					} else if app.constraintType == 1 {
+						// Point constraint: use the constrained point as the end point
+						secondPoint = constrainedPoint
 					}
-				} else if app.constraintType == 1 {
-					// Point constraint: use the constrained point as the end point
-					secondPoint = constrainedPoint
-				}
 
-				// Add segment to current line
-				if app.currentLine == nil {
-					app.currentLine = &MeasurementLine{}
-				}
-				app.currentLine.segments = append(app.currentLine.segments, MeasurementSegment{
-					start: firstPoint,
-					end:   secondPoint,
-				})
+					// Add segment to current line
+					if app.currentLine == nil {
+						app.currentLine = &MeasurementLine{}
+					}
+					app.currentLine.segments = append(app.currentLine.segments, MeasurementSegment{
+						start: firstPoint,
+						end:   secondPoint,
+					})
 
-				// Start new segment from the end point
-				app.selectedPoints = []geometry.Vector3{secondPoint}
-				app.constraintActive = false
-				app.constrainingPoint = nil
-				app.horizontalSnap = nil
-				app.horizontalPreview = nil
-			} else if len(app.selectedPoints) == 1 && app.hoveredAxis >= 0 {
-				// User clicked on an axis to set constraint direction
-				app.constraintAxis = app.hoveredAxis
-				app.constraintActive = true
-			} else if len(app.selectedPoints) == 0 && clickedSegment != nil {
-				// User clicked on a segment label to select it
-				app.selectedSegment = clickedSegment
-				fmt.Printf("Selected segment [%d, %d]\n", clickedSegment[0], clickedSegment[1])
-			} else if len(app.selectedPoints) == 0 && clickedSegment == nil && clickedRadiusMeasurement == nil {
-				// Clicked on empty space - deselect all and try to select point
-				app.selectedSegment = nil
-				app.selectedRadiusMeasurement = nil
-				app.selectedSegments = nil
-				app.selectedRadiusMeasurements = nil
-				app.selectPoint()
-			} else {
-				app.selectPoint()
-			}
+					// Start new segment from the end point
+					app.selectedPoints = []geometry.Vector3{secondPoint}
+					app.constraintActive = false
+					app.constrainingPoint = nil
+					app.horizontalSnap = nil
+					app.horizontalPreview = nil
+				} else if len(app.selectedPoints) == 1 && app.hoveredAxis >= 0 {
+					// User clicked on an axis to set constraint direction
+					app.constraintAxis = app.hoveredAxis
+					app.constraintActive = true
+				} else if len(app.selectedPoints) == 0 && clickedSegment != nil {
+					// User clicked on a segment label to select it
+					app.selectedSegment = clickedSegment
+					fmt.Printf("Selected segment [%d, %d]\n", clickedSegment[0], clickedSegment[1])
+				} else if len(app.selectedPoints) == 0 && clickedSegment == nil && clickedRadiusMeasurement == nil {
+					// Clicked on empty space - deselect all and try to select point
+					app.selectedSegment = nil
+					app.selectedRadiusMeasurement = nil
+					app.selectedSegments = nil
+					app.selectedRadiusMeasurements = nil
+					app.selectPoint()
+				} else {
+					app.selectPoint()
+				}
 			}
 		}
 		app.isPanning = false
@@ -1451,7 +1451,7 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		// Calculate loading text and spinner
 		elapsed := time.Since(app.loadingStartTime).Seconds()
 		spinnerChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		spinnerIdx := int(elapsed * 10) % len(spinnerChars)
+		spinnerIdx := int(elapsed*10) % len(spinnerChars)
 		loadingText := fmt.Sprintf("%s Loading... (%.1fs)", spinnerChars[spinnerIdx], elapsed)
 
 		// Draw semi-transparent overlay in top-right corner

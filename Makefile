@@ -1,9 +1,8 @@
 .PHONY: build test clean install run run-scad help
 
 # Variables
-BINARY_NAME=gostl-raylib
+BINARY_NAME=gostl
 BUILD_DIR=.
-CMD_DIR=./cmd/gostl-raylib
 PKG_LIST=$(go list ./... | grep -v /vendor/)
 
 help: ## Show this help message
@@ -14,7 +13,7 @@ help: ## Show this help message
 
 build: ## Build the Raylib GPU-accelerated binary
 	@echo "Building $(BINARY_NAME)..."
-	@go build -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	@go build -o $(BUILD_DIR)/$(BINARY_NAME)
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 test: ## Run tests
@@ -35,7 +34,7 @@ clean: ## Clean build artifacts
 
 install: build ## Install the binary to $GOPATH/bin
 	@echo "Installing $(BINARY_NAME)..."
-	@go install $(CMD_DIR)
+	@go install
 	@echo "Installed to $$(go env GOPATH)/bin/$(BINARY_NAME)"
 
 run: build ## Build and run with example STL file
