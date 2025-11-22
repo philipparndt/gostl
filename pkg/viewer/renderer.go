@@ -191,6 +191,15 @@ func (r *ModelRenderer) SetOnPointSelect(callback func(point geometry.Vector3)) 
 	r.onPointSelect = callback
 }
 
+// SetModel updates the model and resets the camera
+func (r *ModelRenderer) SetModel(model *stl.Model) {
+	r.model = model
+	r.camera = NewCamera(model.BoundingBox())
+	r.selectedPoints = make([]geometry.Vector3, 0)
+	r.hoverPoint = nil
+	r.Render(r.width, r.height)
+}
+
 // CreateRenderer creates the renderer for the widget
 func (r *ModelRenderer) CreateRenderer() fyne.WidgetRenderer {
 	return &modelWidgetRenderer{

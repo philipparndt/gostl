@@ -77,6 +77,10 @@ run-raylib: build-raylib ## Build and run Raylib GPU viewer with example
 	@echo "Running $(RAYLIB_BINARY_NAME)..."
 	@./$(RAYLIB_BINARY_NAME) ./examples/h2d-named/Large_Insert_13_6.stl
 
+run-scad: build-raylib ## Build and run Raylib GPU viewer with example
+	@echo "Running $(RAYLIB_BINARY_NAME)..."
+	@./$(RAYLIB_BINARY_NAME)  ~/dev/3d/filament/filament_holder_lip.scad
+
 fmt: ## Format code
 	@echo "Formatting code..."
 	@go fmt ./...

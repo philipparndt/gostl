@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -13,8 +16,10 @@ import (
 	"fyne.io/fyne/v2/widget"
 	"github.com/philipparndt/gostl/pkg/analysis"
 	"github.com/philipparndt/gostl/pkg/geometry"
+	"github.com/philipparndt/gostl/pkg/openscad"
 	"github.com/philipparndt/gostl/pkg/stl"
 	"github.com/philipparndt/gostl/pkg/viewer"
+	"github.com/philipparndt/gostl/pkg/watcher"
 )
 
 type App struct {
@@ -22,6 +27,12 @@ type App struct {
 	model           *stl.Model
 	renderer        *viewer.ModelRenderer
 	measurementInfo *MeasurementInfo
+
+	// OpenSCAD and file watching support
+	sourceFile  string               // Original file path (.stl or .scad)
+	isOpenSCAD  bool                 // Whether the source file is OpenSCAD
+	tempSTLFile string               // Temporary STL file if rendering from OpenSCAD
+	fileWatcher *watcher.FileWatcher // File watcher for auto-reload
 }
 
 type MeasurementInfo struct {
@@ -93,14 +104,202 @@ func (a *App) showFileDialog() {
 }
 
 func (a *App) loadFile(filename string) {
-	model, err := stl.Parse(filename)
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("failed to load STL file: %w", err), a.window)
+	// Clean up previous file watcher if exists
+	if a.fileWatcher != nil {
+		a.fileWatcher.Close()
+		a.fileWatcher = nil
+	}
+
+	// Clean up previous temp file if exists
+	if a.isOpenSCAD && a.tempSTLFile != "" {
+		os.Remove(a.tempSTLFile)
+	}
+
+	// Load the model
+	ext := strings.ToLower(filepath.Ext(filename))
+
+	var model *stl.Model
+	var err error
+	var stlFile string
+	var isOpenSCAD bool
+
+	if ext == ".scad" {
+		// OpenSCAD file - render to temporary STL
+		fmt.Printf("Rendering OpenSCAD file: %s\n", filename)
+
+		workDir := filepath.Dir(filename)
+		renderer := openscad.NewRenderer(workDir)
+
+		// Create temporary STL file
+		tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("gostl_gui_temp_%d.stl", time.Now().Unix()))
+
+		// Render OpenSCAD to STL
+		if err := renderer.RenderToSTL(filename, tempFile); err != nil {
+			dialog.ShowError(fmt.Errorf("failed to render OpenSCAD file: %w", err), a.window)
+			return
+		}
+
+		fmt.Printf("Rendered to: %s\n", tempFile)
+
+		// Parse the generated STL
+		model, err = stl.Parse(tempFile)
+		if err != nil {
+			os.Remove(tempFile)
+			dialog.ShowError(fmt.Errorf("failed to parse rendered STL: %w", err), a.window)
+			return
+		}
+
+		stlFile = tempFile
+		isOpenSCAD = true
+	} else if ext == ".stl" {
+		// Regular STL file
+		model, err = stl.Parse(filename)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("failed to load STL file: %w", err), a.window)
+			return
+		}
+		stlFile = filename
+		isOpenSCAD = false
+	} else {
+		dialog.ShowError(fmt.Errorf("unsupported file type: %s (expected .stl or .scad)", ext), a.window)
 		return
 	}
 
 	a.model = model
+	a.sourceFile = filename
+	a.isOpenSCAD = isOpenSCAD
+	a.tempSTLFile = stlFile
+
+	// Set up file watching
+	if err := a.setupFileWatcher(); err != nil {
+		fmt.Printf("Warning: Failed to set up file watching: %v\n", err)
+	}
+
 	a.setupMainUI()
+}
+
+// setupFileWatcher sets up file watching for the source file and its dependencies
+func (a *App) setupFileWatcher() error {
+	// Create file watcher with 500ms debounce
+	fw, err := watcher.NewFileWatcher(500 * time.Millisecond)
+	if err != nil {
+		return fmt.Errorf("failed to create file watcher: %w", err)
+	}
+
+	var filesToWatch []string
+
+	if a.isOpenSCAD {
+		// For OpenSCAD files, watch the source file and all dependencies
+		workDir := filepath.Dir(a.sourceFile)
+		renderer := openscad.NewRenderer(workDir)
+
+		deps, err := renderer.ResolveDependencies(a.sourceFile)
+		if err != nil {
+			return fmt.Errorf("failed to resolve dependencies: %w", err)
+		}
+
+		filesToWatch = deps
+		fmt.Printf("Watching %d file(s) for changes\n", len(filesToWatch))
+	} else {
+		// For STL files, just watch the source file
+		filesToWatch = []string{a.sourceFile}
+		fmt.Printf("Watching file for changes: %s\n", a.sourceFile)
+	}
+
+	// Set up callback for file changes
+	callback := func(changedFile string) {
+		fmt.Printf("\nFile changed: %s\n", changedFile)
+		a.reloadModel()
+	}
+
+	if err := fw.Watch(filesToWatch, callback); err != nil {
+		fw.Close()
+		return fmt.Errorf("failed to watch files: %w", err)
+	}
+
+	fw.Start()
+	a.fileWatcher = fw
+
+	return nil
+}
+
+// reloadModel reloads the model from the source file in the background
+func (a *App) reloadModel() {
+	fmt.Println("Reloading model...")
+
+	// Show loading dialog
+	progress := dialog.NewProgressInfinite("Loading", "Reloading model...", a.window)
+	progress.Show()
+
+	// Load in background
+	go func() {
+		startTime := time.Now()
+
+		// If we have a temp STL file from a previous OpenSCAD render, clean it up later
+		oldTempFile := a.tempSTLFile
+
+		// Load the model again
+		ext := strings.ToLower(filepath.Ext(a.sourceFile))
+
+		var model *stl.Model
+		var err error
+		var stlFile string
+
+		if ext == ".scad" {
+			// OpenSCAD file - render to temporary STL
+			workDir := filepath.Dir(a.sourceFile)
+			renderer := openscad.NewRenderer(workDir)
+
+			// Create temporary STL file
+			tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("gostl_gui_temp_%d.stl", time.Now().Unix()))
+
+			// Render OpenSCAD to STL
+			if err := renderer.RenderToSTL(a.sourceFile, tempFile); err != nil {
+				progress.Hide()
+				dialog.ShowError(fmt.Errorf("failed to render OpenSCAD file: %w", err), a.window)
+				return
+			}
+
+			// Parse the generated STL
+			model, err = stl.Parse(tempFile)
+			if err != nil {
+				os.Remove(tempFile)
+				progress.Hide()
+				dialog.ShowError(fmt.Errorf("failed to parse rendered STL: %w", err), a.window)
+				return
+			}
+
+			stlFile = tempFile
+		} else {
+			// Regular STL file
+			model, err = stl.Parse(a.sourceFile)
+			if err != nil {
+				progress.Hide()
+				dialog.ShowError(fmt.Errorf("failed to load STL file: %w", err), a.window)
+				return
+			}
+			stlFile = a.sourceFile
+		}
+
+		// Update app state (this is quick)
+		a.model = model
+		a.tempSTLFile = stlFile
+
+		// Update renderer with new model (preserves camera position)
+		a.renderer.SetModel(model)
+		a.updateMeasurements()
+
+		// Clean up old temp file if exists
+		if a.isOpenSCAD && oldTempFile != "" && oldTempFile != stlFile {
+			os.Remove(oldTempFile)
+		}
+
+		elapsed := time.Since(startTime)
+		fmt.Printf("Model reloaded successfully in %.2fs!\n", elapsed.Seconds())
+
+		// Hide progress dialog
+		progress.Hide()
+	}()
 }
 
 func (a *App) setupMainUI() {

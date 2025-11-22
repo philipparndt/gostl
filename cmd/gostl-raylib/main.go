@@ -4,11 +4,16 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 	"github.com/philipparndt/gostl/pkg/analysis"
 	"github.com/philipparndt/gostl/pkg/geometry"
+	"github.com/philipparndt/gostl/pkg/openscad"
 	"github.com/philipparndt/gostl/pkg/stl"
+	"github.com/philipparndt/gostl/pkg/watcher"
 )
 
 type App struct {
@@ -61,19 +66,211 @@ type App struct {
 	isSelectingWithRect        bool                    // Whether Ctrl+drag selection is active
 	selectionRectStart         rl.Vector2              // Start position of selection rectangle
 	selectionRectEnd           rl.Vector2              // End position of selection rectangle
+
+	// OpenSCAD and file watching support
+	sourceFile          string               // Original file path (.stl or .scad)
+	isOpenSCAD          bool                 // Whether the source file is OpenSCAD
+	tempSTLFile         string               // Temporary STL file if rendering from OpenSCAD
+	fileWatcher         *watcher.FileWatcher // File watcher for auto-reload
+	needsReload         bool                 // Flag to indicate model needs reloading
+	isLoading           bool                 // Flag to indicate a reload is in progress
+	loadingStartTime    time.Time            // When loading started
+}
+
+// loadModel loads a model from either STL or OpenSCAD file
+func loadModel(filePath string) (*stl.Model, string, bool, error) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+
+	if ext == ".scad" {
+		// OpenSCAD file - render to temporary STL
+		fmt.Printf("Rendering OpenSCAD file: %s\n", filePath)
+
+		workDir := filepath.Dir(filePath)
+		renderer := openscad.NewRenderer(workDir)
+
+		// Create temporary STL file
+		tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("gostl_temp_%d.stl", time.Now().Unix()))
+
+		// Render OpenSCAD to STL
+		if err := renderer.RenderToSTL(filePath, tempFile); err != nil {
+			return nil, "", true, fmt.Errorf("failed to render OpenSCAD file: %w", err)
+		}
+
+		fmt.Printf("Rendered to: %s\n", tempFile)
+
+		// Parse the generated STL
+		model, err := stl.Parse(tempFile)
+		if err != nil {
+			os.Remove(tempFile)
+			return nil, "", true, fmt.Errorf("failed to parse rendered STL: %w", err)
+		}
+
+		return model, tempFile, true, nil
+	} else if ext == ".stl" {
+		// Regular STL file
+		model, err := stl.Parse(filePath)
+		if err != nil {
+			return nil, "", false, fmt.Errorf("failed to parse STL file: %w", err)
+		}
+		return model, filePath, false, nil
+	} else {
+		return nil, "", false, fmt.Errorf("unsupported file type: %s (expected .stl or .scad)", ext)
+	}
+}
+
+// setupFileWatcher sets up file watching for the source file and its dependencies
+func (app *App) setupFileWatcher() error {
+	// Create file watcher with 500ms debounce
+	fw, err := watcher.NewFileWatcher(500 * time.Millisecond)
+	if err != nil {
+		return fmt.Errorf("failed to create file watcher: %w", err)
+	}
+
+	var filesToWatch []string
+
+	if app.isOpenSCAD {
+		// For OpenSCAD files, watch the source file and all dependencies
+		workDir := filepath.Dir(app.sourceFile)
+		renderer := openscad.NewRenderer(workDir)
+
+		deps, err := renderer.ResolveDependencies(app.sourceFile)
+		if err != nil {
+			return fmt.Errorf("failed to resolve dependencies: %w", err)
+		}
+
+		filesToWatch = deps
+		fmt.Printf("Watching %d file(s) for changes:\n", len(filesToWatch))
+		for _, f := range filesToWatch {
+			fmt.Printf("  - %s\n", f)
+		}
+	} else {
+		// For STL files, just watch the source file
+		filesToWatch = []string{app.sourceFile}
+		fmt.Printf("Watching file for changes: %s\n", app.sourceFile)
+	}
+
+	// Set up callback for file changes
+	callback := func(changedFile string) {
+		fmt.Printf("\nFile changed: %s\n", changedFile)
+		app.needsReload = true
+	}
+
+	if err := fw.Watch(filesToWatch, callback); err != nil {
+		fw.Close()
+		return fmt.Errorf("failed to watch files: %w", err)
+	}
+
+	fw.Start()
+	app.fileWatcher = fw
+
+	return nil
+}
+
+// reloadModel reloads the model from the source file in the background
+func (app *App) reloadModel() {
+	// If already loading, skip
+	if app.isLoading {
+		return
+	}
+
+	app.isLoading = true
+	app.loadingStartTime = time.Now()
+	fmt.Println("Reloading model...")
+
+	// Preserve current camera state
+	savedCameraDistance := app.cameraDistance
+	savedCameraAngleX := app.cameraAngleX
+	savedCameraAngleY := app.cameraAngleY
+	savedCameraTarget := app.cameraTarget
+
+	// Load in background
+	go func() {
+		// Load the model
+		model, stlFile, isOpenSCAD, err := loadModel(app.sourceFile)
+		if err != nil {
+			fmt.Printf("Error reloading model: %v\n", err)
+			app.isLoading = false
+			return
+		}
+
+		// Convert to mesh (this can take time for large models)
+		newMesh := stlToRaylibMesh(model)
+
+		// Now we're ready to switch - do this in a way that Raylib can handle
+		// (Raylib operations should be on the main thread, but we can set flags)
+
+		// Clean up old temp file if exists
+		oldTempFile := app.tempSTLFile
+		if app.isOpenSCAD && oldTempFile != "" && oldTempFile != stlFile {
+			defer os.Remove(oldTempFile)
+		}
+
+		// Calculate new model info
+		bbox := model.BoundingBox()
+		center := bbox.Center()
+		size := bbox.Size()
+		maxDim := math.Max(size.X, math.Max(size.Y, size.Z))
+
+		newModelCenter := rl.Vector3{X: float32(center.X), Y: float32(center.Y), Z: float32(center.Z)}
+		newModelSize := float32(maxDim)
+		newAvgVertexSpacing := calculateAvgVertexSpacing(model)
+
+		// Adjust camera target based on model center change
+		centerDelta := rl.Vector3{
+			X: newModelCenter.X - app.modelCenter.X,
+			Y: newModelCenter.Y - app.modelCenter.Y,
+			Z: newModelCenter.Z - app.modelCenter.Z,
+		}
+		adjustedCameraTarget := rl.Vector3{
+			X: savedCameraTarget.X + centerDelta.X,
+			Y: savedCameraTarget.Y + centerDelta.Y,
+			Z: savedCameraTarget.Z + centerDelta.Z,
+		}
+
+		// Switch to new model (this should be quick)
+		oldMesh := app.mesh
+		app.mesh = newMesh
+		app.model = model
+		app.tempSTLFile = stlFile
+		app.isOpenSCAD = isOpenSCAD
+		app.modelCenter = newModelCenter
+		app.modelSize = newModelSize
+		app.avgVertexSpacing = newAvgVertexSpacing
+		app.axisOrigin = newModelCenter
+
+		// Restore camera state with adjusted target
+		app.cameraDistance = savedCameraDistance
+		app.cameraAngleX = savedCameraAngleX
+		app.cameraAngleY = savedCameraAngleY
+		app.cameraTarget = adjustedCameraTarget
+
+		// Unload old mesh after switching
+		rl.UnloadMesh(&oldMesh)
+
+		elapsed := time.Since(app.loadingStartTime)
+		fmt.Printf("Model reloaded successfully in %.2fs!\n", elapsed.Seconds())
+		app.isLoading = false
+	}()
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: gostl-raylib <stl-file>")
+		fmt.Println("Usage: gostl-raylib <file>")
+		fmt.Println("Supported formats: .stl, .scad")
 		os.Exit(1)
 	}
 
-	// Load STL model
-	model, err := stl.Parse(os.Args[1])
+	// Load model (STL or OpenSCAD)
+	sourceFile := os.Args[1]
+	model, stlFile, isOpenSCAD, err := loadModel(sourceFile)
 	if err != nil {
-		fmt.Printf("Error loading STL file: %v\n", err)
+		fmt.Printf("Error loading file: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Clean up temp file on exit if OpenSCAD
+	if isOpenSCAD {
+		defer os.Remove(stlFile)
 	}
 
 	// Initialize window
@@ -94,6 +291,18 @@ func main() {
 		currentLine:      &MeasurementLine{},
 		segmentLabels:    make(map[[2]int]rl.Rectangle),
 		radiusLabels:     make(map[int]rl.Rectangle),
+		sourceFile:       sourceFile,
+		isOpenSCAD:       isOpenSCAD,
+		tempSTLFile:      stlFile,
+		needsReload:      false,
+	}
+
+	// Set up file watching
+	if err := app.setupFileWatcher(); err != nil {
+		fmt.Printf("Warning: Failed to set up file watching: %v\n", err)
+		fmt.Println("Auto-reload will not be available")
+	} else {
+		defer app.fileWatcher.Close()
 	}
 
 	// Load JetBrains Mono font with Unicode support
@@ -155,6 +364,12 @@ func main() {
 		ctrlPressed := rl.IsKeyDown(rl.KeyLeftControl) || rl.IsKeyDown(rl.KeyRightControl)
 		if ctrlPressed && rl.IsKeyPressed(rl.KeyC) {
 			break
+		}
+
+		// Check if model needs reloading (file changed)
+		if app.needsReload && !app.isLoading {
+			app.needsReload = false
+			app.reloadModel()
 		}
 
 		// Update
@@ -1020,6 +1235,33 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	fontSize18 := float32(18)
 	fontSize14 := float32(14)
 	fontSize20 := float32(20)
+
+	// Loading indicator
+	if app.isLoading {
+		screenWidth := float32(rl.GetScreenWidth())
+
+		// Calculate loading text and spinner
+		elapsed := time.Since(app.loadingStartTime).Seconds()
+		spinnerChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		spinnerIdx := int(elapsed * 10) % len(spinnerChars)
+		loadingText := fmt.Sprintf("%s Loading... (%.1fs)", spinnerChars[spinnerIdx], elapsed)
+
+		// Draw semi-transparent overlay in top-right corner
+		boxWidth := float32(250)
+		boxHeight := float32(40)
+		boxX := screenWidth - boxWidth - 20
+		boxY := float32(20)
+
+		// Draw background box
+		rl.DrawRectangle(int32(boxX), int32(boxY), int32(boxWidth), int32(boxHeight), rl.NewColor(0, 0, 0, 180))
+		rl.DrawRectangleLines(int32(boxX), int32(boxY), int32(boxWidth), int32(boxHeight), rl.Yellow)
+
+		// Draw loading text
+		textSize := rl.MeasureTextEx(app.font, loadingText, fontSize18, 1)
+		textX := boxX + (boxWidth-textSize.X)/2
+		textY := boxY + (boxHeight-textSize.Y)/2
+		rl.DrawTextEx(app.font, loadingText, rl.Vector2{X: textX, Y: textY}, fontSize18, 1, rl.Yellow)
+	}
 
 	// Model info
 	rl.DrawTextEx(app.font, fmt.Sprintf("Model: %s", app.model.Name), rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.White)
