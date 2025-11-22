@@ -1,0 +1,81 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+    - mkdir -p completions
+    - sh -c "go run . completion bash > completions/gostl.bash"
+    - sh -c "go run . completion zsh > completions/_gostl"
+    - sh -c "go run . completion fish > completions/gostl.fish"
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/philipparndt/gostl/version.Version={{.Version}} -X github.com/philipparndt/gostl/version.GitCommit={{.Commit}} -X github.com/philipparndt/gostl/version.BuildDate={{.Date}}
+
+release:
+  github:
+    owner: philipparndt
+    name: gostl
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+    - goos: windows
+      formats: [zip]
+    files:
+      - completions/*
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+brews:
+  - name: gostl
+    repository:
+      owner: philipparndt
+      name: homebrew-gostl
+      branch: main
+      pull_request:
+        enabled: false
+        draft: false
+
+    commit_author:
+      name: Philipp Arndt
+      email: opensource@rnd7.de
+
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+
+    directory: Formula
+
+    homepage: "https://github.com/philipparndt/gostl"
+
+    description: "3D model file combiner and SCAD renderer"
+
+    license: "Apache-2.0"
+
+    install: |
+      bin.install "gostl"
+      bash_completion.install "completions/gostl.bash" => "gostl"
+      zsh_completion.install "completions/_gostl"
+      fish_completion.install "completions/gostl.fish"
