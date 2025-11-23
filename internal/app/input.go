@@ -57,8 +57,7 @@ func (app *App) handleInput() {
 		ctrlPressed := rl.IsKeyDown(rl.KeyLeftControl) || rl.IsKeyDown(rl.KeyRightControl)
 		if ctrlPressed && !app.Interaction.isPanning && app.Measurement.radiusMeasurement == nil {
 			app.Interaction.isSelectingWithRect = true
-			app.Interaction.selectionRectStart = app.Interaction.mouseDownPos
-			app.Interaction.selectionRectEnd = app.Interaction.mouseDownPos
+			app.Interaction.selectionRect = NewSelectionRect(app.Interaction.mouseDownPos, app.Interaction.mouseDownPos)
 		}
 	}
 
@@ -130,11 +129,13 @@ func (app *App) handleInput() {
 
 	// Update selection rectangle while dragging with Ctrl
 	if app.Interaction.isSelectingWithRect && rl.IsMouseButtonDown(rl.MouseLeftButton) {
-		app.Interaction.selectionRectEnd = rl.GetMousePosition()
-		delta := rl.Vector2Subtract(app.Interaction.selectionRectEnd, app.Interaction.selectionRectStart)
+		app.Interaction.selectionRect.End = rl.GetMousePosition()
+		delta := rl.Vector2Subtract(app.Interaction.selectionRect.End, app.Interaction.selectionRect.Start)
 		if math.Abs(float64(delta.X)) > 1.0 || math.Abs(float64(delta.Y)) > 1.0 {
 			app.Interaction.mouseMoved = true
 		}
+		// Update selection preview in real-time while dragging
+		app.selectLabelsInRectangle()
 	} else if rl.IsMouseButtonDown(rl.MouseLeftButton) && !app.Interaction.isPanning {
 		// Camera rotation with mouse drag (when Alt not pressed)
 		delta := rl.GetMouseDelta()

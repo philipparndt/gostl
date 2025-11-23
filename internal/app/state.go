@@ -67,8 +67,7 @@ type InteractionState struct {
 	lastMousePos     rl.Vector2
 	// Multi-select rectangle
 	isSelectingWithRect bool
-	selectionRectStart  rl.Vector2
-	selectionRectEnd    rl.Vector2
+	selectionRect       SelectionRect
 }
 
 // ConstraintState holds constraint-related state

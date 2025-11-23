@@ -218,16 +218,7 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 
 	// Draw selection rectangle if active
 	if app.Interaction.isSelectingWithRect {
-		minX := float32(math.Min(float64(app.Interaction.selectionRectStart.X), float64(app.Interaction.selectionRectEnd.X)))
-		maxX := float32(math.Max(float64(app.Interaction.selectionRectStart.X), float64(app.Interaction.selectionRectEnd.X)))
-		minY := float32(math.Min(float64(app.Interaction.selectionRectStart.Y), float64(app.Interaction.selectionRectEnd.Y)))
-		maxY := float32(math.Max(float64(app.Interaction.selectionRectStart.Y), float64(app.Interaction.selectionRectEnd.Y)))
-		rect := rl.Rectangle{X: minX, Y: minY, Width: maxX - minX, Height: maxY - minY}
-
-		// Draw semi-transparent fill
-		rl.DrawRectangleRec(rect, rl.NewColor(100, 150, 255, 50))
-		// Draw border
-		rl.DrawRectangleLinesEx(rect, 2, rl.NewColor(100, 150, 255, 200))
+		app.Interaction.selectionRect.Draw()
 	}
 
 	// FPS

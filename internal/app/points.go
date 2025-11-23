@@ -542,12 +542,8 @@ func (app *App) deleteAllSelectedItems() {
 
 // selectLabelsInRectangle selects all labels (segments and radius measurements) within the selection rectangle
 func (app *App) selectLabelsInRectangle() {
-	// Create normalized rectangle
-	minX := float32(math.Min(float64(app.Interaction.selectionRectStart.X), float64(app.Interaction.selectionRectEnd.X)))
-	maxX := float32(math.Max(float64(app.Interaction.selectionRectStart.X), float64(app.Interaction.selectionRectEnd.X)))
-	minY := float32(math.Min(float64(app.Interaction.selectionRectStart.Y), float64(app.Interaction.selectionRectEnd.Y)))
-	maxY := float32(math.Max(float64(app.Interaction.selectionRectStart.Y), float64(app.Interaction.selectionRectEnd.Y)))
-	selectionRect := rl.Rectangle{X: minX, Y: minY, Width: maxX - minX, Height: maxY - minY}
+	// Get normalized rectangle
+	selectionRect := app.Interaction.selectionRect.GetRectangle()
 
 	// Clear previous selections
 	app.Measurement.selectedSegments = [][2]int{}
@@ -568,8 +564,6 @@ func (app *App) selectLabelsInRectangle() {
 			app.Measurement.selectedRadiusMeasurements = append(app.Measurement.selectedRadiusMeasurements, idx)
 		}
 	}
-
-	fmt.Printf("Selected %d segments and %d radius measurements\n", len(app.Measurement.selectedSegments), len(app.Measurement.selectedRadiusMeasurements))
 }
 
 // deleteSelectedSegment deletes the selected segment
