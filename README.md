@@ -2,6 +2,12 @@
 
 A powerful, modern Go application for inspecting, measuring, and visualizing STL and OpenSCAD files with GPU acceleration. Perfect for 3D printing, CAD analysis, and quality control.
 
+## Install
+
+```bash
+brew install philipparndt/gostl/gostl
+```
+
 ## Features
 
 - **Dual Format Support**:
