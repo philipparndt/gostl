@@ -7,6 +7,7 @@ import (
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 	"github.com/philipparndt/gostl/pkg/analysis"
+	"github.com/philipparndt/gostl/version"
 )
 
 // drawUI draws the user interface
@@ -16,7 +17,7 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	fontSize16 := float32(16)
 	fontSize18 := float32(18)
 	fontSize14 := float32(14)
-	fontSize20 := float32(20)
+	fontSize12 := float32(12)
 
 	screenWidth := float32(rl.GetScreenWidth())
 	screenHeight := float32(rl.GetScreenHeight())
@@ -221,8 +222,14 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		app.Interaction.selectionRect.Draw()
 	}
 
-	// FPS
-	rl.DrawTextEx(app.UI.font, fmt.Sprintf("FPS: %d", rl.GetFPS()), rl.Vector2{X: 10, Y: float32(rl.GetScreenHeight()) - 30}, fontSize20, 1, rl.Lime)
+	// Version and FPS in bottom-left corner
+	bottomY := float32(rl.GetScreenHeight()) - 30
+	versionText := fmt.Sprintf("v%s", version.GetVersion())
+	rl.DrawTextEx(app.UI.font, versionText, rl.Vector2{X: 10, Y: bottomY}, fontSize12, 1, rl.Gray)
+
+	fpsText := fmt.Sprintf("FPS: %d", rl.GetFPS())
+	versionWidth := rl.MeasureTextEx(app.UI.font, versionText, fontSize12, 1).X
+	rl.DrawTextEx(app.UI.font, fpsText, rl.Vector2{X: 10 + versionWidth + 15, Y: bottomY}, fontSize12, 1, rl.Lime)
 }
 
 // getPointColor returns a color for a point marker

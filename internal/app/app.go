@@ -6,6 +6,7 @@ import (
 	"os"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
+	"github.com/philipparndt/gostl/assets"
 	"github.com/philipparndt/gostl/internal/measurement"
 	"github.com/philipparndt/gostl/pkg/analysis"
 	"github.com/philipparndt/gostl/pkg/geometry"
@@ -92,7 +93,7 @@ func Run() {
 	// Load with a large character set to support special characters like °
 	// Using 96px base size for crisp rendering when scaled down to 14-20px on high DPI displays
 	charsToLoad := []rune("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()_+-=[]{}|;:',.<>?/\\`~\t\n °±×÷\"°²³µ¼½¾€£¥©®™✓✔✕✖→←↑↓↔↕")
-	app.UI.font = rl.LoadFontEx("assets/fonts/JetBrainsMono-Regular.ttf", 96, charsToLoad)
+	app.UI.font = rl.LoadFontFromMemory(".ttf", assets.JetBrainsMonoTTF, 96, charsToLoad)
 
 	// Convert STL to Raylib mesh
 	app.Model.mesh = stlToRaylibMesh(model)
