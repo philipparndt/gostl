@@ -10,8 +10,9 @@ import (
 func (app *App) drawWireframe() {
 	// Draw wireframe mode with thin cylinders for better visibility and anti-aliasing
 	// Use dark gray for better blending with the filled surface
-	wireframeColor := rl.NewColor(100, 100, 100, 200) // Semi-transparent dark gray
-	wireframeThickness := app.Model.size * 0.00015    // Very thin cylinders for wireframe
+	wireframeColor := rl.NewColor(100, 100, 100, 200)   // Semi-transparent dark gray
+	wireframeThickness := app.Model.size * 0.0002       // Slightly thicker for high DPI displays
+	cylinderSegments := int32(8)                        // More segments for smoother appearance
 
 	// Track drawn edges to avoid duplicates
 	drawnEdges := make(map[string]bool)
@@ -28,8 +29,8 @@ func (app *App) drawWireframe() {
 			edgeKey := fmt.Sprintf("%.6f,%.6f,%.6f-%.6f,%.6f,%.6f", edge[0].X, edge[0].Y, edge[0].Z, edge[1].X, edge[1].Y, edge[1].Z)
 			if !drawnEdges[edgeKey] {
 				drawnEdges[edgeKey] = true
-				// Draw cylinder for better visibility (thicker than 1-pixel lines)
-				rl.DrawCylinderEx(edge[0], edge[1], wireframeThickness, wireframeThickness, 4, wireframeColor)
+				// Draw cylinder with more segments for smoother lines on high DPI displays
+				rl.DrawCylinderEx(edge[0], edge[1], wireframeThickness, wireframeThickness, cylinderSegments, wireframeColor)
 			}
 		}
 	}
