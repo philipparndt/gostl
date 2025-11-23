@@ -95,6 +95,19 @@ func (app *App) findNearestPoint(ray rl.Ray) (geometry.Vector3, float64, bool) {
 		}
 	}
 
+	// Check cut vertices from slicing (if slicing is active)
+	if app.Slicing.uiVisible {
+		for _, vertex := range app.Slicing.cutVertices {
+			vertexPos := rl.Vector3{X: float32(vertex.X), Y: float32(vertex.Y), Z: float32(vertex.Z)}
+			dist := rayToPointDistance(ray, vertexPos)
+			if dist < minDist && dist < selectionThreshold {
+				minDist = dist
+				nearestVertex = vertex
+				found = true
+			}
+		}
+	}
+
 	return nearestVertex, minDist, found
 }
 

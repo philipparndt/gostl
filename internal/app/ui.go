@@ -155,6 +155,12 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	rl.DrawTextEx(app.UI.font, "  Mouse Wheel: Zoom | Middle: Pan", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
 	rl.DrawTextEx(app.UI.font, "  W: Wireframe | F: Fill", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	y += lineHeight * 2
+
+	// === SLICE ===
+	rl.DrawTextEx(app.UI.font, "Slice:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
+	y += lineHeight
+	rl.DrawTextEx(app.UI.font, "  Shift+S: Toggle slice controls", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
 
 	// Context-specific measurement controls
@@ -230,6 +236,9 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	fpsText := fmt.Sprintf("FPS: %d", rl.GetFPS())
 	versionWidth := rl.MeasureTextEx(app.UI.font, versionText, fontSize12, 1).X
 	rl.DrawTextEx(app.UI.font, fpsText, rl.Vector2{X: 10 + versionWidth + 15, Y: bottomY}, fontSize12, 1, rl.Lime)
+
+	// Draw slicing panel
+	app.drawSlicingPanel()
 }
 
 // getPointColor returns a color for a point marker

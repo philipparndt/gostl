@@ -24,6 +24,7 @@ type App struct {
 	AxisGizmo   AxisGizmoState
 	FileWatch   FileWatchState
 	UI          UIState
+	Slicing     SlicingState
 }
 
 // Run starts the application
@@ -52,7 +53,7 @@ func Run() {
 	screenHeight := int32(900)
 	rl.SetConfigFlags(rl.FlagWindowResizable | rl.FlagWindowHighdpi | rl.FlagMsaa4xHint) // Must be before InitWindow
 	rl.InitWindow(screenWidth, screenHeight, "GoSTL")
-	rl.SetTargetFPS(60)
+	rl.SetTargetFPS(62)
 
 	// Create app instance
 	app := &App{
@@ -123,6 +124,30 @@ func Run() {
 	app.AxisGizmo.hoveredAxis = -1
 	app.AxisGizmo.hoveredAxisLabel = -1
 
+	// Setup slicing bounds from model bounding box
+	bboxMin := bbox.Min
+	bboxMax := bbox.Max
+	app.Slicing = SlicingState{
+		uiVisible:         false, // UI is hidden by default
+		enabled:           false,
+		activeSlider:      -1,
+		hoveredSlider:     -1,
+		isDragging:        false,
+		showPlanes:        false, // Planes hidden by default
+		fillCrossSections: true,  // Fill enabled by default
+		collapsed:         false,
+		bounds: [3][2]float32{
+			{float32(bboxMin.X), float32(bboxMax.X)}, // X axis
+			{float32(bboxMin.Y), float32(bboxMax.Y)}, // Y axis
+			{float32(bboxMin.Z), float32(bboxMax.Z)}, // Z axis
+		},
+		modelBounds: [3][2]float32{
+			{float32(bboxMin.X), float32(bboxMax.X)}, // X axis (original)
+			{float32(bboxMin.Y), float32(bboxMax.Y)}, // Y axis (original)
+			{float32(bboxMin.Z), float32(bboxMax.Z)}, // Z axis (original)
+		},
+	}
+
 	app.Camera.distance = distance
 	app.Camera.angleX = 0.3
 	app.Camera.angleY = 0.3
@@ -177,12 +202,21 @@ func Run() {
 
 		// Draw model
 		if app.View.showFilled {
-			rl.DrawMesh(app.Model.mesh, app.Model.material, rl.MatrixIdentity())
+			if app.Slicing.uiVisible {
+				// Draw filtered mesh when slicing UI is visible
+				app.drawFilteredMesh()
+			} else {
+				// Draw full mesh normally
+				rl.DrawMesh(app.Model.mesh, app.Model.material, rl.MatrixIdentity())
+			}
 		}
 
 		if app.View.showWireframe {
 			app.drawWireframe()
 		}
+
+		// Draw slice planes
+		app.drawSlicePlanes()
 
 		rl.EndMode3D()
 

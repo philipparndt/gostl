@@ -14,6 +14,9 @@ func (app *App) handleInput() {
 	// Track current mouse position for label hovering
 	app.Interaction.lastMousePos = rl.GetMousePosition()
 
+	// Handle slicing input first (so sliders take priority over camera)
+	app.handleSlicingInput()
+
 	// Check if mouse is over a segment label
 	app.Measurement.HoveredSegment = app.getSegmentAtMouse(app.Interaction.lastMousePos)
 
@@ -137,8 +140,8 @@ func (app *App) handleInput() {
 		}
 		// Update selection preview in real-time while dragging
 		app.selectLabelsInRectangle()
-	} else if rl.IsMouseButtonDown(rl.MouseLeftButton) && !app.Interaction.isPanning {
-		// Camera rotation with mouse drag (when Alt not pressed)
+	} else if rl.IsMouseButtonDown(rl.MouseLeftButton) && !app.Interaction.isPanning && !app.Slicing.isDragging {
+		// Camera rotation with mouse drag (when not panning and not dragging sliders)
 		delta := rl.GetMouseDelta()
 		// Only count as moved if delta is significant (threshold of 1.0 pixels)
 		if math.Abs(float64(delta.X)) > 1.0 || math.Abs(float64(delta.Y)) > 1.0 {

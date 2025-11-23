@@ -91,3 +91,20 @@ type FileWatchState struct {
 type UIState struct {
 	font rl.Font // JetBrains Mono font
 }
+
+// SlicingState holds state for model slicing feature
+type SlicingState struct {
+	uiVisible         bool                // Whether slicing UI is visible (toggle with Shift+S)
+	enabled           bool                // Whether slicing is enabled
+	activeSlider      int                 // -1=none, 0-5 for X min/max, Y min/max, Z min/max
+	bounds            [3][2]float32       // Min/max bounds for X, Y, Z
+	modelBounds       [3][2]float32       // Original model bounds (for reset)
+	sliderBounds      [6]rl.Rectangle     // UI bounds for each slider
+	isDragging        bool                // Whether user is dragging a slider
+	showPlanes        bool                // Whether to show slice planes in 3D
+	fillCrossSections bool                // Whether to fill cross-sections with axis colors
+	hoveredSlider     int                 // -1=none, 0-5 for hovered slider
+	panelBounds       rl.Rectangle        // Bounds of the entire slicing panel
+	collapsed         bool                // Whether the panel is collapsed
+	cutVertices       []geometry.Vector3  // Vertices on the cut edges (for selection)
+}
