@@ -1,12 +1,9 @@
-.PHONY: build build-gui build-all test clean install install-all run run-gui help
+.PHONY: build test clean install run run-scad help
 
 # Variables
 BINARY_NAME=gostl
-GUI_BINARY_NAME=gostl-gui
 BUILD_DIR=.
-CMD_DIR=./cmd/gostl
-GUI_CMD_DIR=./cmd/gostl-gui
-PKG_LIST=$$(go list ./... | grep -v /vendor/)
+PKG_LIST=$(go list ./... | grep -v /vendor/)
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -14,18 +11,10 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build: ## Build the CLI binary
+build: ## Build the Raylib GPU-accelerated binary
 	@echo "Building $(BINARY_NAME)..."
-	@go build -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	@go build -o $(BUILD_DIR)/$(BINARY_NAME)
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
-
-build-gui: ## Build the GUI binary
-	@echo "Building $(GUI_BINARY_NAME)..."
-	@go build -o $(BUILD_DIR)/$(GUI_BINARY_NAME) $(GUI_CMD_DIR)
-	@echo "Build complete: $(BUILD_DIR)/$(GUI_BINARY_NAME)"
-
-build-all: build build-gui ## Build both CLI and GUI binaries
-	@echo "All builds complete"
 
 test: ## Run tests
 	@echo "Running tests..."
@@ -40,30 +29,21 @@ test-coverage: ## Run tests with coverage
 clean: ## Clean build artifacts
 	@echo "Cleaning..."
 	@rm -f $(BUILD_DIR)/$(BINARY_NAME)
-	@rm -f $(BUILD_DIR)/$(GUI_BINARY_NAME)
 	@rm -f coverage.out coverage.html
 	@echo "Clean complete"
 
-install: build ## Install the CLI binary to $GOPATH/bin
+install: build ## Install the binary to $GOPATH/bin
 	@echo "Installing $(BINARY_NAME)..."
-	@go install $(CMD_DIR)
+	@go install
 	@echo "Installed to $$(go env GOPATH)/bin/$(BINARY_NAME)"
 
-install-gui: build-gui ## Install the GUI binary to $GOPATH/bin
-	@echo "Installing $(GUI_BINARY_NAME)..."
-	@go install $(GUI_CMD_DIR)
-	@echo "Installed to $$(go env GOPATH)/bin/$(GUI_BINARY_NAME)"
+run: build ## Build and run with example STL file
+	@echo "Running $(BINARY_NAME)..."
+	@./$(BINARY_NAME) ./examples/h2d-named/Large_Insert_13_6.stl
 
-install-all: install install-gui ## Install both CLI and GUI binaries
-	@echo "All installations complete"
-
-run: build ## Build and run CLI with help
-	@echo "Running $(BINARY_NAME) --help"
-	@./$(BINARY_NAME) --help
-
-run-gui: build-gui ## Build and run GUI with example
-	@echo "Running $(GUI_BINARY_NAME)..."
-	@./$(GUI_BINARY_NAME) ./h2d-named/Large_Insert_13_6.stl
+run-scad: build ## Build and run with example OpenSCAD file
+	@echo "Running $(BINARY_NAME)..."
+	@./$(BINARY_NAME) ~/dev/3d/filament/filament_holder_lip.scad
 
 fmt: ## Format code
 	@echo "Formatting code..."

@@ -21,7 +21,7 @@ type EdgeInfo struct {
 type MeasurementResult struct {
 	BoundingBox    geometry.BoundingBox
 	Dimensions     geometry.Vector3
-	Volume         float64
+	Volume         float64 // Actual mesh volume in cubic units
 	SurfaceArea    float64
 	TriangleCount  int
 	EdgeCount      int
@@ -29,6 +29,8 @@ type MeasurementResult struct {
 	MaxEdgeLength  float64
 	AvgEdgeLength  float64
 	AllEdges       []EdgeInfo
+	WeightPLA100   float64 // Weight in grams at 100% infill (PLA density: 1.24 g/cm³)
+	WeightPLA15    float64 // Weight in grams at 15% infill
 }
 
 // AnalyzeModel performs comprehensive analysis on an STL model
@@ -41,7 +43,25 @@ func AnalyzeModel(model *stl.Model) *MeasurementResult {
 	}
 
 	result.Dimensions = result.BoundingBox.Size()
-	result.Volume = result.BoundingBox.Volume()
+
+	// Calculate actual mesh volume (not bounding box)
+	result.Volume = model.Volume()
+
+	// Calculate PLA weight estimates
+	// PLA density: 1.24 g/cm³
+	// Volume is in cubic units - assuming units are mm, convert to cm³
+	volumeCm3 := result.Volume / 1000.0 // mm³ to cm³
+	plaDensity := 1.24                   // g/cm³
+
+	// 100% infill - full solid print
+	result.WeightPLA100 = volumeCm3 * plaDensity
+
+	// 15% infill - simplified estimate
+	// Assume 3 perimeters at 0.4mm = ~1.2mm wall thickness
+	// This is a rough approximation - real slicers are more accurate
+	// For simplicity, we'll use a linear approximation:
+	// 15% infill ≈ ~30-40% of total weight (accounting for walls + sparse infill)
+	result.WeightPLA15 = result.WeightPLA100 * 0.35 // 35% as a rough estimate
 
 	// Collect all edges
 	minLength := math.MaxFloat64

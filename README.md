@@ -1,391 +1,182 @@
-# gostl - Modern STL File Inspector
+# gostl - GPU-Accelerated STL & OpenSCAD Viewer
 
-A powerful, modern Go application for inspecting and measuring STL (Stereolithography) files with precision. Perfect for 3D printing, CAD analysis, and quality control.
-
-Available in two interfaces:
-- **Desktop GUI** - Interactive 3D viewer with visual point selection and real-time measurements
-- **CLI** - Fast command-line tool for scripting and batch processing
+A powerful, modern Go application for inspecting, measuring, and visualizing STL and OpenSCAD files with GPU acceleration. Perfect for 3D printing, CAD analysis, and quality control.
 
 ## Features
 
-- **Dual Format Support**: Reads both ASCII and Binary STL files automatically
-- **Desktop GUI Application**:
-  - Interactive 3D model visualization
-  - Rotate, zoom, and pan with mouse controls
+- **Dual Format Support**:
+  - STL files (both ASCII and Binary)
+  - OpenSCAD files (.scad) with on-the-fly rendering
+  - Automatic file watching and hot-reload
+  - Dependency tracking for OpenSCAD imports/uses
+
+- **GPU-Accelerated 3D Visualization**:
+  - Interactive 3D model rendering with Raylib
+  - Smooth rotation, zoom, and pan with mouse controls
+  - Wireframe and filled display modes
+  - Camera presets (Top, Bottom, Front, Back, Left, Right)
+
+- **Precision Measurement Tools**:
   - Click to select vertices for measurement
-  - Real-time distance measurements (X, Y, Z, and total distance)
-  - Visual feedback with color-coded selection markers
-  - Model information panel
-- **Comprehensive CLI Measurements**:
+  - Line measurements with live preview
+  - Radius measurements (3-point arc)
+  - Axis-constrained measurements (X, Y, Z keys)
+  - Real-time distance display
+
+- **Comprehensive Analysis**:
   - Model dimensions and bounding box
-  - Edge length analysis (min, max, average, specific edges)
   - Surface area calculations
-  - Point-to-point distance measurements
-  - Triangle analysis (area, perimeter, angles)
-- **Fast & Efficient**: Written in Go for high performance
-- **Modular Architecture**: Clean separation between parsing, geometry, and UI
+  - Mesh volume calculation
+  - PLA weight estimates (100% and 15% infill)
+  - Triangle and edge statistics
+
+- **Auto-Reload**: Automatically detects file changes and reloads while preserving camera position
 
 ## Installation
+
+### Prerequisites
+
+- Go 1.21 or higher
+- OpenSCAD (for .scad file support)
+- Raylib dependencies (handled automatically by raylib-go)
 
 ### From Source
 
 ```bash
 git clone https://github.com/philipparndt/gostl.git
 cd gostl
-
-# Build CLI tool
 make build
-
-# Build GUI application
-make build-gui
-
-# Or build both
-make build-all
-```
-
-### Using Make
-
-```bash
-# Build and install both applications
-make install
 ```
 
 ## Usage
 
-### Desktop GUI Application
-
-Launch the GUI application:
+### Launch the Viewer
 
 ```bash
 # Open with file dialog
-./gostl-gui
+./gostl-raylib
 
-# Or open a specific file directly
-./gostl-gui examples/cube.stl
+# Open a specific STL file
+./gostl-raylib model.stl
+
+# Open an OpenSCAD file (auto-renders to STL)
+./gostl-raylib model.scad
 ```
 
-**GUI Features:**
-- **3D Visualization**: See your STL model rendered in 3D with wireframe display
-- **Mouse Controls**:
-  - **Drag**: Rotate the model around to view from any angle
-  - **Scroll**: Zoom in and out
-  - **Click**: Select vertices (points) on the model
-- **Precise Measurements**:
-  - Select any two vertices by clicking on them
-  - First point appears in **red**, second point in **green**
-  - Get instant measurements:
-    - **Distance X**: Horizontal distance between points
-    - **Distance Y**: Depth distance between points
-    - **Distance Z**: Vertical distance between points
-    - **Total Distance**: Straight-line distance in 3D space
-- **Model Information**: View triangle count, surface area, and dimensions
-- **Clear Selection**: Reset point selection to measure different distances
+### Controls
 
-**Perfect for:**
-- Verifying 3D print dimensions
-- Measuring specific features on complex models
-- Quality control and inspection
-- Understanding model geometry visually
+**Camera:**
+- **Left Mouse Drag**: Rotate the model
+- **Scroll**: Zoom in/out
+- **Middle Mouse Drag**: Pan the view
+- **Home**: Reset camera view
+- **T/B**: Top/Bottom view
+- **1/2**: Front/Back view
+- **3/4**: Left/Right view
 
-### CLI Commands
+**Display:**
+- **W**: Toggle wireframe mode
+- **F**: Toggle filled mode
 
-#### Basic Information
+**Measurement:**
+- **Left Click**: Select vertices for measurement
+  - First click: Select start point (red)
+  - Second click: Select end point (green) and measure
+- **X, Y, Z**: Constrain measurement to axis (press again to toggle off)
+- **R**: Toggle radius measurement mode (3-point arc)
+- **ESC**: Clear selection
 
-Get comprehensive information about an STL file:
+**Live Preview:**
+- Distance preview appears in bottom-right while drawing measurements
+- Shows axis delta (ΔX, ΔY, ΔZ) when axis-constrained
+- Works across all keyboard layouts (QWERTY, QWERTZ, etc.)
+
+### Model Information Display
+
+The left panel shows:
+- **Dimensions**: Model name, triangle count, surface area, volume, size
+- **PLA Weight**: Estimated weights at 100% and 15% infill
+- **Measure**: Active measurement details (when points selected)
+- **View**: Camera preset shortcuts
+- **Navigate**: Control reference
+- **Constraints**: Axis constraint status (when measuring)
+
+### OpenSCAD Support
+
+When opening a `.scad` file:
+- Automatically renders to STL using OpenSCAD CLI
+- Monitors the source file and all dependencies (use/include)
+- Auto-reloads on any file change
+- Shows loading indicator during re-render
+- Preserves camera position across reloads
+
+## Make Targets
 
 ```bash
-./gostl info model.stl
-```
-
-Output includes:
-- Triangle and edge counts
-- Bounding box dimensions
-- Model dimensions (width, height, depth)
-- Surface area
-- Edge length statistics
-
-Example output:
-```
-STL File Information
-====================
-File: model.stl
-
-Model Statistics:
-  Triangles: 1248
-  Edges: 3744
-  Surface Area: 25834.123456 square units
-
-Bounding Box:
-  Min: (-10.000000, -10.000000, 0.000000)
-  Max: (10.000000, 10.000000, 5.000000)
-  Center: (0.000000, 0.000000, 2.500000)
-
-Dimensions:
-  Width (X): 20.000000 units
-  Depth (Y): 20.000000 units
-  Height (Z): 5.000000 units
-  Diagonal: 21.794495 units
-  Volume: 2000.000000 cubic units
-
-Edge Lengths:
-  Minimum: 0.125000 units
-  Maximum: 15.811388 units
-  Average: 2.456789 units
-```
-
-### Edge Analysis
-
-#### Find Longest Edges
-
-```bash
-./gostl edges model.stl --longest -n 10
-```
-
-#### Find Shortest Edges
-
-```bash
-./gostl edges model.stl --shortest -n 10
-```
-
-#### Filter Edges by Length Range
-
-Find all edges between 5 and 10 units:
-
-```bash
-./gostl edges model.stl --min 5.0 --max 10.0 -n 20
-```
-
-#### List All Edges
-
-```bash
-./gostl edges model.stl -n 100
-```
-
-Example output:
-```
-Top 10 Longest Edges
-====================
-Total edges in model: 3744
-Min edge length: 0.125000 units
-Max edge length: 15.811388 units
-Avg edge length: 2.456789 units
-
-Index  Start                               End                                 Length
------------------------------------------------------------------------------------------------------------
-1      (10.000000, 8.500000, 2.300000)     (10.000000, -7.200000, 2.300000)    15.811388
-2      (-9.500000, 10.000000, 1.800000)    (-9.500000, -5.300000, 1.800000)    15.300000
-...
-```
-
-### Point-to-Point Measurement
-
-Measure the distance between two 3D points:
-
-```bash
-./gostl measure model.stl --x1 0 --y1 0 --z1 0 --x2 10 --y2 10 --z2 5
-```
-
-The tool will:
-- Calculate the direct distance between the points
-- Find the nearest vertices in the model to each point
-- Calculate the distance between those vertices
-
-Example output:
-```
-Point-to-Point Measurement
-==========================
-
-Point 1: (0.000000, 0.000000, 0.000000)
-  Nearest vertex: (0.125000, 0.050000, 0.000000) (distance: 0.134629)
-
-Point 2: (10.000000, 10.000000, 5.000000)
-  Nearest vertex: (9.950000, 9.980000, 5.000000) (distance: 0.053852)
-
-Direct distance: 15.000000 units
-Distance between nearest vertices: 14.991666 units
-```
-
-### Triangle Analysis
-
-#### Find Largest Triangles
-
-```bash
-./gostl triangles model.stl --largest -n 5
-```
-
-#### Find Smallest Triangles
-
-```bash
-./gostl triangles model.stl --smallest -n 5
-```
-
-#### List Triangles
-
-```bash
-./gostl triangles model.stl -n 10
-```
-
-Example output:
-```
-Top 5 Largest Triangles
-====================
-Total triangles: 1248
-Total surface area: 25834.123456 square units
-Min triangle area: 0.015625 square units
-Max triangle area: 48.500000 square units
-Avg triangle area: 20.698178 square units
-
-Triangle #42:
-  Area: 48.500000 square units
-  Perimeter: 31.200000 units
-  Vertices: (-10.000000, 5.000000, 0.000000), (0.000000, 5.000000, 0.000000), (-5.000000, 15.000000, 0.000000)
-...
-```
-
-## Command Reference
-
-### Global Flags
-
-- `-h, --help`: Show help for any command
-- `-v, --version`: Show version information
-
-### Commands
-
-#### `info [file]`
-
-Display comprehensive information about an STL file.
-
-**Arguments:**
-- `file`: Path to the STL file
-
-**Example:**
-```bash
-./gostl info model.stl
-```
-
-#### `edges [file]`
-
-Analyze and measure edges in an STL file.
-
-**Arguments:**
-- `file`: Path to the STL file
-
-**Flags:**
-- `-n, --count int`: Number of edges to display (default: 10)
-- `-l, --longest`: Show longest edges
-- `-s, --shortest`: Show shortest edges
-- `--min float`: Minimum edge length filter
-- `--max float`: Maximum edge length filter
-
-**Examples:**
-```bash
-./gostl edges model.stl --longest -n 20
-./gostl edges model.stl --min 5.0 --max 10.0
-```
-
-#### `measure [file]`
-
-Measure distance between two 3D points.
-
-**Arguments:**
-- `file`: Path to the STL file
-
-**Flags:**
-- `--x1 float`: X coordinate of first point
-- `--y1 float`: Y coordinate of first point
-- `--z1 float`: Z coordinate of first point
-- `--x2 float`: X coordinate of second point
-- `--y2 float`: Y coordinate of second point
-- `--z2 float`: Z coordinate of second point
-
-All coordinate flags must be provided together.
-
-**Example:**
-```bash
-./gostl measure model.stl --x1 0 --y1 0 --z1 0 --x2 10 --y2 5 --z2 3
-```
-
-#### `triangles [file]`
-
-Analyze triangles in an STL file.
-
-**Arguments:**
-- `file`: Path to the STL file
-
-**Flags:**
-- `-n, --count int`: Number of triangles to display (default: 10)
-- `-l, --largest`: Show largest triangles by area
-- `-s, --smallest`: Show smallest triangles by area
-
-**Examples:**
-```bash
-./gostl triangles model.stl --largest -n 5
-./gostl triangles model.stl --smallest -n 10
+make help          # Show all available targets
+make build         # Build the binary
+make run           # Build and run with example STL file
+make run-scad      # Build and run with example OpenSCAD file
+make test          # Run tests
+make clean         # Clean build artifacts
+make install       # Install to $GOPATH/bin
 ```
 
 ## Architecture
 
-The project is organized into clear, modular packages:
-
 ```
 gostl/
-├── cmd/gostl/          # CLI application
-│   ├── main.go         # Entry point
-│   ├── info.go         # Info command
-│   ├── edges.go        # Edge analysis command
-│   ├── measure.go      # Point-to-point measurement
-│   └── triangles.go    # Triangle analysis command
+├── cmd/gostl-raylib/   # Main Raylib application
+│   └── main.go         # Entry point and UI
 ├── pkg/
 │   ├── geometry/       # 3D geometry types and operations
-│   │   ├── vector3.go  # 3D vector math
-│   │   ├── triangle.go # Triangle operations
-│   │   └── bounds.go   # Bounding box
-│   ├── stl/            # STL file parsing
-│   │   ├── model.go    # STL model representation
-│   │   └── parser.go   # ASCII and Binary parsers
-│   └── analysis/       # Measurement and analysis tools
-│       └── measurements.go
+│   ├── stl/            # STL model and parsing
+│   ├── analysis/       # Measurement and analysis tools
+│   ├── openscad/       # OpenSCAD rendering and dependency resolution
+│   ├── watcher/        # File watching with debouncing
+│   └── viewer/         # (legacy) Fyne renderer
 └── go.mod
 ```
 
 ### Key Design Decisions
 
-1. **Automatic Format Detection**: The parser automatically detects ASCII vs Binary format
-2. **Modular Packages**: Clear separation between geometry, parsing, and analysis
-3. **Performance**: Efficient algorithms with minimal memory allocations
-4. **Extensibility**: Clean interfaces designed for future GUI integration
+1. **GPU Acceleration**: Uses Raylib for hardware-accelerated 3D rendering
+2. **Thread Safety**: Background file loading with main-thread mesh creation
+3. **Keyboard Layout Independence**: Uses character input (GetCharPressed) instead of physical keys
+4. **Hot Reload**: Debounced file watching (500ms) for smooth auto-updates
+5. **Modular Architecture**: Clean separation between rendering, parsing, and analysis
 
-## Future Enhancements
+## Examples
 
-- **Desktop GUI**: Native desktop application with 3D visualization (using Fyne or Gio)
-- **Interactive 3D Viewer**: Rotate, zoom, and select points/edges visually
-- **Export Capabilities**: Export measurements to CSV, JSON, or PDF
-- **Batch Processing**: Analyze multiple STL files at once
-- **Advanced Analysis**:
-  - Wall thickness analysis
-  - Overhang detection for 3D printing
-  - Volume calculations (watertight mesh)
-  - Mesh quality analysis
+### STL File Analysis
+```bash
+./gostl-raylib examples/h2d-named/Large_Insert_13_6.stl
+```
+
+### OpenSCAD Development Workflow
+```bash
+# Open your OpenSCAD project
+./gostl-raylib ~/projects/my-model.scad
+
+# Edit the file in your favorite editor
+# Viewer automatically reloads on save
+```
 
 ## Development
 
 ### Running Tests
-
 ```bash
-go test ./pkg/... -v
-```
-
-### Building
-
-```bash
-go build -o gostl ./cmd/gostl
+make test
 ```
 
 ### Code Coverage
-
 ```bash
-go test ./pkg/... -coverprofile=coverage.out
-go tool cover -html=coverage.out
+make test-coverage
+```
+
+### Format Code
+```bash
+make fmt
 ```
 
 ## Contributing

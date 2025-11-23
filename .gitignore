@@ -34,3 +34,7 @@ gostl-gui
 # OS
 .DS_Store
 Thumbs.db
+
+# Binary executables (in root and cmd directories)
+/gostl-raylib
+cmd/*/gostl-raylib
