@@ -407,6 +407,10 @@ func (app *App) handleInput() {
 			fmt.Println("Radius measurement mode: Select 3 points on the arc. Calculation happens automatically.")
 		}
 	}
+	if rl.IsKeyPressed(rl.KeyO) {
+		// Open with go3mf
+		app.openWithGo3mf()
+	}
 
 	// Axis constraint shortcuts (when measuring)
 	// Use character input instead of physical keys to work across all keyboard layouts

@@ -256,3 +256,4 @@ func Run() {
 	rl.UnloadMesh(&app.Model.mesh)
 	rl.CloseWindow()
 }
+

@@ -83,6 +83,7 @@ make build
 **Display:**
 - **W**: Toggle wireframe mode
 - **F**: Toggle filled mode
+- **O**: Open current file with go3mf (executes `go3mf build <filename> --open`)
 
 **Measurement:**
 - **Left Click**: Select vertices for measurement
