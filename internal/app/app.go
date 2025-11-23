@@ -6,9 +6,12 @@ import (
 	"os"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
+	"github.com/philipparndt/gostl/internal/measurement"
 	"github.com/philipparndt/gostl/pkg/analysis"
 	"github.com/philipparndt/gostl/pkg/geometry"
 )
+
+var measurementRenderer = measurement.NewRenderer()
 
 type App struct {
 	Camera      CameraState
@@ -56,11 +59,11 @@ func Run() {
 			model: model,
 		},
 		Measurement: MeasurementState{
-			selectedPoints:   make([]geometry.Vector3, 0),
-			measurementLines: make([]MeasurementLine, 0),
-			currentLine:      &MeasurementLine{},
-			segmentLabels:    make(map[[2]int]rl.Rectangle),
-			radiusLabels:     make(map[int]rl.Rectangle),
+			SelectedPoints:   make([]geometry.Vector3, 0),
+			MeasurementLines: make([]measurement.Line, 0),
+			CurrentLine:      &measurement.Line{},
+			SegmentLabels:    make(map[[2]int]rl.Rectangle),
+			RadiusLabels:     make(map[int]rl.Rectangle),
 		},
 		View: ViewSettings{
 			showWireframe:   true,
@@ -184,14 +187,27 @@ func Run() {
 		// Draw 3D coordinate axes at a fixed screen position (after 3D mode)
 		app.drawCoordinateAxes3D()
 
+		// Create measurement rendering context
+		measurementCtx := measurement.RenderContext{
+			Camera:           app.Camera.camera,
+			Font:             app.UI.font,
+			State:            &app.Measurement,
+			ConstraintActive: app.Constraint.active,
+			ConstraintType:   app.Constraint.constraintType,
+			ConstraintAxis:   app.Constraint.axis,
+			ConstraintPoint:  app.Constraint.constrainingPoint,
+			HasHoveredVertex: app.Interaction.hasHoveredVertex,
+			HoveredVertex:    app.Interaction.hoveredVertex,
+		}
+
 		// Draw radius measurement in 2D screen space (after 3D mode)
-		app.drawRadiusMeasurement()
+		measurementRenderer.DrawRadiusMeasurement(measurementCtx)
 
 		// Draw radius measurement label in 2D
-		app.drawRadiusMeasurementLabel()
+		measurementRenderer.DrawRadiusMeasurementLabel(measurementCtx)
 
 		// Draw measurement lines and points in 2D screen space
-		app.drawMeasurementLines()
+		measurementRenderer.DrawMeasurementLines(measurementCtx)
 
 		// Draw UI
 		app.drawUI(result)

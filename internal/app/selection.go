@@ -9,7 +9,7 @@ import (
 // updateHoveredAxis checks which axis (if any) is under the mouse cursor
 func (app *App) updateHoveredAxis() {
 	// Only update when in measurement mode with one point selected
-	if len(app.Measurement.selectedPoints) != 1 {
+	if len(app.Measurement.SelectedPoints) != 1 {
 		app.AxisGizmo.hoveredAxis = -1
 		return
 	}

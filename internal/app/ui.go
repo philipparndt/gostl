@@ -22,9 +22,9 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	screenHeight := float32(rl.GetScreenHeight())
 
 	// Live measurement preview (bottom-right corner)
-	if len(app.Measurement.selectedPoints) == 1 && app.Measurement.horizontalPreview != nil {
-		p1 := app.Measurement.selectedPoints[0]
-		p2 := *app.Measurement.horizontalPreview
+	if len(app.Measurement.SelectedPoints) == 1 && app.Measurement.HorizontalPreview != nil {
+		p1 := app.Measurement.SelectedPoints[0]
+		p2 := *app.Measurement.HorizontalPreview
 
 		var distance float64
 		var previewText string
@@ -110,16 +110,16 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	y += lineHeight * 2
 
 	// === MEASURE ===
-	if len(app.Measurement.selectedPoints) > 0 {
+	if len(app.Measurement.SelectedPoints) > 0 {
 		rl.DrawTextEx(app.UI.font, "Measure:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 		y += lineHeight
 
-		p1 := app.Measurement.selectedPoints[0]
+		p1 := app.Measurement.SelectedPoints[0]
 		rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Point 1: (%.2f, %.2f, %.2f)", p1.X, p1.Y, p1.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
 		y += lineHeight
 
-		if len(app.Measurement.selectedPoints) >= 2 {
-			p2 := app.Measurement.selectedPoints[1]
+		if len(app.Measurement.SelectedPoints) >= 2 {
+			p2 := app.Measurement.SelectedPoints[1]
 			rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Point 2: (%.2f, %.2f, %.2f)", p2.X, p2.Y, p2.Z), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
 			y += lineHeight
 
@@ -157,7 +157,7 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	y += lineHeight
 
 	// Context-specific measurement controls
-	if len(app.Measurement.selectedPoints) == 1 && app.Measurement.radiusMeasurement == nil {
+	if len(app.Measurement.SelectedPoints) == 1 && app.Measurement.RadiusMeasurement == nil {
 		// Line measurement mode - show constraint shortcuts
 		y += lineHeight
 		rl.DrawTextEx(app.UI.font, "Constraints:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
@@ -169,15 +169,15 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 			rl.DrawTextEx(app.UI.font, fmt.Sprintf("  Active: %s axis", axisName), rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.Green)
 			y += lineHeight
 		}
-	} else if app.Measurement.radiusMeasurement != nil {
+	} else if app.Measurement.RadiusMeasurement != nil {
 		// Radius measurement mode
 		y += lineHeight
 		rl.DrawTextEx(app.UI.font, "RADIUS MODE", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Magenta)
 		y += lineHeight
-		pointsText := fmt.Sprintf("  Points: %d/3", len(app.Measurement.radiusMeasurement.points))
+		pointsText := fmt.Sprintf("  Points: %d/3", len(app.Measurement.RadiusMeasurement.Points))
 		rl.DrawTextEx(app.UI.font, pointsText, rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
 		y += lineHeight
-		if len(app.Measurement.radiusMeasurement.points) < 3 {
+		if len(app.Measurement.RadiusMeasurement.Points) < 3 {
 			rl.DrawTextEx(app.UI.font, "  Left Click: Select 3 points on arc", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
 		} else {
 			rl.DrawTextEx(app.UI.font, "  Radius calculated!", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(100, 255, 100, 255))
@@ -185,20 +185,20 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		y += lineHeight
 		rl.DrawTextEx(app.UI.font, "  ESC: Cancel/close", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
 		y += lineHeight
-	} else if len(app.Measurement.selectedPoints) == 0 {
+	} else if len(app.Measurement.SelectedPoints) == 0 {
 		rl.DrawTextEx(app.UI.font, "  Left Click: Select point or segment", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
 		y += lineHeight
 		rl.DrawTextEx(app.UI.font, "  R: Measure radius (arc/circle)", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 150, 255, 255))
 		y += lineHeight
-		if app.Measurement.selectedSegment != nil {
+		if app.Measurement.SelectedSegment != nil {
 			rl.DrawTextEx(app.UI.font, "  Backspace: Delete selected segment", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 100, 100, 255))
 			y += lineHeight
 		}
-		if app.Measurement.currentLine != nil && len(app.Measurement.currentLine.segments) > 0 || len(app.Measurement.measurementLines) > 0 {
+		if app.Measurement.CurrentLine != nil && len(app.Measurement.CurrentLine.Segments) > 0 || len(app.Measurement.MeasurementLines) > 0 {
 			rl.DrawTextEx(app.UI.font, "  C: Clear all measurements", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(255, 200, 100, 255))
 			y += lineHeight
 		}
-	} else if len(app.Measurement.selectedPoints) == 1 {
+	} else if len(app.Measurement.SelectedPoints) == 1 {
 		rl.DrawTextEx(app.UI.font, "  Left Click: Select second point", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))
 		y += lineHeight
 		rl.DrawTextEx(app.UI.font, "  Click Axis: Constrain to X/Y/Z", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.NewColor(144, 238, 144, 255))

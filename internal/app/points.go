@@ -5,6 +5,7 @@ import (
 	"math"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
+	"github.com/philipparndt/gostl/internal/measurement"
 	"github.com/philipparndt/gostl/pkg/geometry"
 )
 
@@ -49,46 +50,46 @@ func (app *App) findNearestPoint(ray rl.Ray) (geometry.Vector3, float64, bool) {
 	}
 
 	// Check points from all completed measurement lines
-	for _, line := range app.Measurement.measurementLines {
-		for _, segment := range line.segments {
+	for _, line := range app.Measurement.MeasurementLines {
+		for _, segment := range line.Segments {
 			// Check start point
-			startPos := rl.Vector3{X: float32(segment.start.X), Y: float32(segment.start.Y), Z: float32(segment.start.Z)}
+			startPos := rl.Vector3{X: float32(segment.Start.X), Y: float32(segment.Start.Y), Z: float32(segment.Start.Z)}
 			dist := rayToPointDistance(ray, startPos)
 			if dist < minDist && dist < selectionThreshold {
 				minDist = dist
-				nearestVertex = segment.start
+				nearestVertex = segment.Start
 				found = true
 			}
 
 			// Check end point
-			endPos := rl.Vector3{X: float32(segment.end.X), Y: float32(segment.end.Y), Z: float32(segment.end.Z)}
+			endPos := rl.Vector3{X: float32(segment.End.X), Y: float32(segment.End.Y), Z: float32(segment.End.Z)}
 			dist = rayToPointDistance(ray, endPos)
 			if dist < minDist && dist < selectionThreshold {
 				minDist = dist
-				nearestVertex = segment.end
+				nearestVertex = segment.End
 				found = true
 			}
 		}
 	}
 
 	// Check points from the current measurement line being drawn
-	if app.Measurement.currentLine != nil {
-		for _, segment := range app.Measurement.currentLine.segments {
+	if app.Measurement.CurrentLine != nil {
+		for _, segment := range app.Measurement.CurrentLine.Segments {
 			// Check start point
-			startPos := rl.Vector3{X: float32(segment.start.X), Y: float32(segment.start.Y), Z: float32(segment.start.Z)}
+			startPos := rl.Vector3{X: float32(segment.Start.X), Y: float32(segment.Start.Y), Z: float32(segment.Start.Z)}
 			dist := rayToPointDistance(ray, startPos)
 			if dist < minDist && dist < selectionThreshold {
 				minDist = dist
-				nearestVertex = segment.start
+				nearestVertex = segment.Start
 				found = true
 			}
 
 			// Check end point
-			endPos := rl.Vector3{X: float32(segment.end.X), Y: float32(segment.end.Y), Z: float32(segment.end.Z)}
+			endPos := rl.Vector3{X: float32(segment.End.X), Y: float32(segment.End.Y), Z: float32(segment.End.Z)}
 			dist = rayToPointDistance(ray, endPos)
 			if dist < minDist && dist < selectionThreshold {
 				minDist = dist
-				nearestVertex = segment.end
+				nearestVertex = segment.End
 				found = true
 			}
 		}
@@ -142,15 +143,15 @@ func (app *App) selectPoint() {
 	nearestVertex := app.Interaction.hoveredVertex
 
 	// If we already have one point, this is the second point - complete the segment
-	if len(app.Measurement.selectedPoints) == 1 {
-		firstPoint := app.Measurement.selectedPoints[0]
+	if len(app.Measurement.SelectedPoints) == 1 {
+		firstPoint := app.Measurement.SelectedPoints[0]
 
 		// Check if the selected point is an existing point in the current line (close the shape)
-		if app.Measurement.currentLine != nil && len(app.Measurement.currentLine.segments) > 0 {
+		if app.Measurement.CurrentLine != nil && len(app.Measurement.CurrentLine.Segments) > 0 {
 			// Check if nearestVertex matches any existing point in the line
 			isExistingPoint := false
-			for _, segment := range app.Measurement.currentLine.segments {
-				if segment.start == nearestVertex || segment.end == nearestVertex {
+			for _, segment := range app.Measurement.CurrentLine.Segments {
+				if segment.Start == nearestVertex || segment.End == nearestVertex {
 					isExistingPoint = true
 					break
 				}
@@ -158,14 +159,14 @@ func (app *App) selectPoint() {
 
 			if isExistingPoint {
 				// Close the shape by creating a segment back to the existing point
-				app.Measurement.currentLine.segments = append(app.Measurement.currentLine.segments, MeasurementSegment{
-					start: firstPoint,
-					end:   nearestVertex,
+				app.Measurement.CurrentLine.Segments = append(app.Measurement.CurrentLine.Segments, measurement.Segment{
+					Start: firstPoint,
+					End:   nearestVertex,
 				})
 				// Finish the current line and start a new one
-				app.Measurement.measurementLines = append(app.Measurement.measurementLines, *app.Measurement.currentLine)
-				app.Measurement.currentLine = &MeasurementLine{}
-				app.Measurement.selectedPoints = make([]geometry.Vector3, 0)
+				app.Measurement.MeasurementLines = append(app.Measurement.MeasurementLines, *app.Measurement.CurrentLine)
+				app.Measurement.CurrentLine = &measurement.Line{}
+				app.Measurement.SelectedPoints = make([]geometry.Vector3, 0)
 				fmt.Printf("Closed shape by connecting to existing point: (%.2f, %.2f, %.2f)\n",
 					nearestVertex.X, nearestVertex.Y, nearestVertex.Z)
 				return
@@ -173,19 +174,19 @@ func (app *App) selectPoint() {
 		}
 
 		// Normal case: add segment to current line
-		if app.Measurement.currentLine == nil {
-			app.Measurement.currentLine = &MeasurementLine{}
+		if app.Measurement.CurrentLine == nil {
+			app.Measurement.CurrentLine = &measurement.Line{}
 		}
-		app.Measurement.currentLine.segments = append(app.Measurement.currentLine.segments, MeasurementSegment{
-			start: firstPoint,
-			end:   nearestVertex,
+		app.Measurement.CurrentLine.Segments = append(app.Measurement.CurrentLine.Segments, measurement.Segment{
+			Start: firstPoint,
+			End:   nearestVertex,
 		})
 
 		// Start new segment from the end point
-		app.Measurement.selectedPoints = []geometry.Vector3{nearestVertex}
+		app.Measurement.SelectedPoints = []geometry.Vector3{nearestVertex}
 	} else {
 		// First point selection
-		app.Measurement.selectedPoints = append(app.Measurement.selectedPoints, nearestVertex)
+		app.Measurement.SelectedPoints = append(app.Measurement.SelectedPoints, nearestVertex)
 	}
 
 	fmt.Printf("Selected point: (%.2f, %.2f, %.2f)\n",
@@ -194,7 +195,7 @@ func (app *App) selectPoint() {
 
 // updateConstrainedMeasurement updates the preview with axis-constrained movement
 func (app *App) updateConstrainedMeasurement() {
-	if len(app.Measurement.selectedPoints) != 1 {
+	if len(app.Measurement.SelectedPoints) != 1 {
 		return
 	}
 
@@ -232,17 +233,17 @@ func (app *App) updateConstrainedMeasurement() {
 
 	if found {
 		// Use the snapped vertex as the preview point
-		app.Measurement.horizontalPreview = &nearestVertex
-		app.Measurement.horizontalSnap = &nearestVertex
+		app.Measurement.HorizontalPreview = &nearestVertex
+		app.Measurement.HorizontalSnap = &nearestVertex
 	} else {
-		app.Measurement.horizontalSnap = nil
-		app.Measurement.horizontalPreview = nil
+		app.Measurement.HorizontalSnap = nil
+		app.Measurement.HorizontalPreview = nil
 	}
 }
 
 // updateNormalMeasurement updates the preview for normal (non-constrained) measurement
 func (app *App) updateNormalMeasurement() {
-	if len(app.Measurement.selectedPoints) != 1 {
+	if len(app.Measurement.SelectedPoints) != 1 {
 		return
 	}
 
@@ -280,21 +281,21 @@ func (app *App) updateNormalMeasurement() {
 
 	if found {
 		// In normal mode, both points are the same (no constrained endpoint)
-		app.Measurement.horizontalSnap = &nearestVertex
-		app.Measurement.horizontalPreview = &nearestVertex
+		app.Measurement.HorizontalSnap = &nearestVertex
+		app.Measurement.HorizontalPreview = &nearestVertex
 	} else {
-		app.Measurement.horizontalSnap = nil
-		app.Measurement.horizontalPreview = nil
+		app.Measurement.HorizontalSnap = nil
+		app.Measurement.HorizontalPreview = nil
 	}
 }
 
 // updatePointConstrainedMeasurement updates the preview for point-constrained measurement
-// Works with three points:
+// Works with three Points:
 // 1. Start point (first selected point) - measurement origin
 // 2. Constraining point (defines direction line) - strictly constrains direction
 // 3. Current hover point (snapped vertex) - sets the length by projecting onto constraint line
 func (app *App) updatePointConstrainedMeasurement() {
-	if len(app.Measurement.selectedPoints) != 1 || app.Constraint.constrainingPoint == nil {
+	if len(app.Measurement.SelectedPoints) != 1 || app.Constraint.constrainingPoint == nil {
 		return
 	}
 
@@ -302,7 +303,7 @@ func (app *App) updatePointConstrainedMeasurement() {
 	ray := rl.GetMouseRay(mousePos, app.Camera.camera)
 
 	// Direction from start point to constraining point (defines the constraint line)
-	startPt := app.Measurement.selectedPoints[0]
+	startPt := app.Measurement.SelectedPoints[0]
 	constrainingPt := app.Constraint.constrainingPoint
 
 	direction := geometry.NewVector3(
@@ -315,8 +316,8 @@ func (app *App) updatePointConstrainedMeasurement() {
 	dirLen := math.Sqrt(direction.X*direction.X + direction.Y*direction.Y + direction.Z*direction.Z)
 	if dirLen < 1e-6 {
 		// Constraining point is same as start point, can't constrain
-		app.Measurement.horizontalSnap = nil
-		app.Measurement.horizontalPreview = nil
+		app.Measurement.HorizontalSnap = nil
+		app.Measurement.HorizontalPreview = nil
 		return
 	}
 
@@ -381,11 +382,11 @@ func (app *App) updatePointConstrainedMeasurement() {
 		)
 
 		// Use the projected point as preview and the actual vertex as snap target
-		app.Measurement.horizontalPreview = &projectedPoint
-		app.Measurement.horizontalSnap = &nearestVertex
+		app.Measurement.HorizontalPreview = &projectedPoint
+		app.Measurement.HorizontalSnap = &nearestVertex
 	} else {
-		app.Measurement.horizontalSnap = nil
-		app.Measurement.horizontalPreview = nil
+		app.Measurement.HorizontalSnap = nil
+		app.Measurement.HorizontalPreview = nil
 	}
 }
 
@@ -444,7 +445,7 @@ func rayToLineDistance(ray rl.Ray, lineStart, lineEnd rl.Vector3) float64 {
 
 // getSegmentAtMouse returns the segment at the given mouse position (checks label bounding boxes)
 func (app *App) getSegmentAtMouse(mousePos rl.Vector2) *[2]int {
-	for segIdx, labelRect := range app.Measurement.segmentLabels {
+	for segIdx, labelRect := range app.Measurement.SegmentLabels {
 		if rl.CheckCollisionPointRec(mousePos, labelRect) {
 			return &segIdx
 		}
@@ -454,7 +455,7 @@ func (app *App) getSegmentAtMouse(mousePos rl.Vector2) *[2]int {
 
 // getRadiusMeasurementAtMouse returns the radius measurement at the given mouse position (checks label bounding boxes)
 func (app *App) getRadiusMeasurementAtMouse(mousePos rl.Vector2) *int {
-	for idx, labelRect := range app.Measurement.radiusLabels {
+	for idx, labelRect := range app.Measurement.RadiusLabels {
 		if rl.CheckCollisionPointRec(mousePos, labelRect) {
 			result := idx
 			return &result
@@ -465,23 +466,23 @@ func (app *App) getRadiusMeasurementAtMouse(mousePos rl.Vector2) *int {
 
 // deleteSelectedRadiusMeasurement deletes the selected radius measurement
 func (app *App) deleteSelectedRadiusMeasurement() {
-	if app.Measurement.selectedRadiusMeasurement == nil {
+	if app.Measurement.SelectedRadiusMeasurement == nil {
 		return
 	}
 
-	idx := *app.Measurement.selectedRadiusMeasurement
+	idx := *app.Measurement.SelectedRadiusMeasurement
 
-	if idx >= 0 && idx < len(app.Measurement.radiusMeasurements) {
-		app.Measurement.radiusMeasurements = append(app.Measurement.radiusMeasurements[:idx], app.Measurement.radiusMeasurements[idx+1:]...)
-		fmt.Printf("Deleted radius measurement %d. Measurements remaining: %d\n", idx, len(app.Measurement.radiusMeasurements))
+	if idx >= 0 && idx < len(app.Measurement.RadiusMeasurements) {
+		app.Measurement.RadiusMeasurements = append(app.Measurement.RadiusMeasurements[:idx], app.Measurement.RadiusMeasurements[idx+1:]...)
+		fmt.Printf("Deleted radius measurement %d. Measurements remaining: %d\n", idx, len(app.Measurement.RadiusMeasurements))
 	}
 }
 
 // deleteAllSelectedItems deletes all multi-selected segments and radius measurements
 func (app *App) deleteAllSelectedItems() {
 	// Sort radius measurements in descending order to delete from end to start
-	sortedRadiusMeasurements := make([]int, len(app.Measurement.selectedRadiusMeasurements))
-	copy(sortedRadiusMeasurements, app.Measurement.selectedRadiusMeasurements)
+	sortedRadiusMeasurements := make([]int, len(app.Measurement.SelectedRadiusMeasurements))
+	copy(sortedRadiusMeasurements, app.Measurement.SelectedRadiusMeasurements)
 	for i := 0; i < len(sortedRadiusMeasurements); i++ {
 		for j := i + 1; j < len(sortedRadiusMeasurements); j++ {
 			if sortedRadiusMeasurements[j] > sortedRadiusMeasurements[i] {
@@ -492,14 +493,14 @@ func (app *App) deleteAllSelectedItems() {
 
 	// Delete radius measurements (from end to start to maintain indices)
 	for _, idx := range sortedRadiusMeasurements {
-		if idx >= 0 && idx < len(app.Measurement.radiusMeasurements) {
-			app.Measurement.radiusMeasurements = append(app.Measurement.radiusMeasurements[:idx], app.Measurement.radiusMeasurements[idx+1:]...)
+		if idx >= 0 && idx < len(app.Measurement.RadiusMeasurements) {
+			app.Measurement.RadiusMeasurements = append(app.Measurement.RadiusMeasurements[:idx], app.Measurement.RadiusMeasurements[idx+1:]...)
 		}
 	}
 
 	// Sort segments by line index descending, then segment index descending
-	sortedSegments := make([][2]int, len(app.Measurement.selectedSegments))
-	copy(sortedSegments, app.Measurement.selectedSegments)
+	sortedSegments := make([][2]int, len(app.Measurement.SelectedSegments))
+	copy(sortedSegments, app.Measurement.SelectedSegments)
 	for i := 0; i < len(sortedSegments); i++ {
 		for j := i + 1; j < len(sortedSegments); j++ {
 			// Sort by line index first, then segment index (both descending)
@@ -515,27 +516,27 @@ func (app *App) deleteAllSelectedItems() {
 		lineIdx := segIdx[0]
 		idx := segIdx[1]
 
-		if lineIdx == len(app.Measurement.measurementLines) {
+		if lineIdx == len(app.Measurement.MeasurementLines) {
 			// Current line
-			if idx >= 0 && idx < len(app.Measurement.currentLine.segments) {
-				app.Measurement.currentLine.segments = append(app.Measurement.currentLine.segments[:idx], app.Measurement.currentLine.segments[idx+1:]...)
+			if idx >= 0 && idx < len(app.Measurement.CurrentLine.Segments) {
+				app.Measurement.CurrentLine.Segments = append(app.Measurement.CurrentLine.Segments[:idx], app.Measurement.CurrentLine.Segments[idx+1:]...)
 			}
 		} else {
 			// Completed line
-			if lineIdx >= 0 && lineIdx < len(app.Measurement.measurementLines) && idx >= 0 && idx < len(app.Measurement.measurementLines[lineIdx].segments) {
-				app.Measurement.measurementLines[lineIdx].segments = append(app.Measurement.measurementLines[lineIdx].segments[:idx], app.Measurement.measurementLines[lineIdx].segments[idx+1:]...)
+			if lineIdx >= 0 && lineIdx < len(app.Measurement.MeasurementLines) && idx >= 0 && idx < len(app.Measurement.MeasurementLines[lineIdx].Segments) {
+				app.Measurement.MeasurementLines[lineIdx].Segments = append(app.Measurement.MeasurementLines[lineIdx].Segments[:idx], app.Measurement.MeasurementLines[lineIdx].Segments[idx+1:]...)
 			}
 		}
 	}
 
 	// Remove empty lines
-	filteredLines := []MeasurementLine{}
-	for _, line := range app.Measurement.measurementLines {
-		if len(line.segments) > 0 {
+	filteredLines := []measurement.Line{}
+	for _, line := range app.Measurement.MeasurementLines {
+		if len(line.Segments) > 0 {
 			filteredLines = append(filteredLines, line)
 		}
 	}
-	app.Measurement.measurementLines = filteredLines
+	app.Measurement.MeasurementLines = filteredLines
 
 	fmt.Printf("Deleted %d segments and %d radius measurements\n", len(sortedSegments), len(sortedRadiusMeasurements))
 }
@@ -546,53 +547,53 @@ func (app *App) selectLabelsInRectangle() {
 	selectionRect := app.Interaction.selectionRect.GetRectangle()
 
 	// Clear previous selections
-	app.Measurement.selectedSegments = [][2]int{}
-	app.Measurement.selectedRadiusMeasurements = []int{}
-	app.Measurement.selectedSegment = nil
-	app.Measurement.selectedRadiusMeasurement = nil
+	app.Measurement.SelectedSegments = [][2]int{}
+	app.Measurement.SelectedRadiusMeasurements = []int{}
+	app.Measurement.SelectedSegment = nil
+	app.Measurement.SelectedRadiusMeasurement = nil
 
 	// Check all segment labels
-	for segIdx, labelRect := range app.Measurement.segmentLabels {
+	for segIdx, labelRect := range app.Measurement.SegmentLabels {
 		if rl.CheckCollisionRecs(selectionRect, labelRect) {
-			app.Measurement.selectedSegments = append(app.Measurement.selectedSegments, segIdx)
+			app.Measurement.SelectedSegments = append(app.Measurement.SelectedSegments, segIdx)
 		}
 	}
 
 	// Check all radius measurement labels
-	for idx, labelRect := range app.Measurement.radiusLabels {
+	for idx, labelRect := range app.Measurement.RadiusLabels {
 		if rl.CheckCollisionRecs(selectionRect, labelRect) {
-			app.Measurement.selectedRadiusMeasurements = append(app.Measurement.selectedRadiusMeasurements, idx)
+			app.Measurement.SelectedRadiusMeasurements = append(app.Measurement.SelectedRadiusMeasurements, idx)
 		}
 	}
 }
 
 // deleteSelectedSegment deletes the selected segment
 func (app *App) deleteSelectedSegment() {
-	if app.Measurement.selectedSegment == nil {
+	if app.Measurement.SelectedSegment == nil {
 		return
 	}
 
-	lineIdx := app.Measurement.selectedSegment[0]
-	segIdx := app.Measurement.selectedSegment[1]
+	lineIdx := app.Measurement.SelectedSegment[0]
+	segIdx := app.Measurement.SelectedSegment[1]
 
 	// Check if it's the current line being drawn
-	if lineIdx == len(app.Measurement.measurementLines) {
+	if lineIdx == len(app.Measurement.MeasurementLines) {
 		// Current line
-		if segIdx >= 0 && segIdx < len(app.Measurement.currentLine.segments) {
-			app.Measurement.currentLine.segments = append(app.Measurement.currentLine.segments[:segIdx], app.Measurement.currentLine.segments[segIdx+1:]...)
-			fmt.Printf("Deleted segment [%d, %d]. Segments remaining: %d\n", lineIdx, segIdx, len(app.Measurement.currentLine.segments))
+		if segIdx >= 0 && segIdx < len(app.Measurement.CurrentLine.Segments) {
+			app.Measurement.CurrentLine.Segments = append(app.Measurement.CurrentLine.Segments[:segIdx], app.Measurement.CurrentLine.Segments[segIdx+1:]...)
+			fmt.Printf("Deleted segment [%d, %d]. Segments remaining: %d\n", lineIdx, segIdx, len(app.Measurement.CurrentLine.Segments))
 		}
 	} else {
 		// Completed line
-		if lineIdx >= 0 && lineIdx < len(app.Measurement.measurementLines) && segIdx >= 0 && segIdx < len(app.Measurement.measurementLines[lineIdx].segments) {
-			app.Measurement.measurementLines[lineIdx].segments = append(app.Measurement.measurementLines[lineIdx].segments[:segIdx], app.Measurement.measurementLines[lineIdx].segments[segIdx+1:]...)
+		if lineIdx >= 0 && lineIdx < len(app.Measurement.MeasurementLines) && segIdx >= 0 && segIdx < len(app.Measurement.MeasurementLines[lineIdx].Segments) {
+			app.Measurement.MeasurementLines[lineIdx].Segments = append(app.Measurement.MeasurementLines[lineIdx].Segments[:segIdx], app.Measurement.MeasurementLines[lineIdx].Segments[segIdx+1:]...)
 
 			// If line is now empty, remove it
-			if len(app.Measurement.measurementLines[lineIdx].segments) == 0 {
-				app.Measurement.measurementLines = append(app.Measurement.measurementLines[:lineIdx], app.Measurement.measurementLines[lineIdx+1:]...)
+			if len(app.Measurement.MeasurementLines[lineIdx].Segments) == 0 {
+				app.Measurement.MeasurementLines = append(app.Measurement.MeasurementLines[:lineIdx], app.Measurement.MeasurementLines[lineIdx+1:]...)
 				fmt.Printf("Deleted segment [%d, %d]. Line removed (was empty)\n", lineIdx, segIdx)
 			} else {
-				fmt.Printf("Deleted segment [%d, %d]. Segments remaining: %d\n", lineIdx, segIdx, len(app.Measurement.measurementLines[lineIdx].segments))
+				fmt.Printf("Deleted segment [%d, %d]. Segments remaining: %d\n", lineIdx, segIdx, len(app.Measurement.MeasurementLines[lineIdx].Segments))
 			}
 		}
 	}

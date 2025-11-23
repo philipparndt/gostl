@@ -4,6 +4,7 @@ import (
 	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
+	"github.com/philipparndt/gostl/internal/measurement"
 	"github.com/philipparndt/gostl/pkg/geometry"
 	"github.com/philipparndt/gostl/pkg/stl"
 	"github.com/philipparndt/gostl/pkg/watcher"
@@ -38,24 +39,8 @@ type ViewSettings struct {
 	showMeasurement bool
 }
 
-// MeasurementState holds all measurement-related state
-type MeasurementState struct {
-	selectedPoints             []geometry.Vector3
-	measurementLines           []MeasurementLine
-	currentLine                *MeasurementLine
-	selectedSegment            *[2]int
-	hoveredSegment             *[2]int
-	segmentLabels              map[[2]int]rl.Rectangle
-	radiusMeasurement          *RadiusMeasurement
-	radiusMeasurements         []RadiusMeasurement
-	selectedRadiusMeasurement  *int
-	hoveredRadiusMeasurement   *int
-	radiusLabels               map[int]rl.Rectangle
-	selectedSegments           [][2]int
-	selectedRadiusMeasurements []int
-	horizontalSnap             *geometry.Vector3 // Snapped point for preview
-	horizontalPreview          *geometry.Vector3 // Preview point for measurement
-}
+// MeasurementState is an alias for measurement.State
+type MeasurementState = measurement.State
 
 // InteractionState holds mouse and interaction state
 type InteractionState struct {
