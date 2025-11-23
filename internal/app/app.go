@@ -50,7 +50,7 @@ func Run() {
 	screenWidth := int32(1400)
 	screenHeight := int32(900)
 	rl.SetConfigFlags(rl.FlagWindowResizable | rl.FlagWindowHighdpi | rl.FlagMsaa4xHint) // Must be before InitWindow
-	rl.InitWindow(screenWidth, screenHeight, "GoSTL - GPU Accelerated 3D Viewer")
+	rl.InitWindow(screenWidth, screenHeight, "GoSTL")
 	rl.SetTargetFPS(60)
 
 	// Create app instance

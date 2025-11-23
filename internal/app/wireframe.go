@@ -11,7 +11,7 @@ func (app *App) drawWireframe() {
 	// Draw wireframe mode with thin cylinders for better visibility and anti-aliasing
 	// Use dark gray for better blending with the filled surface
 	wireframeColor := rl.NewColor(100, 100, 100, 200)   // Semi-transparent dark gray
-	wireframeThickness := app.Model.size * 0.0002       // Slightly thicker for high DPI displays
+	wireframeThickness := app.Camera.distance * 0.0001  // Scale with camera distance for constant screen thickness
 	cylinderSegments := int32(8)                        // More segments for smoother appearance
 
 	// Track drawn edges to avoid duplicates

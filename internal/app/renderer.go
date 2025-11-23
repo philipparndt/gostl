@@ -59,66 +59,67 @@ func stlToRaylibMesh(model *stl.Model) rl.Mesh {
 	vertices := make([]float32, vertexCount*3)
 	normals := make([]float32, vertexCount*3)
 	texcoords := make([]float32, vertexCount*2)
-	colors := make([]uint8, vertexCount*4) // Add vertex colors for baked lighting
+	colors := make([]uint8, vertexCount*4)
 
-	// Light direction for baked lighting
-	lightDir := geometry.NewVector3(-0.5, -1.0, -0.5).Normalize()
+	// Multiple light sources for better depth perception
+	keyLight := geometry.NewVector3(-0.5, -0.8, -0.3).Normalize()    // Main light
+	fillLight := geometry.NewVector3(0.3, -0.2, 0.7).Normalize()     // Fill from opposite side
+	rimLight := geometry.NewVector3(0.0, 0.5, -0.8).Normalize()      // Rim light from above/behind
 
 	idx := 0
 	for _, triangle := range model.Triangles {
 		normal := triangle.CalculateNormal()
 
-		// Calculate lighting intensity (diffuse lighting)
-		lightIntensity := math.Max(0.3, -normal.Dot(lightDir)) // Min 30% ambient, max 100% diffuse
-		baseColor := 200.0
-		r := uint8(baseColor * lightIntensity * 0.5)
-		g := uint8(baseColor * lightIntensity * 0.6)
-		b := uint8(baseColor * lightIntensity)
+		// Calculate lighting from multiple sources
+		// Key light - strongest, more dramatic shadows
+		keyIntensity := math.Max(0.0, -normal.Dot(keyLight))
+		// Fill light - softer, prevents pure black
+		fillIntensity := math.Max(0.0, -normal.Dot(fillLight)) * 0.4
+		// Rim light - adds definition to edges
+		rimIntensity := math.Max(0.0, -normal.Dot(rimLight)) * 0.3
 
-		// Vertex 1
-		vertices[idx*3+0] = float32(triangle.V1.X)
-		vertices[idx*3+1] = float32(triangle.V1.Y)
-		vertices[idx*3+2] = float32(triangle.V1.Z)
-		normals[idx*3+0] = float32(normal.X)
-		normals[idx*3+1] = float32(normal.Y)
-		normals[idx*3+2] = float32(normal.Z)
-		texcoords[idx*2+0] = 0
-		texcoords[idx*2+1] = 0
-		colors[idx*4+0] = r
-		colors[idx*4+1] = g
-		colors[idx*4+2] = b
-		colors[idx*4+3] = 255
-		idx++
+		// Combine lights with ambient
+		totalIntensity := 0.15 + keyIntensity*0.7 + fillIntensity + rimIntensity
+		totalIntensity = math.Min(1.0, totalIntensity)
 
-		// Vertex 2
-		vertices[idx*3+0] = float32(triangle.V2.X)
-		vertices[idx*3+1] = float32(triangle.V2.Y)
-		vertices[idx*3+2] = float32(triangle.V2.Z)
-		normals[idx*3+0] = float32(normal.X)
-		normals[idx*3+1] = float32(normal.Y)
-		normals[idx*3+2] = float32(normal.Z)
-		texcoords[idx*2+0] = 1
-		texcoords[idx*2+1] = 0
-		colors[idx*4+0] = r
-		colors[idx*4+1] = g
-		colors[idx*4+2] = b
-		colors[idx*4+3] = 255
-		idx++
+		// Apply to base color
+		baseColor := 220.0
+		r := uint8(baseColor * totalIntensity * 0.5)
+		g := uint8(baseColor * totalIntensity * 0.6)
+		b := uint8(baseColor * totalIntensity)
 
-		// Vertex 3
-		vertices[idx*3+0] = float32(triangle.V3.X)
-		vertices[idx*3+1] = float32(triangle.V3.Y)
-		vertices[idx*3+2] = float32(triangle.V3.Z)
-		normals[idx*3+0] = float32(normal.X)
-		normals[idx*3+1] = float32(normal.Y)
-		normals[idx*3+2] = float32(normal.Z)
-		texcoords[idx*2+0] = 0
-		texcoords[idx*2+1] = 1
-		colors[idx*4+0] = r
-		colors[idx*4+1] = g
-		colors[idx*4+2] = b
-		colors[idx*4+3] = 255
-		idx++
+		// All three vertices of the triangle get the same color (flat shading)
+		for vidx, vertex := range []geometry.Vector3{triangle.V1, triangle.V2, triangle.V3} {
+			// Set vertex position
+			vertices[idx*3+0] = float32(vertex.X)
+			vertices[idx*3+1] = float32(vertex.Y)
+			vertices[idx*3+2] = float32(vertex.Z)
+
+			// Set face normal (same for all vertices in triangle)
+			normals[idx*3+0] = float32(normal.X)
+			normals[idx*3+1] = float32(normal.Y)
+			normals[idx*3+2] = float32(normal.Z)
+
+			// Set texture coordinates
+			if vidx == 0 {
+				texcoords[idx*2+0] = 0
+				texcoords[idx*2+1] = 0
+			} else if vidx == 1 {
+				texcoords[idx*2+0] = 1
+				texcoords[idx*2+1] = 0
+			} else {
+				texcoords[idx*2+0] = 0
+				texcoords[idx*2+1] = 1
+			}
+
+			// Set vertex color
+			colors[idx*4+0] = r
+			colors[idx*4+1] = g
+			colors[idx*4+2] = b
+			colors[idx*4+3] = 255
+
+			idx++
+		}
 	}
 
 	// Assign mesh data

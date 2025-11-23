@@ -1,7 +1,7 @@
 package main
 
-import "github.com/philipparndt/gostl/internal/app"
+import "github.com/philipparndt/gostl/cmd"
 
 func main() {
-	app.Run()
+	cmd.Execute()
 }
