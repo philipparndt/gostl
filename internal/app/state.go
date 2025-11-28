@@ -49,7 +49,7 @@ type ViewSettings struct {
 	showFilled      bool
 	showMeasurement bool
 	showGrid        bool
-	gridMode        int      // 0=off, 1=bottom only, 2=all sides
+	gridMode        int      // 0=off, 1=bottom only, 2=all sides, 3=1mm grid
 	gridInfo        GridInfo // Info for drawing 2D labels
 }
 

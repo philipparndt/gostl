@@ -332,8 +332,8 @@ func (app *App) handleInput() {
 		app.View.showFilled = !app.View.showFilled
 	}
 	if rl.IsKeyPressed(rl.KeyG) {
-		// Cycle through grid modes: off -> bottom -> all sides -> off
-		app.View.gridMode = (app.View.gridMode + 1) % 3
+		// Cycle through grid modes: off -> bottom -> all sides -> 1mm grid -> off
+		app.View.gridMode = (app.View.gridMode + 1) % 4
 		if app.View.gridMode == 0 {
 			app.View.showGrid = false
 		} else {

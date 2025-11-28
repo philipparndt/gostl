@@ -72,8 +72,8 @@ func Run() {
 			showWireframe:   true,
 			showFilled:      true,
 			showMeasurement: true,
-			showGrid:        false,
-			gridMode:        0, // 0=off, 1=bottom, 2=all sides
+			showGrid:        true,
+			gridMode:        2, // 0=off, 1=bottom, 2=all sides, 3=1mm grid
 		},
 		FileWatch: FileWatchState{
 			sourceFile:  sourceFile,

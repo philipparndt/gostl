@@ -48,11 +48,18 @@ func (app *App) drawGrid() {
 	maxZ := float32(bboxMax.Z * padding)
 
 	// Calculate grid spacing based on overall model size
-	sizeX := maxX - minX
-	sizeY := maxY - minY
-	sizeZ := maxZ - minZ
-	maxSize := float32(math.Max(float64(sizeX), math.Max(float64(sizeY), float64(sizeZ))))
-	gridSpacing := calculateGridSpacing(maxSize)
+	var gridSpacing float32
+	if app.View.gridMode == 3 {
+		// Mode 3: Fixed 1mm grid spacing
+		gridSpacing = 1.0
+	} else {
+		// Dynamic grid spacing based on model size
+		sizeX := maxX - minX
+		sizeY := maxY - minY
+		sizeZ := maxZ - minZ
+		maxSize := float32(math.Max(float64(sizeX), math.Max(float64(sizeY), float64(sizeZ))))
+		gridSpacing = calculateGridSpacing(maxSize)
+	}
 
 	// Snap grid bounds to grid spacing
 	minX = float32(math.Floor(float64(minX/gridSpacing))) * gridSpacing
@@ -64,16 +71,30 @@ func (app *App) drawGrid() {
 
 	gridColor := rl.NewColor(100, 100, 100, 160)
 	majorGridColor := rl.NewColor(140, 140, 140, 200)
+	superMajorGridColor := rl.NewColor(180, 180, 180, 240)
+
+	// Calculate major grid spacing (bolder lines)
+	var majorSpacing float32
+	var superMajorSpacing float32
+	if app.View.gridMode == 3 {
+		// Mode 3: Every 5th line (5mm) is major, every 10th line (10mm) is super major
+		majorSpacing = 5.0
+		superMajorSpacing = 10.0
+	} else {
+		// Other modes: Every 5th line is major, no super major
+		majorSpacing = gridSpacing * 5
+		superMajorSpacing = 0 // Disabled
+	}
 
 	// Always draw bottom grid (XZ plane at bottom Y)
-	app.drawXZPlane(minX, maxX, minZ, maxZ, float32(bboxMin.Y), gridSpacing, gridColor, majorGridColor)
+	app.drawXZPlane(minX, maxX, minZ, maxZ, float32(bboxMin.Y), gridSpacing, majorSpacing, superMajorSpacing, gridColor, majorGridColor, superMajorGridColor)
 
-	// Draw additional grids if in "all sides" mode
-	if app.View.gridMode == 2 {
+	// Draw additional grids if in "all sides" mode or "1mm grid" mode
+	if app.View.gridMode == 2 || app.View.gridMode == 3 {
 		// Back wall (XY plane at min Z)
-		app.drawXYPlane(minX, maxX, minY, maxY, minZ, gridSpacing, gridColor, majorGridColor)
+		app.drawXYPlane(minX, maxX, minY, maxY, minZ, gridSpacing, majorSpacing, superMajorSpacing, gridColor, majorGridColor, superMajorGridColor)
 		// Left wall (YZ plane at min X)
-		app.drawYZPlane(minY, maxY, minZ, maxZ, minX, gridSpacing, gridColor, majorGridColor)
+		app.drawYZPlane(minY, maxY, minZ, maxZ, minX, gridSpacing, majorSpacing, superMajorSpacing, gridColor, majorGridColor, superMajorGridColor)
 	}
 
 	// Store grid info for 2D overlay
@@ -87,19 +108,22 @@ func (app *App) drawGrid() {
 	}
 
 	// Draw 3D labels directly in 3D mode
-	app.drawGridLabels3D(minX, maxX, minZ, maxZ, float32(bboxMin.Y), gridSpacing)
+	app.drawGridLabels3D(minX, maxX, minY, maxY, minZ, maxZ, float32(bboxMin.Y), gridSpacing)
 	app.drawModelDimensions3D(minX, maxX, minZ, maxZ, float32(bboxMin.Y), gridSpacing)
 }
 
 // drawXZPlane draws a grid on the XZ plane at the given Y coordinate
-func (app *App) drawXZPlane(minX, maxX, minZ, maxZ, y, gridSpacing float32, gridColor, majorGridColor rl.Color) {
+func (app *App) drawXZPlane(minX, maxX, minZ, maxZ, y, gridSpacing, majorSpacing, superMajorSpacing float32, gridColor, majorGridColor, superMajorGridColor rl.Color) {
 	// Draw lines parallel to X axis (running along Z)
 	for z := minZ; z <= maxZ; z += gridSpacing {
-		isMajor := math.Abs(math.Mod(float64(z), float64(gridSpacing*5))) < 0.001
 		color := gridColor
-		if isMajor {
+		// Check for super major lines (every 10mm in mode 3)
+		if superMajorSpacing > 0 && math.Abs(math.Mod(float64(z), float64(superMajorSpacing))) < 0.001 {
+			color = superMajorGridColor
+		} else if math.Abs(math.Mod(float64(z), float64(majorSpacing))) < 0.001 {
 			color = majorGridColor
 		}
+
 		rl.DrawLine3D(
 			rl.Vector3{X: minX, Y: y, Z: z},
 			rl.Vector3{X: maxX, Y: y, Z: z},
@@ -109,11 +133,14 @@ func (app *App) drawXZPlane(minX, maxX, minZ, maxZ, y, gridSpacing float32, grid
 
 	// Draw lines parallel to Z axis (running along X)
 	for x := minX; x <= maxX; x += gridSpacing {
-		isMajor := math.Abs(math.Mod(float64(x), float64(gridSpacing*5))) < 0.001
 		color := gridColor
-		if isMajor {
+		// Check for super major lines (every 10mm in mode 3)
+		if superMajorSpacing > 0 && math.Abs(math.Mod(float64(x), float64(superMajorSpacing))) < 0.001 {
+			color = superMajorGridColor
+		} else if math.Abs(math.Mod(float64(x), float64(majorSpacing))) < 0.001 {
 			color = majorGridColor
 		}
+
 		rl.DrawLine3D(
 			rl.Vector3{X: x, Y: y, Z: minZ},
 			rl.Vector3{X: x, Y: y, Z: maxZ},
@@ -123,14 +150,17 @@ func (app *App) drawXZPlane(minX, maxX, minZ, maxZ, y, gridSpacing float32, grid
 }
 
 // drawXYPlane draws a grid on the XY plane at the given Z coordinate
-func (app *App) drawXYPlane(minX, maxX, minY, maxY, z, gridSpacing float32, gridColor, majorGridColor rl.Color) {
+func (app *App) drawXYPlane(minX, maxX, minY, maxY, z, gridSpacing, majorSpacing, superMajorSpacing float32, gridColor, majorGridColor, superMajorGridColor rl.Color) {
 	// Draw lines parallel to X axis (running along Y)
 	for y := minY; y <= maxY; y += gridSpacing {
-		isMajor := math.Abs(math.Mod(float64(y), float64(gridSpacing*5))) < 0.001
 		color := gridColor
-		if isMajor {
+		// Check for super major lines (every 10mm in mode 3)
+		if superMajorSpacing > 0 && math.Abs(math.Mod(float64(y), float64(superMajorSpacing))) < 0.001 {
+			color = superMajorGridColor
+		} else if math.Abs(math.Mod(float64(y), float64(majorSpacing))) < 0.001 {
 			color = majorGridColor
 		}
+
 		rl.DrawLine3D(
 			rl.Vector3{X: minX, Y: y, Z: z},
 			rl.Vector3{X: maxX, Y: y, Z: z},
@@ -140,11 +170,14 @@ func (app *App) drawXYPlane(minX, maxX, minY, maxY, z, gridSpacing float32, grid
 
 	// Draw lines parallel to Y axis (running along X)
 	for x := minX; x <= maxX; x += gridSpacing {
-		isMajor := math.Abs(math.Mod(float64(x), float64(gridSpacing*5))) < 0.001
 		color := gridColor
-		if isMajor {
+		// Check for super major lines (every 10mm in mode 3)
+		if superMajorSpacing > 0 && math.Abs(math.Mod(float64(x), float64(superMajorSpacing))) < 0.001 {
+			color = superMajorGridColor
+		} else if math.Abs(math.Mod(float64(x), float64(majorSpacing))) < 0.001 {
 			color = majorGridColor
 		}
+
 		rl.DrawLine3D(
 			rl.Vector3{X: x, Y: minY, Z: z},
 			rl.Vector3{X: x, Y: maxY, Z: z},
@@ -154,14 +187,17 @@ func (app *App) drawXYPlane(minX, maxX, minY, maxY, z, gridSpacing float32, grid
 }
 
 // drawYZPlane draws a grid on the YZ plane at the given X coordinate
-func (app *App) drawYZPlane(minY, maxY, minZ, maxZ, x, gridSpacing float32, gridColor, majorGridColor rl.Color) {
+func (app *App) drawYZPlane(minY, maxY, minZ, maxZ, x, gridSpacing, majorSpacing, superMajorSpacing float32, gridColor, majorGridColor, superMajorGridColor rl.Color) {
 	// Draw lines parallel to Y axis (running along Z)
 	for z := minZ; z <= maxZ; z += gridSpacing {
-		isMajor := math.Abs(math.Mod(float64(z), float64(gridSpacing*5))) < 0.001
 		color := gridColor
-		if isMajor {
+		// Check for super major lines (every 10mm in mode 3)
+		if superMajorSpacing > 0 && math.Abs(math.Mod(float64(z), float64(superMajorSpacing))) < 0.001 {
+			color = superMajorGridColor
+		} else if math.Abs(math.Mod(float64(z), float64(majorSpacing))) < 0.001 {
 			color = majorGridColor
 		}
+
 		rl.DrawLine3D(
 			rl.Vector3{X: x, Y: minY, Z: z},
 			rl.Vector3{X: x, Y: maxY, Z: z},
@@ -171,11 +207,14 @@ func (app *App) drawYZPlane(minY, maxY, minZ, maxZ, x, gridSpacing float32, grid
 
 	// Draw lines parallel to Z axis (running along Y)
 	for y := minY; y <= maxY; y += gridSpacing {
-		isMajor := math.Abs(math.Mod(float64(y), float64(gridSpacing*5))) < 0.001
 		color := gridColor
-		if isMajor {
+		// Check for super major lines (every 10mm in mode 3)
+		if superMajorSpacing > 0 && math.Abs(math.Mod(float64(y), float64(superMajorSpacing))) < 0.001 {
+			color = superMajorGridColor
+		} else if math.Abs(math.Mod(float64(y), float64(majorSpacing))) < 0.001 {
 			color = majorGridColor
 		}
+
 		rl.DrawLine3D(
 			rl.Vector3{X: x, Y: y, Z: minZ},
 			rl.Vector3{X: x, Y: y, Z: maxZ},
@@ -208,25 +247,50 @@ func calculateGridSpacing(size float32) float32 {
 }
 
 // drawGridLabels3D draws coordinate labels on the grid using 3D billboards
-func (app *App) drawGridLabels3D(minX, maxX, minZ, maxZ, y, gridSpacing float32) {
+func (app *App) drawGridLabels3D(minX, maxX, minY, maxY, minZ, maxZ, y, gridSpacing float32) {
 	labelColor := rl.NewColor(200, 200, 200, 255)
 	fontSize := float32(4) // Smaller size for grid labels
 
-	// Only draw coordinate labels at major grid lines (every 5th line)
-	majorSpacing := gridSpacing * 5
+	// Draw coordinate labels at appropriate intervals
+	var labelSpacing float32
+	if app.View.gridMode == 3 {
+		// Mode 3: Only label every 10mm
+		labelSpacing = 10.0
+	} else {
+		// Other modes: Label at every grid line
+		labelSpacing = gridSpacing
+	}
 
-	// Draw labels along X axis (on the near edge)
-	for x := float32(math.Ceil(float64(minX/majorSpacing))) * majorSpacing; x <= maxX; x += majorSpacing {
+	// Always draw X labels along the bottom XZ plane (near edge)
+	for x := float32(math.Ceil(float64(minX/labelSpacing))) * labelSpacing; x <= maxX; x += labelSpacing {
 		text := fmt.Sprintf("%.0f", x)
 		pos3D := rl.Vector3{X: x, Y: y, Z: minZ - 2} // Offset slightly in front
 		app.drawText3D(text, pos3D, fontSize, labelColor)
 	}
 
-	// Draw labels along Z axis (on the left edge)
-	for z := float32(math.Ceil(float64(minZ/majorSpacing))) * majorSpacing; z <= maxZ; z += majorSpacing {
+	// Always draw Z labels along the bottom XZ plane (left edge)
+	for z := float32(math.Ceil(float64(minZ/labelSpacing))) * labelSpacing; z <= maxZ; z += labelSpacing {
+		// Skip "0" on Z axis to avoid duplicate with X axis label at origin
+		if math.Abs(float64(z)) < 0.001 {
+			continue
+		}
 		text := fmt.Sprintf("%.0f", z)
 		pos3D := rl.Vector3{X: minX - 2, Y: y, Z: z} // Offset slightly to the left
 		app.drawText3D(text, pos3D, fontSize, labelColor)
+	}
+
+	// Only draw Y labels when in "all sides" mode or "1mm grid" mode
+	if app.View.gridMode == 2 || app.View.gridMode == 3 {
+		// Draw Y labels along the vertical edge (corner)
+		for yCoord := float32(math.Ceil(float64(minY/labelSpacing))) * labelSpacing; yCoord <= maxY; yCoord += labelSpacing {
+			// Skip "0" on Y axis to avoid duplicate with X axis label at origin
+			if math.Abs(float64(yCoord)) < 0.001 {
+				continue
+			}
+			text := fmt.Sprintf("%.0f", yCoord)
+			pos3D := rl.Vector3{X: minX - 2, Y: yCoord, Z: minZ - 2} // Offset to corner
+			app.drawText3D(text, pos3D, fontSize, labelColor)
+		}
 	}
 }
 

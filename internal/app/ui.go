@@ -169,6 +169,8 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		gridStatus = "Bottom"
 	} else if app.View.gridMode == 2 {
 		gridStatus = "All Sides"
+	} else if app.View.gridMode == 3 {
+		gridStatus = "1mm Grid"
 	}
 	viewText := fmt.Sprintf("  W: Wireframe | F: Fill | G: Grid (%s)", gridStatus)
 	rl.DrawTextEx(app.UI.font, viewText, rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
