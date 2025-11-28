@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 
+	"github.com/golang/freetype/truetype"
 	rl "github.com/gen2brain/raylib-go/raylib"
 	"github.com/philipparndt/gostl/assets"
 	"github.com/philipparndt/gostl/internal/measurement"
@@ -71,6 +72,8 @@ func Run() {
 			showWireframe:   true,
 			showFilled:      true,
 			showMeasurement: true,
+			showGrid:        true,
+			gridMode:        2, // 0=off, 1=bottom, 2=all sides, 3=1mm grid
 		},
 		FileWatch: FileWatchState{
 			sourceFile:  sourceFile,
@@ -95,6 +98,22 @@ func Run() {
 	// Using 96px base size for crisp rendering when scaled down to 14-20px on high DPI displays
 	charsToLoad := []rune("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()_+-=[]{}|;:',.<>?/\\`~\t\n °±×÷\"°²³µ¼½¾€£¥©®™✓✔✕✖→←↑↓↔↕⚠")
 	app.UI.font = rl.LoadFontFromMemory(".ttf", assets.JetBrainsMonoTTF, 96, charsToLoad)
+
+	// Initialize 3D text billboard cache
+	app.UI.textBillboardCache = NewTextBillboardCache()
+
+	// Create a TrueType font face for text rendering to texture
+	// Use high resolution for crisp rendering when scaled down
+	ttfFont, err := truetype.Parse(assets.JetBrainsMonoTTF)
+	if err != nil {
+		fmt.Printf("Warning: Failed to parse font for 3D text: %v\n", err)
+	} else {
+		app.UI.textFace = truetype.NewFace(ttfFont, &truetype.Options{
+			Size: 128, // High resolution for crisp rendering
+			DPI:  72,
+		})
+		app.UI.textBillboardCache.SetFont(app.UI.textFace)
+	}
 
 	// Convert STL to Raylib mesh
 	app.Model.mesh = stlToRaylibMesh(model)
@@ -220,6 +239,9 @@ func Run() {
 			app.drawWireframe()
 		}
 
+		// Draw grid
+		app.drawGrid()
+
 		// Draw slice planes
 		app.drawSlicePlanes()
 
@@ -227,6 +249,9 @@ func Run() {
 
 		// Draw 3D coordinate axes at a fixed screen position (after 3D mode)
 		app.drawCoordinateAxes3D()
+
+		// Draw grid spacing info overlay
+		app.drawGridInfo()
 
 		// Create measurement rendering context
 		measurementCtx := measurement.RenderContext{
@@ -258,6 +283,12 @@ func Run() {
 
 	// Cleanup
 	rl.UnloadFont(app.UI.font)
+	if app.UI.textBillboardCache != nil {
+		app.UI.textBillboardCache.Cleanup()
+	}
+	if app.UI.textFace != nil {
+		app.UI.textFace.Close()
+	}
 	rl.UnloadMesh(&app.Model.mesh)
 	rl.CloseWindow()
 }
