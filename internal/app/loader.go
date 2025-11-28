@@ -9,6 +9,7 @@ import (
 	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
+	"github.com/philipparndt/gostl/pkg/geometry"
 	"github.com/philipparndt/gostl/pkg/openscad"
 	"github.com/philipparndt/gostl/pkg/stl"
 	"github.com/philipparndt/gostl/pkg/watcher"
@@ -201,9 +202,118 @@ func (app *App) applyLoadedModel() {
 	elapsed := time.Since(app.FileWatch.loadingStartTime)
 	fmt.Printf("Model reloaded successfully in %.2fs!\n", elapsed.Seconds())
 
+	// Load saved measurements (will validate automatically)
+	if err := app.loadMeasurements(); err != nil {
+		fmt.Printf("Warning: Failed to load measurements: %v\n", err)
+		// If loading fails, at least validate existing measurements
+		app.validateMeasurements()
+	}
+
 	// Clear loaded model and finish loading
 	app.FileWatch.loadedModel = nil
 	app.FileWatch.loadedSTLFile = ""
 	app.FileWatch.loadedIsOpenSCAD = false
 	app.FileWatch.isLoading = false
+}
+
+// validateMeasurements checks if existing measurements are still valid after model reload
+func (app *App) validateMeasurements() {
+	// Initialize the invalid tracking maps if not already
+	if app.Measurement.InvalidLineSegments == nil {
+		app.Measurement.InvalidLineSegments = make(map[[2]int]bool)
+	}
+	if app.Measurement.InvalidRadiusMeasurements == nil {
+		app.Measurement.InvalidRadiusMeasurements = make(map[int]bool)
+	}
+
+	// Clear previous invalid state
+	app.Measurement.InvalidLineSegments = make(map[[2]int]bool)
+	app.Measurement.InvalidRadiusMeasurements = make(map[int]bool)
+	app.Measurement.HasInvalidMeasurements = false
+
+	// Build vertex map from the new model for fast lookup
+	vertexMap := make(map[geometry.Vector3]bool)
+	for _, triangle := range app.Model.model.Triangles {
+		vertexMap[triangle.V1] = true
+		vertexMap[triangle.V2] = true
+		vertexMap[triangle.V3] = true
+	}
+
+	// Helper function to check if a point exists in the model (exact or within tolerance)
+	pointExists := func(point geometry.Vector3) bool {
+		// First try exact match
+		if vertexMap[point] {
+			return true
+		}
+
+		// Try with tolerance (use selection threshold as tolerance)
+		tolerance := app.getSelectionThreshold()
+		for vertex := range vertexMap {
+			dx := vertex.X - point.X
+			dy := vertex.Y - point.Y
+			dz := vertex.Z - point.Z
+			distSq := dx*dx + dy*dy + dz*dz
+			if distSq < tolerance*tolerance {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Validate measurement lines
+	for lineIdx, line := range app.Measurement.MeasurementLines {
+		for segIdx, segment := range line.Segments {
+			startExists := pointExists(segment.Start)
+			endExists := pointExists(segment.End)
+
+			if !startExists || !endExists {
+				app.Measurement.InvalidLineSegments[[2]int{lineIdx, segIdx}] = true
+				app.Measurement.HasInvalidMeasurements = true
+			}
+		}
+	}
+
+	// Validate current line being drawn
+	if app.Measurement.CurrentLine != nil {
+		for segIdx, segment := range app.Measurement.CurrentLine.Segments {
+			startExists := pointExists(segment.Start)
+			endExists := pointExists(segment.End)
+
+			if !startExists || !endExists {
+				// Use -1 as lineIdx for current line to distinguish it
+				app.Measurement.InvalidLineSegments[[2]int{-1, segIdx}] = true
+				app.Measurement.HasInvalidMeasurements = true
+			}
+		}
+	}
+
+	// Validate radius measurements
+	for radiusIdx, radiusMeasurement := range app.Measurement.RadiusMeasurements {
+		invalid := false
+		for _, point := range radiusMeasurement.Points {
+			if !pointExists(point) {
+				invalid = true
+				break
+			}
+		}
+
+		if invalid {
+			app.Measurement.InvalidRadiusMeasurements[radiusIdx] = true
+			app.Measurement.HasInvalidMeasurements = true
+		}
+	}
+
+	// Validate selected points
+	validPoints := make([]geometry.Vector3, 0, len(app.Measurement.SelectedPoints))
+	for _, point := range app.Measurement.SelectedPoints {
+		if pointExists(point) {
+			validPoints = append(validPoints, point)
+		} else {
+			app.Measurement.HasInvalidMeasurements = true
+		}
+	}
+	app.Measurement.SelectedPoints = validPoints
+
+	// Clear hover state as it might be invalid
+	app.Interaction.hasHoveredVertex = false
 }

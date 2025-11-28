@@ -93,7 +93,7 @@ func Run() {
 	// Load JetBrains Mono font with Unicode support at high resolution for Retina displays
 	// Load with a large character set to support special characters like °
 	// Using 96px base size for crisp rendering when scaled down to 14-20px on high DPI displays
-	charsToLoad := []rune("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()_+-=[]{}|;:',.<>?/\\`~\t\n °±×÷\"°²³µ¼½¾€£¥©®™✓✔✕✖→←↑↓↔↕")
+	charsToLoad := []rune("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()_+-=[]{}|;:',.<>?/\\`~\t\n °±×÷\"°²³µ¼½¾€£¥©®™✓✔✕✖→←↑↓↔↕⚠")
 	app.UI.font = rl.LoadFontFromMemory(".ttf", assets.JetBrainsMonoTTF, 96, charsToLoad)
 
 	// Convert STL to Raylib mesh
@@ -167,6 +167,11 @@ func Run() {
 
 	// Analyze model for info
 	result := analysis.AnalyzeModel(model)
+
+	// Load saved measurements if they exist
+	if err := app.loadMeasurements(); err != nil {
+		fmt.Printf("Warning: Failed to load measurements: %v\n", err)
+	}
 
 	// Main loop
 	for {

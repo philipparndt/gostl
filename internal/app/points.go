@@ -178,6 +178,7 @@ func (app *App) selectPoint() {
 				})
 				// Finish the current line and start a new one
 				app.Measurement.MeasurementLines = append(app.Measurement.MeasurementLines, *app.Measurement.CurrentLine)
+				app.autoSaveMeasurements()
 				app.Measurement.CurrentLine = &measurement.Line{}
 				app.Measurement.SelectedPoints = make([]geometry.Vector3, 0)
 				fmt.Printf("Closed shape by connecting to existing point: (%.2f, %.2f, %.2f)\n",
@@ -488,6 +489,7 @@ func (app *App) deleteSelectedRadiusMeasurement() {
 	if idx >= 0 && idx < len(app.Measurement.RadiusMeasurements) {
 		app.Measurement.RadiusMeasurements = append(app.Measurement.RadiusMeasurements[:idx], app.Measurement.RadiusMeasurements[idx+1:]...)
 		fmt.Printf("Deleted radius measurement %d. Measurements remaining: %d\n", idx, len(app.Measurement.RadiusMeasurements))
+		app.autoSaveMeasurements()
 	}
 }
 
@@ -552,6 +554,7 @@ func (app *App) deleteAllSelectedItems() {
 	app.Measurement.MeasurementLines = filteredLines
 
 	fmt.Printf("Deleted %d segments and %d radius measurements\n", len(sortedSegments), len(sortedRadiusMeasurements))
+	app.autoSaveMeasurements()
 }
 
 // selectLabelsInRectangle selects all labels (segments and radius measurements) within the selection rectangle
@@ -608,6 +611,7 @@ func (app *App) deleteSelectedSegment() {
 			} else {
 				fmt.Printf("Deleted segment [%d, %d]. Segments remaining: %d\n", lineIdx, segIdx, len(app.Measurement.MeasurementLines[lineIdx].Segments))
 			}
+			app.autoSaveMeasurements()
 		}
 	}
 }

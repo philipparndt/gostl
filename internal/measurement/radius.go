@@ -223,7 +223,7 @@ func drawMeasurementSegmentLineImpl(ctx RenderContext, segment MeasurementSegmen
 }
 
 // drawMeasurementSegmentLabel draws only the label, returns true if drawn
-func drawMeasurementSegmentLabelImpl(ctx RenderContext, segment MeasurementSegment, segIdx [2]int, drawnLabels []rl.Rectangle) bool {
+func drawMeasurementSegmentLabelImpl(ctx RenderContext, segment MeasurementSegment, segIdx [2]int, segmentColor rl.Color, drawnLabels []rl.Rectangle) bool {
 	const fontSize = float32(12)
 	const padding = float32(6) // Use average of X and Y padding
 
@@ -263,12 +263,21 @@ func drawMeasurementSegmentLabelImpl(ctx RenderContext, segment MeasurementSegme
 		isHovered = true
 	}
 
+	// Determine hover color based on segment color
+	// For invalid segments (orange/red), use a lighter orange for hover
+	// Orange colors have high R and much lower G and B
+	hoverColor := rl.NewColor(150, 220, 255, 255) // Default brighter cyan
+	if segmentColor.R > 200 && segmentColor.R > segmentColor.G+50 && segmentColor.R > segmentColor.B+50 {
+		// This is an orange/red color (invalid segment)
+		hoverColor = rl.NewColor(255, 170, 120, 255) // Lighter orange for hover
+	}
+
 	// Create and draw label
 	label := MeasurementLabel{
 		Text:       fmt.Sprintf("%.2f", distance),
 		ScreenPos:  screenPos,
-		BaseColor:  rl.NewColor(100, 200, 255, 255),            // Cyan
-		HoverColor: rl.NewColor(150, 220, 255, 255),            // Brighter cyan
+		BaseColor:  segmentColor,
+		HoverColor: hoverColor,
 		IsSelected: isSelected,
 		IsHovered:  isHovered,
 	}

@@ -47,6 +47,6 @@ func (r *Renderer) DrawMeasurementSegmentLine(ctx RenderContext, segment Segment
 }
 
 // DrawMeasurementSegmentLabel draws only the label, returns true if drawn
-func (r *Renderer) DrawMeasurementSegmentLabel(ctx RenderContext, segment Segment, segIdx [2]int, drawnLabels []rl.Rectangle) bool {
-	return drawMeasurementSegmentLabelImpl(ctx, segment, segIdx, drawnLabels)
+func (r *Renderer) DrawMeasurementSegmentLabel(ctx RenderContext, segment Segment, segIdx [2]int, color rl.Color, drawnLabels []rl.Rectangle) bool {
+	return drawMeasurementSegmentLabelImpl(ctx, segment, segIdx, color, drawnLabels)
 }

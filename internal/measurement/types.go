@@ -44,6 +44,9 @@ type State struct {
 	SelectedRadiusMeasurements []int
 	HorizontalSnap             *geometry.Vector3 // Snapped point for preview
 	HorizontalPreview          *geometry.Vector3 // Preview point for measurement
+	InvalidLineSegments        map[[2]int]bool   // Tracks invalid segments: [lineIdx][segmentIdx]
+	InvalidRadiusMeasurements  map[int]bool      // Tracks invalid radius measurements
+	HasInvalidMeasurements     bool              // Quick flag to check if there are any invalid measurements
 }
 
 // Type aliases for internal use

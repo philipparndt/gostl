@@ -92,6 +92,26 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 		rl.DrawTextEx(app.UI.font, loadingText, rl.Vector2{X: textX, Y: textY}, fontSize18, 1, rl.Yellow)
 	}
 
+	// Invalid measurements warning (bottom-middle)
+	if app.Measurement.HasInvalidMeasurements {
+		warningText := "⚠ Some measurements are invalid (shown in orange)"
+		boxPadding := float32(15)
+		textSize := rl.MeasureTextEx(app.UI.font, warningText, fontSize16, 1)
+		boxWidth := textSize.X + boxPadding*2
+		boxHeight := textSize.Y + boxPadding*2
+		boxX := (screenWidth - boxWidth) / 2 // Center horizontally
+		boxY := screenHeight - boxHeight - 20
+
+		// Draw background box with orange tint
+		rl.DrawRectangle(int32(boxX), int32(boxY), int32(boxWidth), int32(boxHeight), rl.NewColor(40, 20, 0, 200))
+		rl.DrawRectangleLines(int32(boxX), int32(boxY), int32(boxWidth), int32(boxHeight), rl.NewColor(255, 150, 80, 255))
+
+		// Draw warning text
+		textX := boxX + boxPadding
+		textY := boxY + boxPadding
+		rl.DrawTextEx(app.UI.font, warningText, rl.Vector2{X: textX, Y: textY}, fontSize16, 1, rl.NewColor(255, 180, 100, 255))
+	}
+
 	// === DIMENSIONS ===
 	rl.DrawTextEx(app.UI.font, "Dimensions:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 	y += lineHeight

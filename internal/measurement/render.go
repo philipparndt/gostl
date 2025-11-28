@@ -161,16 +161,31 @@ func drawMeasurementLinesImpl(ctx RenderContext) {
 	// Collect all stored measurement lines
 	for lineIdx, line := range ctx.State.MeasurementLines {
 		for segIdx, segment := range line.Segments {
+			// Check if this segment is invalid
+			isInvalid := ctx.State.InvalidLineSegments[[2]int{lineIdx, segIdx}]
+
 			color := rl.NewColor(100, 200, 255, 255) // Cyan for completed lines
-			priority := 1                            // Normal priority
+			if isInvalid {
+				color = rl.NewColor(255, 120, 80, 255) // Orange/red for invalid segments
+			}
+			priority := 1 // Normal priority
+
 			// Highlight selected segment (single or multi-select)
 			if (ctx.State.SelectedSegment != nil && ctx.State.SelectedSegment[0] == lineIdx && ctx.State.SelectedSegment[1] == segIdx) ||
 				isSegmentSelected(lineIdx, segIdx) {
-				color = rl.Yellow // Yellow for selected
-				priority = 3      // Highest priority
+				if isInvalid {
+					color = rl.NewColor(255, 80, 40, 255) // Darker orange/red for selected invalid
+				} else {
+					color = rl.Yellow // Yellow for selected
+				}
+				priority = 3 // Highest priority
 			} else if ctx.State.HoveredSegment != nil && ctx.State.HoveredSegment[0] == lineIdx && ctx.State.HoveredSegment[1] == segIdx {
-				color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
-				priority = 2                            // Medium priority
+				if isInvalid {
+					color = rl.NewColor(255, 150, 100, 255) // Lighter orange for hovered invalid
+				} else {
+					color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
+				}
+				priority = 2 // Medium priority
 			}
 			segments = append(segments, segmentToDraw{segment, color, [2]int{lineIdx, segIdx}, priority})
 		}
@@ -179,16 +194,31 @@ func drawMeasurementLinesImpl(ctx RenderContext) {
 	// Collect current line segments (in progress)
 	if ctx.State.CurrentLine != nil {
 		for segIdx, segment := range ctx.State.CurrentLine.Segments {
+			// Check if this segment is invalid (current line uses -1 as lineIdx)
+			isInvalid := ctx.State.InvalidLineSegments[[2]int{-1, segIdx}]
+
 			color := rl.NewColor(100, 200, 255, 255) // Cyan for current line
-			priority := 1                            // Normal priority
+			if isInvalid {
+				color = rl.NewColor(255, 120, 80, 255) // Orange/red for invalid segments
+			}
+			priority := 1 // Normal priority
+
 			// Highlight selected segment (current line is at index len(ctx.State.MeasurementLines))
 			if (ctx.State.SelectedSegment != nil && ctx.State.SelectedSegment[0] == len(ctx.State.MeasurementLines) && ctx.State.SelectedSegment[1] == segIdx) ||
 				isSegmentSelected(len(ctx.State.MeasurementLines), segIdx) {
-				color = rl.Yellow // Yellow for selected
-				priority = 3      // Highest priority
+				if isInvalid {
+					color = rl.NewColor(255, 80, 40, 255) // Darker orange/red for selected invalid
+				} else {
+					color = rl.Yellow // Yellow for selected
+				}
+				priority = 3 // Highest priority
 			} else if ctx.State.HoveredSegment != nil && ctx.State.HoveredSegment[0] == len(ctx.State.MeasurementLines) && ctx.State.HoveredSegment[1] == segIdx {
-				color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
-				priority = 2                            // Medium priority
+				if isInvalid {
+					color = rl.NewColor(255, 150, 100, 255) // Lighter orange for hovered invalid
+				} else {
+					color = rl.NewColor(150, 220, 255, 255) // Brighter cyan for hovered
+				}
+				priority = 2 // Medium priority
 			}
 			segments = append(segments, segmentToDraw{segment, color, [2]int{len(ctx.State.MeasurementLines), segIdx}, priority})
 		}
@@ -211,7 +241,7 @@ func drawMeasurementLinesImpl(ctx RenderContext) {
 	// Second pass: Draw all labels in priority order, tracking drawn labels to avoid overlap
 	drawnLabels := []rl.Rectangle{}
 	for _, seg := range segments {
-		if drawMeasurementSegmentLabelImpl(ctx, seg.segment, seg.segIdx, drawnLabels) {
+		if drawMeasurementSegmentLabelImpl(ctx, seg.segment, seg.segIdx, seg.color, drawnLabels) {
 			// Label was drawn, add it to the list
 			if labelRect, exists := ctx.State.SegmentLabels[seg.segIdx]; exists {
 				drawnLabels = append(drawnLabels, labelRect)

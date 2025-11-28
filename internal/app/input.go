@@ -218,6 +218,7 @@ func (app *App) handleInput() {
 
 							// Save completed measurement and start a new one
 							app.Measurement.RadiusMeasurements = append(app.Measurement.RadiusMeasurements, *app.Measurement.RadiusMeasurement)
+							app.autoSaveMeasurements()
 							app.Measurement.RadiusMeasurement = &measurement.RadiusMeasurement{
 								Points:         []geometry.Vector3{},
 								ConstraintAxis: -1,
@@ -339,6 +340,7 @@ func (app *App) handleInput() {
 			// Normal mode: Finish current measurement line and start a new one
 			if app.Measurement.CurrentLine != nil && len(app.Measurement.CurrentLine.Segments) > 0 {
 				app.Measurement.MeasurementLines = append(app.Measurement.MeasurementLines, *app.Measurement.CurrentLine)
+				app.autoSaveMeasurements()
 			}
 			app.Measurement.CurrentLine = &measurement.Line{}
 			app.Measurement.SelectedPoints = make([]geometry.Vector3, 0)
@@ -355,6 +357,7 @@ func (app *App) handleInput() {
 			app.Measurement.CurrentLine = &measurement.Line{}
 			app.Measurement.RadiusMeasurements = make([]measurement.RadiusMeasurement, 0)
 			fmt.Printf("Cleared all measurements\n")
+			app.autoSaveMeasurements()
 		}
 		// If in selection mode or radius mode, C does nothing (user should use ESC first)
 	}
