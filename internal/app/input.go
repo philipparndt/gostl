@@ -331,6 +331,15 @@ func (app *App) handleInput() {
 	if rl.IsKeyPressed(rl.KeyF) {
 		app.View.showFilled = !app.View.showFilled
 	}
+	if rl.IsKeyPressed(rl.KeyG) {
+		// Cycle through grid modes: off -> bottom -> all sides -> off
+		app.View.gridMode = (app.View.gridMode + 1) % 3
+		if app.View.gridMode == 0 {
+			app.View.showGrid = false
+		} else {
+			app.View.showGrid = true
+		}
+	}
 	if rl.IsKeyPressed(rl.KeyEscape) {
 		// Priority 1: Exit radius measurement mode
 		if app.Measurement.RadiusMeasurement != nil {

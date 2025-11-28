@@ -162,6 +162,17 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	// === VIEW ===
 	rl.DrawTextEx(app.UI.font, "View:", rl.Vector2{X: 10, Y: y}, fontSize16, 1, rl.Yellow)
 	y += lineHeight
+
+	// Show grid mode status
+	gridStatus := "Off"
+	if app.View.gridMode == 1 {
+		gridStatus = "Bottom"
+	} else if app.View.gridMode == 2 {
+		gridStatus = "All Sides"
+	}
+	viewText := fmt.Sprintf("  W: Wireframe | F: Fill | G: Grid (%s)", gridStatus)
+	rl.DrawTextEx(app.UI.font, viewText, rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
+	y += lineHeight
 	rl.DrawTextEx(app.UI.font, "  Home: Reset | T: Top | B: Bottom", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
 	rl.DrawTextEx(app.UI.font, "  1: Front | 2: Back | 3: Left | 4: Right", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
@@ -173,8 +184,6 @@ func (app *App) drawUI(result *analysis.MeasurementResult) {
 	rl.DrawTextEx(app.UI.font, "  Left Drag: Rotate | Shift+Drag: Pan", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight
 	rl.DrawTextEx(app.UI.font, "  Mouse Wheel: Zoom | Middle: Pan", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
-	y += lineHeight
-	rl.DrawTextEx(app.UI.font, "  W: Wireframe | F: Fill", rl.Vector2{X: 10, Y: y}, fontSize14, 1, rl.LightGray)
 	y += lineHeight * 2
 
 	// === SLICE ===

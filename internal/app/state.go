@@ -8,6 +8,7 @@ import (
 	"github.com/philipparndt/gostl/pkg/geometry"
 	"github.com/philipparndt/gostl/pkg/stl"
 	"github.com/philipparndt/gostl/pkg/watcher"
+	"golang.org/x/image/font"
 )
 
 // CameraState holds all camera-related state
@@ -32,11 +33,24 @@ type ModelData struct {
 	avgVertexSpacing float32    // Average distance between vertices
 }
 
+// GridInfo holds grid parameters for 2D label rendering
+type GridInfo struct {
+	minX        float32
+	maxX        float32
+	minZ        float32
+	maxZ        float32
+	y           float32
+	gridSpacing float32
+}
+
 // ViewSettings holds display settings
 type ViewSettings struct {
 	showWireframe   bool
 	showFilled      bool
 	showMeasurement bool
+	showGrid        bool
+	gridMode        int      // 0=off, 1=bottom only, 2=all sides
+	gridInfo        GridInfo // Info for drawing 2D labels
 }
 
 // MeasurementState is an alias for measurement.State
@@ -89,7 +103,9 @@ type FileWatchState struct {
 
 // UIState holds UI-related state
 type UIState struct {
-	font rl.Font // JetBrains Mono font
+	font               rl.Font                 // JetBrains Mono font
+	textBillboardCache *TextBillboardCache     // Cache for 3D text billboards
+	textFace           font.Face               // Font face for text rendering
 }
 
 // SlicingState holds state for model slicing feature
