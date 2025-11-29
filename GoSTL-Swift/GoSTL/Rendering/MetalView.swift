@@ -92,24 +92,49 @@ class InteractiveMTKView: MTKView {
     override init(frame frameRect: CGRect, device: MTLDevice?) {
         super.init(frame: frameRect, device: device)
         registerForDraggedTypes([.fileURL])
+        setupTrackingArea()
     }
 
     required init(coder: NSCoder) {
         super.init(coder: coder)
         registerForDraggedTypes([.fileURL])
+        setupTrackingArea()
+    }
+
+    private func setupTrackingArea() {
+        let options: NSTrackingArea.Options = [.activeAlways, .mouseMoved, .inVisibleRect]
+        let trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+        addTrackingArea(trackingArea)
     }
 
     // MARK: - Mouse Events
 
+    private var mouseDownLocation: CGPoint?
+    private var didDrag = false
+    private let dragThreshold: CGFloat = 5.0 // Minimum movement to consider as drag
+
     override func mouseDown(with event: NSEvent) {
         guard let coordinator = coordinator else { return }
         let location = convert(event.locationInWindow, from: nil)
-        coordinator.inputHandler.handleMouseDown(at: location, modifierFlags: event.modifierFlags)
+        mouseDownLocation = location
+        didDrag = false
+        coordinator.inputHandler.handleMouseDown(at: location, modifierFlags: event.modifierFlags, appState: coordinator.appState)
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let coordinator = coordinator else { return }
         let location = convert(event.locationInWindow, from: nil)
+
+        // Only mark as drag if moved beyond threshold
+        if let downLocation = mouseDownLocation {
+            let dx = location.x - downLocation.x
+            let dy = location.y - downLocation.y
+            let distance = sqrt(dx * dx + dy * dy)
+            if distance > dragThreshold {
+                didDrag = true
+            }
+        }
+
         coordinator.inputHandler.handleMouseDragged(
             to: location,
             camera: coordinator.appState.camera,
@@ -118,7 +143,32 @@ class InteractiveMTKView: MTKView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        coordinator?.inputHandler.handleMouseUp()
+        guard let coordinator = coordinator else { return }
+        coordinator.inputHandler.handleMouseUp()
+
+        // If it was a click (not a drag), handle measurement point picking
+        if !didDrag, let location = mouseDownLocation {
+            coordinator.inputHandler.handleMouseClick(
+                at: location,
+                camera: coordinator.appState.camera,
+                viewSize: bounds.size,
+                appState: coordinator.appState
+            )
+        }
+
+        mouseDownLocation = nil
+        didDrag = false
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard let coordinator = coordinator else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        coordinator.inputHandler.handleMouseMoved(
+            at: location,
+            camera: coordinator.appState.camera,
+            viewSize: bounds.size,
+            appState: coordinator.appState
+        )
     }
 
     override func scrollWheel(with event: NSEvent) {

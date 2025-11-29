@@ -121,8 +121,9 @@ final class Camera {
         let view = viewMatrix()
 
         // Convert screen coordinates to normalized device coordinates (NDC)
+        // NSView has Y=0 at bottom, NDC has Y=-1 at bottom, Y=+1 at top
         let x = Float((2.0 * screenPos.x) / viewSize.width - 1.0)
-        let y = Float(1.0 - (2.0 * screenPos.y) / viewSize.height) // Flip Y
+        let y = Float((2.0 * screenPos.y) / viewSize.height - 1.0) // No flip needed for NSView
 
         // Ray in clip space
         let rayClip = SIMD4<Float>(x, y, -1.0, 1.0)
@@ -137,6 +138,38 @@ final class Camera {
         let direction = simd_normalize(rayWorld)
 
         return Ray(origin: position, direction: direction)
+    }
+
+    /// Project a 3D world position to 2D screen coordinates
+    /// - Returns: CGPoint in screen coordinates, or nil if behind camera
+    func project(worldPosition: Vector3, viewSize: CGSize) -> CGPoint? {
+        let aspect = Float(viewSize.width / viewSize.height)
+        let projection = projectionMatrix(aspect: aspect)
+        let view = viewMatrix()
+
+        // Transform world position to clip space
+        let worldPos4 = SIMD4<Float>(worldPosition.float3, 1.0)
+        let clipPos = projection * view * worldPos4
+
+        // Check if behind camera
+        if clipPos.w <= 0 {
+            return nil
+        }
+
+        // Perspective divide to get NDC
+        let ndc = SIMD3<Float>(clipPos.x, clipPos.y, clipPos.z) / clipPos.w
+
+        // Check if outside view frustum (X and Y only)
+        if abs(ndc.x) > 1.0 || abs(ndc.y) > 1.0 {
+            return nil
+        }
+
+        // Convert NDC to screen coordinates
+        // SwiftUI overlay has Y=0 at top, so we flip Y
+        let screenX = (Double(ndc.x) + 1.0) * 0.5 * viewSize.width
+        let screenY = (1.0 - Double(ndc.y)) * 0.5 * viewSize.height  // Flip Y for SwiftUI
+
+        return CGPoint(x: screenX, y: screenY)
     }
 }
 

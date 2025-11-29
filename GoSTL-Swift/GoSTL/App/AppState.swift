@@ -25,6 +25,9 @@ final class AppState: @unchecked Sendable {
     /// GPU grid data for spatial reference
     var gridData: GridData?
 
+    /// GPU measurement data for rendering measurements
+    var measurementData: MeasurementRenderData?
+
     /// Whether to show wireframe overlay
     var showWireframe: Bool = true
 
@@ -34,11 +37,19 @@ final class AppState: @unchecked Sendable {
     /// Whether to show model info overlay
     var showModelInfo: Bool = true
 
+    /// Measurement system for distance/angle/radius measurements
+    var measurementSystem = MeasurementSystem()
+
     init() {}
 
     /// Initialize grid
     func initializeGrid(device: MTLDevice) throws {
         self.gridData = try GridData(device: device, size: 100.0, spacing: 10.0)
+    }
+
+    /// Initialize measurement rendering
+    func initializeMeasurements(device: MTLDevice) {
+        self.measurementData = MeasurementRenderData(device: device)
     }
 
     /// Load an STL model and create mesh data for rendering
@@ -54,6 +65,9 @@ final class AppState: @unchecked Sendable {
 
         // Frame the model in view
         camera.frameBoundingBox(bbox)
+
+        // Clear all measurements when loading a new model
+        measurementSystem.clearAll()
     }
 
     /// Load an STL file from URL

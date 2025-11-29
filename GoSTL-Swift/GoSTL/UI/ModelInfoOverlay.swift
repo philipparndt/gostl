@@ -17,28 +17,36 @@ struct ModelInfoOverlay: View {
                 .padding(.vertical, 2)
 
             // Triangle count
-            InfoRow(label: "Triangles:", value: ModelInfo.formatCount(modelInfo.triangleCount))
+            InfoRow_Legacy(label: "Triangles:", value: ModelInfo.formatCount(modelInfo.triangleCount))
 
             // Dimensions
-            InfoRow(label: "W:", value: ModelInfo.formatDimension(modelInfo.width))
-            InfoRow(label: "H:", value: ModelInfo.formatDimension(modelInfo.height))
-            InfoRow(label: "D:", value: ModelInfo.formatDimension(modelInfo.depth))
+            InfoRow_Legacy(label: "W:", value: ModelInfo.formatDimension(modelInfo.width))
+            InfoRow_Legacy(label: "H:", value: ModelInfo.formatDimension(modelInfo.height))
+            InfoRow_Legacy(label: "D:", value: ModelInfo.formatDimension(modelInfo.depth))
 
             Divider()
                 .background(Color.white.opacity(0.3))
                 .padding(.vertical, 2)
 
             // Volume and surface area
-            InfoRow(label: "Volume:", value: ModelInfo.formatVolume(modelInfo.volume))
-            InfoRow(label: "Area:", value: ModelInfo.formatArea(modelInfo.surfaceArea))
+            InfoRow_Legacy(label: "Volume:", value: ModelInfo.formatVolume(modelInfo.volume))
+            InfoRow_Legacy(label: "Area:", value: ModelInfo.formatArea(modelInfo.surfaceArea))
 
             Divider()
                 .background(Color.white.opacity(0.3))
                 .padding(.vertical, 2)
 
             // Material and weight
-            InfoRow(label: "Material:", value: modelInfo.material.rawValue)
-            InfoRow(label: "Weight:", value: Material.formatWeight(modelInfo.weight))
+            HStack(spacing: 4) {
+                Text("Material:")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.8))
+                Text(modelInfo.material.rawValue)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.white)
+                KeyHint_Legacy(key: "m")
+            }
+            InfoRow_Legacy(label: "Weight:", value: Material.formatWeight(modelInfo.weight))
 
             Divider()
                 .background(Color.white.opacity(0.3))
@@ -56,11 +64,9 @@ struct ModelInfoOverlay: View {
             }
 
             // Help text
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Press 'i' to toggle")
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.5))
-                Text("Press 'm' to change material")
+            HStack(spacing: 4) {
+                KeyHint_Legacy(key: "i")
+                Text("to toggle")
                     .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.5))
             }
@@ -77,8 +83,8 @@ struct ModelInfoOverlay: View {
     }
 }
 
-/// A single row of information
-private struct InfoRow: View {
+/// A single row of information (legacy - kept for preview)
+private struct InfoRow_Legacy: View {
     let label: String
     let value: String
 
@@ -91,6 +97,27 @@ private struct InfoRow: View {
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(.white)
         }
+    }
+}
+
+/// A small keyboard key hint badge (legacy - kept for preview)
+private struct KeyHint_Legacy: View {
+    let key: String
+
+    var body: some View {
+        Text(key)
+            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+            .foregroundColor(.white)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.white.opacity(0.2))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                    )
+            )
     }
 }
 

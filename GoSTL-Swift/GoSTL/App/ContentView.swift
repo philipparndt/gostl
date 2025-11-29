@@ -9,12 +9,27 @@ struct ContentView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            MetalView(appState: appState)
+        GeometryReader { geometry in
+            ZStack {
+                MetalView(appState: appState)
 
-            // Model info overlay (top-left)
-            if appState.showModelInfo, let modelInfo = appState.modelInfo {
-                ModelInfoOverlay(modelInfo: modelInfo)
+                // Measurement labels (in 3D space)
+                MeasurementLabelsOverlay(
+                    measurementSystem: appState.measurementSystem,
+                    camera: appState.camera,
+                    viewSize: geometry.size
+                )
+
+                // Main menu panel (top-left)
+                if appState.showModelInfo {
+                    VStack {
+                        HStack {
+                            MainMenuPanel(appState: appState)
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                }
             }
         }
         .frame(minWidth: 800, minHeight: 600)
@@ -57,6 +72,10 @@ struct ContentView: View {
             // Initialize grid
             try appState.initializeGrid(device: device)
             print("Grid initialized")
+
+            // Initialize measurements
+            appState.initializeMeasurements(device: device)
+            print("Measurements initialized")
 
             // Load test cube
             let testCube = createTestCube()

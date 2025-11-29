@@ -7,6 +7,7 @@ final class MetalRenderer {
     let meshPipelineState: MTLRenderPipelineState
     let wireframePipelineState: MTLRenderPipelineState
     let gridPipelineState: MTLRenderPipelineState
+    let measurementPipelineState: MTLRenderPipelineState
     let depthStencilState: MTLDepthStencilState
 
     init(device: MTLDevice) throws {
@@ -23,6 +24,7 @@ final class MetalRenderer {
         self.meshPipelineState = try Self.createMeshPipeline(device: device)
         self.wireframePipelineState = try Self.createWireframePipeline(device: device)
         self.gridPipelineState = try Self.createGridPipeline(device: device)
+        self.measurementPipelineState = try Self.createMeshPipeline(device: device) // Reuse mesh pipeline for measurements
 
         // Create depth stencil state
         self.depthStencilState = Self.createDepthStencilState(device: device)
@@ -201,6 +203,12 @@ final class MetalRenderer {
             renderWireframe(encoder: renderEncoder, wireframeData: wireframeData, appState: appState, viewSize: view.drawableSize)
         }
 
+        // Update and render measurements
+        if let measurementData = appState.measurementData {
+            measurementData.update(measurementSystem: appState.measurementSystem)
+            renderMeasurements(encoder: renderEncoder, measurementData: measurementData, appState: appState, viewSize: view.drawableSize)
+        }
+
         renderEncoder.endEncoding()
 
         commandBuffer.present(drawable)
@@ -267,6 +275,38 @@ final class MetalRenderer {
             indexBufferOffset: 0,
             instanceCount: wireframeData.instanceCount
         )
+    }
+
+    private func renderMeasurements(encoder: MTLRenderCommandEncoder, measurementData: MeasurementRenderData, appState: AppState, viewSize: CGSize) {
+        encoder.setRenderPipelineState(measurementPipelineState)
+        encoder.setDepthStencilState(depthStencilState)
+
+        let aspect = Float(viewSize.width / viewSize.height)
+        let uniforms = createUniforms(camera: appState.camera, aspect: aspect)
+
+        // Render measurement lines
+        if let lineBuffer = measurementData.lineBuffer, measurementData.lineVertexCount > 0 {
+            encoder.setVertexBuffer(lineBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.lineVertexCount)
+        }
+
+        // Render measurement points
+        if let pointBuffer = measurementData.pointBuffer, measurementData.pointCount > 0 {
+            encoder.setVertexBuffer(pointBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.pointCount)
+        }
+
+        // Render hover point (on top, with slightly offset depth)
+        if let hoverBuffer = measurementData.hoverBuffer, measurementData.hoverVertexCount > 0 {
+            encoder.setVertexBuffer(hoverBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.hoverVertexCount)
+        }
     }
 
     private func createUniforms(camera: Camera, aspect: Float, viewportHeight: Float = 0) -> Uniforms {

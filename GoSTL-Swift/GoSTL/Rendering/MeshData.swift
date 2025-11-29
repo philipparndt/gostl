@@ -72,7 +72,7 @@ final class MeshData {
         let totalLight = ambient + keyIntensity + fillIntensity + rimIntensity
 
         // Base color (light gray)
-        let baseColor = SIMD3<Float>(0.8, 0.8, 0.8)
+        let baseColor = SIMD3<Float>(0.5, 0.6, 1)
         let litColor = baseColor * min(1.0, totalLight)
 
         return SIMD4(litColor.x, litColor.y, litColor.z, 1.0)

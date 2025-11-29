@@ -9,9 +9,10 @@ final class InputHandler {
 
     // MARK: - Mouse Events
 
-    func handleMouseDown(at location: CGPoint, modifierFlags: NSEvent.ModifierFlags) {
+    func handleMouseDown(at location: CGPoint, modifierFlags: NSEvent.ModifierFlags, appState: AppState) {
         lastMousePosition = location
 
+        // Always allow camera controls (even in measurement mode)
         // Shift key for panning, otherwise rotate
         if modifierFlags.contains(.shift) {
             isPanning = true
@@ -56,6 +57,37 @@ final class InputHandler {
         isRotating = false
         isPanning = false
         lastMousePosition = nil
+    }
+
+    /// Handle mouse click for measurements (click without drag)
+    func handleMouseClick(at location: CGPoint, camera: Camera, viewSize: CGSize, appState: AppState) {
+        guard appState.measurementSystem.isCollecting,
+              let model = appState.model else {
+            return
+        }
+
+        // Generate ray from mouse position
+        let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
+
+        // Find intersection with model
+        if let point = appState.measurementSystem.findIntersection(ray: ray, model: model) {
+            _ = appState.measurementSystem.addPoint(point)
+            print("Picked point: \(point.position)")
+        }
+    }
+
+    /// Handle mouse move for hover detection
+    func handleMouseMoved(at location: CGPoint, camera: Camera, viewSize: CGSize, appState: AppState) {
+        guard appState.measurementSystem.isCollecting else {
+            appState.measurementSystem.hoverPoint = nil
+            return
+        }
+
+        // Generate ray from mouse position
+        let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
+
+        // Update hover point
+        appState.measurementSystem.updateHover(ray: ray, model: appState.model)
     }
 
     func handleScroll(deltaY: CGFloat, camera: Camera) {
@@ -126,7 +158,54 @@ final class InputHandler {
             }
             return true
 
+        // Measurement modes
+        case "d":
+            appState.measurementSystem.startMeasurement(type: .distance)
+            print("Distance measurement mode activated (click points, press 'x' to end)")
+            return true
+        case "a":
+            appState.measurementSystem.startMeasurement(type: .angle)
+            print("Angle measurement mode activated (pick 3 points)")
+            return true
+        case "c":
+            // Only if not Ctrl+C (which is quit)
+            if !event.modifierFlags.contains(.control) {
+                // If there are measurements, clear them
+                if !appState.measurementSystem.measurements.isEmpty {
+                    appState.measurementSystem.clearAll()
+                    print("All measurements cleared")
+                    return true
+                }
+                // Otherwise start radius measurement
+                appState.measurementSystem.startMeasurement(type: .radius)
+                print("Radius measurement mode activated (pick 3 points)")
+                return true
+            }
+            return false
+        case "x":
+            if appState.measurementSystem.isCollecting {
+                appState.measurementSystem.endMeasurement()
+                print("Measurement ended")
+                return true
+            }
+            return false
+
         default:
+            // ESC key to cancel measurement
+            if event.keyCode == 53 {  // ESC key code
+                if appState.measurementSystem.isCollecting {
+                    appState.measurementSystem.cancelMeasurement()
+                    print("Measurement cancelled")
+                    return true
+                }
+            }
+            // Backspace/Delete key to remove last point
+            if event.keyCode == 51 {  // Delete/Backspace key code
+                if appState.measurementSystem.isCollecting {
+                    appState.measurementSystem.removeLastPoint()
+                    return true
+                }
+            }
             return false
         }
     }
