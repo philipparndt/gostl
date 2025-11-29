@@ -28,6 +28,9 @@ final class AppState: @unchecked Sendable {
     /// GPU measurement data for rendering measurements
     var measurementData: MeasurementRenderData?
 
+    /// GPU slice plane data for visualizing slice boundaries
+    var slicePlaneData: SlicePlaneData?
+
     /// Whether to show wireframe overlay
     var showWireframe: Bool = true
 
@@ -39,6 +42,9 @@ final class AppState: @unchecked Sendable {
 
     /// Measurement system for distance/angle/radius measurements
     var measurementSystem = MeasurementSystem()
+
+    /// Slicing system for clipping model along axes
+    var slicingState = SlicingState()
 
     init() {}
 
@@ -56,10 +62,51 @@ final class AppState: @unchecked Sendable {
         }
     }
 
+    /// Update mesh data based on current slicing bounds
+    func updateMeshData(device: MTLDevice) throws {
+        guard let model else { return }
+
+        // If slicing is active, filter triangles and create slice planes
+        if slicingState.isVisible {
+            let filteredTriangles = model.triangles.filter { triangle in
+                slicingState.isTriangleInBounds(triangle)
+            }
+
+            // Only create mesh data if we have triangles
+            if !filteredTriangles.isEmpty {
+                let filteredModel = STLModel(triangles: filteredTriangles, name: model.name)
+                self.meshData = try MeshData(device: device, model: filteredModel)
+                print("Slicing: showing \(filteredTriangles.count) / \(model.triangles.count) triangles")
+            } else {
+                // No triangles in bounds - don't render mesh
+                self.meshData = nil
+                print("Slicing: no triangles in bounds")
+            }
+
+            // Create slice plane visualization
+            if slicingState.showPlanes {
+                let bbox = model.boundingBox()
+                let planeSize = Float(bbox.diagonal * 1.5)  // Make planes larger than model
+                self.slicePlaneData = try SlicePlaneData(
+                    device: device,
+                    slicingState: slicingState,
+                    modelCenter: bbox.center,
+                    planeSize: planeSize
+                )
+            } else {
+                self.slicePlaneData = nil
+            }
+        } else {
+            // Show full model
+            self.meshData = try MeshData(device: device, model: model)
+            self.slicePlaneData = nil
+        }
+    }
+
     /// Load an STL model and create mesh data for rendering
     func loadModel(_ model: STLModel, device: MTLDevice) throws {
         self.model = model
-        self.meshData = try MeshData(device: device, model: model)
+        try updateMeshData(device: device)
 
         // Calculate wireframe thickness based on model size
         let bbox = model.boundingBox()
@@ -72,6 +119,9 @@ final class AppState: @unchecked Sendable {
 
         // Frame the model in view
         camera.frameBoundingBox(bbox)
+
+        // Initialize slicing bounds
+        slicingState.initializeBounds(from: bbox)
 
         // Clear all measurements when loading a new model
         measurementSystem.clearAll()

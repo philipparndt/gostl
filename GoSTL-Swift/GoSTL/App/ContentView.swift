@@ -30,12 +30,42 @@ struct ContentView: View {
                         Spacer()
                     }
                 }
+
+                // Slicing panel (bottom-right)
+                if appState.slicingState.isVisible {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            SlicingPanel(slicingState: appState.slicingState)
+                                .padding(12)
+                        }
+                    }
+                }
             }
         }
         .frame(minWidth: 800, minHeight: 600)
         .onAppear {
             loadTestModel()
             setupNotifications()
+        }
+        .onChange(of: appState.slicingState.bounds) { _, _ in
+            updateSlicedMesh()
+        }
+        .onChange(of: appState.slicingState.isVisible) { _, _ in
+            updateSlicedMesh()
+        }
+        .onChange(of: appState.slicingState.showPlanes) { _, _ in
+            updateSlicedMesh()
+        }
+    }
+
+    private func updateSlicedMesh() {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        do {
+            try appState.updateMeshData(device: device)
+        } catch {
+            print("ERROR: Failed to update sliced mesh: \(error)")
         }
     }
 

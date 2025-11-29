@@ -109,6 +109,13 @@ final class InputHandler {
             return true
         }
 
+        // Shift+S to toggle slicing
+        if characters == "S" && event.modifierFlags.contains(.shift) {
+            appState.slicingState.toggleVisibility()
+            print("Slicing UI: \(appState.slicingState.isVisible ? "shown" : "hidden")")
+            return true
+        }
+
         switch characters {
         // Camera presets
         case "1":
@@ -149,7 +156,13 @@ final class InputHandler {
 
         // Camera controls
         case "r":
-            camera.reset()
+            // If slicing is visible, reset slicing bounds; otherwise reset camera
+            if appState.slicingState.isVisible {
+                appState.slicingState.reset()
+                print("Slicing bounds reset")
+            } else {
+                camera.reset()
+            }
             return true
         case "f":
             // Frame model in view

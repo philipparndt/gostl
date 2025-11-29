@@ -193,6 +193,11 @@ final class MetalRenderer {
             renderGrid(encoder: renderEncoder, gridData: gridData, appState: appState, viewSize: view.drawableSize)
         }
 
+        // Render slice planes (before mesh, for depth sorting)
+        if let slicePlaneData = appState.slicePlaneData {
+            renderSlicePlanes(encoder: renderEncoder, slicePlaneData: slicePlaneData, appState: appState, viewSize: view.drawableSize)
+        }
+
         // Render mesh if available
         if let meshData = appState.meshData {
             renderMesh(encoder: renderEncoder, meshData: meshData, appState: appState, viewSize: view.drawableSize)
@@ -249,6 +254,23 @@ final class MetalRenderer {
 
         // Draw grid lines
         encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: gridData.vertexCount)
+    }
+
+    private func renderSlicePlanes(encoder: MTLRenderCommandEncoder, slicePlaneData: SlicePlaneData, appState: AppState, viewSize: CGSize) {
+        // Use grid pipeline for alpha blending support
+        encoder.setRenderPipelineState(gridPipelineState)
+        encoder.setDepthStencilState(depthStencilState)
+
+        // Set vertex buffer
+        encoder.setVertexBuffer(slicePlaneData.vertexBuffer, offset: 0, index: 0)
+
+        // Create and set uniforms
+        let aspect = Float(viewSize.width / viewSize.height)
+        var uniforms = createUniforms(camera: appState.camera, aspect: aspect)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+        // Draw slice planes
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: slicePlaneData.vertexCount)
     }
 
     private func renderWireframe(encoder: MTLRenderCommandEncoder, wireframeData: WireframeData, appState: AppState, viewSize: CGSize) {
