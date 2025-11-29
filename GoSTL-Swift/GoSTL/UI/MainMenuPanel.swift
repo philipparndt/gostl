@@ -252,22 +252,6 @@ struct ToolsSectionContent: View {
                         .foregroundColor(.white.opacity(0.6))
                         .italic()
 
-                    // Show preview distance for distance mode
-                    if mode == .distance, let previewDist = measurementSystem.previewDistance {
-                        Divider()
-                            .background(Color.white.opacity(0.2))
-                            .padding(.vertical, 2)
-
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.left.and.right")
-                                .font(.system(size: 8))
-                                .foregroundColor(.green.opacity(0.8))
-                            Text(formatDistance(previewDist))
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.green)
-                        }
-                    }
-
                     if mode == .distance {
                         HStack(spacing: 4) {
                             KeyHint(key: "⌫")
@@ -367,16 +351,6 @@ struct ToolsSectionContent: View {
         case .distance: return "Distance"
         case .angle: return "Angle"
         case .radius: return "Radius"
-        }
-    }
-
-    private func formatDistance(_ value: Double) -> String {
-        if value < 1.0 {
-            return String(format: "%.2f mm", value)
-        } else if value < 100.0 {
-            return String(format: "%.1f mm", value)
-        } else {
-            return String(format: "%.0f mm", value)
         }
     }
 }

@@ -278,22 +278,54 @@ final class MetalRenderer {
     }
 
     private func renderMeasurements(encoder: MTLRenderCommandEncoder, measurementData: MeasurementRenderData, appState: AppState, viewSize: CGSize) {
-        encoder.setRenderPipelineState(measurementPipelineState)
-        encoder.setDepthStencilState(depthStencilState)
-
         let aspect = Float(viewSize.width / viewSize.height)
-        let uniforms = createUniforms(camera: appState.camera, aspect: aspect)
+        let uniforms = createUniforms(camera: appState.camera, aspect: aspect, viewportHeight: Float(viewSize.height))
 
-        // Render measurement lines
-        if let lineBuffer = measurementData.lineBuffer, measurementData.lineVertexCount > 0 {
-            encoder.setVertexBuffer(lineBuffer, offset: 0, index: 0)
+        // Render measurement lines using instanced cylinders (like wireframe)
+        if let lineInstanceBuffer = measurementData.lineInstanceBuffer, measurementData.lineInstanceCount > 0 {
+            encoder.setRenderPipelineState(wireframePipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(measurementData.cylinderVertexBuffer, offset: 0, index: 0)
             var uniformsCopy = uniforms
-            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
-            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.lineVertexCount)
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.size, index: 1)
+            encoder.setVertexBuffer(lineInstanceBuffer, offset: 0, index: 2)
+
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: measurementData.indexCount,
+                indexType: .uint16,
+                indexBuffer: measurementData.cylinderIndexBuffer,
+                indexBufferOffset: 0,
+                instanceCount: measurementData.lineInstanceCount
+            )
+        }
+
+        // Render preview line (bright green)
+        if let previewInstanceBuffer = measurementData.previewLineInstanceBuffer, measurementData.previewLineInstanceCount > 0 {
+            encoder.setRenderPipelineState(wireframePipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(measurementData.previewCylinderVertexBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.size, index: 1)
+            encoder.setVertexBuffer(previewInstanceBuffer, offset: 0, index: 2)
+
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: measurementData.indexCount,
+                indexType: .uint16,
+                indexBuffer: measurementData.cylinderIndexBuffer,
+                indexBufferOffset: 0,
+                instanceCount: measurementData.previewLineInstanceCount
+            )
         }
 
         // Render measurement points
         if let pointBuffer = measurementData.pointBuffer, measurementData.pointCount > 0 {
+            encoder.setRenderPipelineState(measurementPipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
             encoder.setVertexBuffer(pointBuffer, offset: 0, index: 0)
             var uniformsCopy = uniforms
             encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
@@ -302,6 +334,9 @@ final class MetalRenderer {
 
         // Render hover point (on top, with slightly offset depth)
         if let hoverBuffer = measurementData.hoverBuffer, measurementData.hoverVertexCount > 0 {
+            encoder.setRenderPipelineState(measurementPipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
             encoder.setVertexBuffer(hoverBuffer, offset: 0, index: 0)
             var uniformsCopy = uniforms
             encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)

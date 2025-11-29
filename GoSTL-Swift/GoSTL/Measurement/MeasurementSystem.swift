@@ -73,6 +73,27 @@ final class MeasurementSystem: @unchecked Sendable {
     /// Add a point to the current measurement
     /// - Returns: true if measurement is complete
     func addPoint(_ point: MeasurementPoint) -> Bool {
+        // For distance mode, check if clicking on an already selected point (to end measurement)
+        if mode == .distance && !currentPoints.isEmpty {
+            // Check if the new point matches any existing point
+            let epsilon = 0.001 // Small tolerance for floating point comparison
+            for existingPoint in currentPoints {
+                let distance = point.position.distance(to: existingPoint.position)
+                if distance < epsilon {
+                    // Clicked on existing point - create final segment first, then end measurement
+                    if let lastPoint = currentPoints.last {
+                        let segmentPoints = [lastPoint, existingPoint]
+                        let value = calculateValue(type: .distance, points: segmentPoints)
+                        let measurement = Measurement(type: .distance, points: segmentPoints, value: value)
+                        measurements.append(measurement)
+                    }
+                    endMeasurement()
+                    print("Distance measurement ended (clicked on existing point)")
+                    return true
+                }
+            }
+        }
+
         currentPoints.append(point)
 
         // For distance mode, keep going (create segment measurements)
@@ -183,7 +204,14 @@ final class MeasurementSystem: @unchecked Sendable {
     func removeLastPoint() {
         if !currentPoints.isEmpty {
             currentPoints.removeLast()
-            print("Removed last point, \(currentPoints.count) points remaining")
+
+            // For distance mode, also remove the last segment measurement
+            if mode == .distance && !measurements.isEmpty {
+                measurements.removeLast()
+                print("Removed last segment, \(currentPoints.count) points remaining")
+            } else {
+                print("Removed last point, \(currentPoints.count) points remaining")
+            }
         }
     }
 

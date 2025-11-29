@@ -48,8 +48,12 @@ final class AppState: @unchecked Sendable {
     }
 
     /// Initialize measurement rendering
-    func initializeMeasurements(device: MTLDevice) {
-        self.measurementData = MeasurementRenderData(device: device)
+    func initializeMeasurements(device: MTLDevice, thickness: Float = 0.01) {
+        do {
+            self.measurementData = try MeasurementRenderData(device: device, thickness: thickness)
+        } catch {
+            print("ERROR: Failed to create measurement data: \(error)")
+        }
     }
 
     /// Load an STL model and create mesh data for rendering
@@ -62,6 +66,9 @@ final class AppState: @unchecked Sendable {
         let modelSize = bbox.diagonal
         let thickness = Float(modelSize) * 0.002 // 0.2% of model size
         self.wireframeData = try WireframeData(device: device, model: model, thickness: thickness)
+
+        // Reinitialize measurement data with appropriate thickness for this model
+        initializeMeasurements(device: device, thickness: thickness)
 
         // Frame the model in view
         camera.frameBoundingBox(bbox)
