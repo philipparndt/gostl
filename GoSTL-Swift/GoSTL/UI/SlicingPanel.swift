@@ -112,9 +112,9 @@ struct SlicingPanel: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.black.opacity(0.7))
-                .shadow(radius: 5)
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
         )
         .frame(width: 300)
     }

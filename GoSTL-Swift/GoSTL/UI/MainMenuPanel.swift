@@ -38,9 +38,9 @@ struct MainMenuPanel: View {
         }
         .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.black.opacity(0.7))
-                .shadow(radius: 5)
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
         )
         .frame(minWidth: 240)
         .fixedSize()
