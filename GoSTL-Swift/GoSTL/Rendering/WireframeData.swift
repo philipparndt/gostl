@@ -9,9 +9,17 @@ final class WireframeData {
     let indexCount: Int
     let instanceCount: Int
 
-    init(device: MTLDevice, model: STLModel, thickness: Float = 0.005) throws {
+    init(device: MTLDevice, model: STLModel, thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
         // Extract unique edges from model
-        let edges = model.extractEdges()
+        var edges = model.extractEdges()
+
+        // If slicing, clip edges to bounds (preserving original edge directions)
+        if let bounds = sliceBounds {
+            edges = edges.compactMap { edge in
+                Self.clipEdgeToBounds(edge, bounds: bounds)
+            }
+        }
+
         self.instanceCount = edges.count
 
         // Create unit cylinder geometry (along Y-axis, from 0 to 1)
@@ -121,17 +129,82 @@ final class WireframeData {
 
         return matrix
     }
-}
 
-// MARK: - SIMD4x4 Identity
+    /// Clip an edge to slice bounds, preserving original direction
+    /// Returns nil if edge is completely outside bounds
+    private static func clipEdgeToBounds(_ edge: Edge, bounds: [[Double]]) -> Edge? {
+        let p1 = edge.start
+        let p2 = edge.end
 
-extension simd_float4x4 {
-    init(_ diagonal: Float) {
-        self.init(
-            SIMD4(diagonal, 0, 0, 0),
-            SIMD4(0, diagonal, 0, 0),
-            SIMD4(0, 0, diagonal, 0),
-            SIMD4(0, 0, 0, diagonal)
+        // Fast path: check if edge is fully inside or fully outside bounds
+        var p1Inside = true
+        var p2Inside = true
+
+        for axis in 0..<3 {
+            let minBound = bounds[axis][0]
+            let maxBound = bounds[axis][1]
+            let coord1 = p1.component(axis: axis)
+            let coord2 = p2.component(axis: axis)
+
+            // Early rejection: both points outside on same side
+            if (coord1 < minBound && coord2 < minBound) || (coord1 > maxBound && coord2 > maxBound) {
+                return nil
+            }
+
+            // Check if points are inside
+            if coord1 < minBound || coord1 > maxBound { p1Inside = false }
+            if coord2 < minBound || coord2 > maxBound { p2Inside = false }
+        }
+
+        // Fast path: edge completely inside - no clipping needed
+        if p1Inside && p2Inside {
+            return edge
+        }
+
+        // Slow path: need to clip
+        var clippedP1 = p1
+        var clippedP2 = p2
+
+        for axis in 0..<3 {
+            let minBound = bounds[axis][0]
+            let maxBound = bounds[axis][1]
+
+            var coord1 = clippedP1.component(axis: axis)
+            var coord2 = clippedP2.component(axis: axis)
+
+            // Clip against min plane
+            if coord1 < minBound {
+                let t = (minBound - coord1) / (coord2 - coord1)
+                clippedP1 = interpolate(clippedP1, clippedP2, t: t)
+                coord1 = minBound
+            } else if coord2 < minBound {
+                let t = (minBound - coord1) / (coord2 - coord1)
+                clippedP2 = interpolate(clippedP1, clippedP2, t: t)
+                coord2 = minBound
+            }
+
+            // Clip against max plane
+            coord1 = clippedP1.component(axis: axis)
+            coord2 = clippedP2.component(axis: axis)
+
+            if coord1 > maxBound {
+                let t = (maxBound - coord1) / (coord2 - coord1)
+                clippedP1 = interpolate(clippedP1, clippedP2, t: t)
+            } else if coord2 > maxBound {
+                let t = (maxBound - coord1) / (coord2 - coord1)
+                clippedP2 = interpolate(clippedP1, clippedP2, t: t)
+            }
+        }
+
+        return Edge(clippedP1, clippedP2)
+    }
+
+    /// Interpolate between two points
+    private static func interpolate(_ p1: Vector3, _ p2: Vector3, t: Double) -> Vector3 {
+        return Vector3(
+            p1.x + t * (p2.x - p1.x),
+            p1.y + t * (p2.y - p1.y),
+            p1.z + t * (p2.z - p1.z)
         )
     }
 }

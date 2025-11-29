@@ -116,7 +116,68 @@ final class TriangleSlicer {
             cutEdges.append(contentsOf: currentCutEdges)
         }
 
-        return SlicedTriangles(triangles: resultTriangles, cutEdges: cutEdges)
+        // Clip cut edges to bounds (e.g., X-axis cut edges should be clipped by Y and Z bounds)
+        let clippedCutEdges = cutEdges.compactMap { edge -> CutEdge? in
+            clipCutEdgeToBounds(edge, bounds: bounds)
+        }
+
+        return SlicedTriangles(triangles: resultTriangles, cutEdges: clippedCutEdges)
+    }
+
+    /// Clip a cut edge to the bounds, excluding its own axis
+    /// For example, an X-axis cut edge should be clipped by Y and Z bounds
+    private static func clipCutEdgeToBounds(_ edge: CutEdge, bounds: [[Double]]) -> CutEdge? {
+        var p1 = edge.start
+        var p2 = edge.end
+        let axis = edge.axis
+
+        // Clip against the OTHER axes (not the edge's own axis)
+        for otherAxis in 0..<3 {
+            if otherAxis == axis { continue }  // Skip the edge's own axis
+
+            let minBound = bounds[otherAxis][0]
+            let maxBound = bounds[otherAxis][1]
+
+            let coord1 = p1.component(axis: otherAxis)
+            let coord2 = p2.component(axis: otherAxis)
+
+            // Both points outside on same side - edge is completely clipped
+            if (coord1 < minBound && coord2 < minBound) || (coord1 > maxBound && coord2 > maxBound) {
+                return nil
+            }
+
+            // Clip against min bound
+            if coord1 < minBound {
+                let t = (minBound - coord1) / (coord2 - coord1)
+                p1 = interpolate(p1, p2, t: t)
+            } else if coord2 < minBound {
+                let t = (minBound - coord1) / (coord2 - coord1)
+                p2 = interpolate(p1, p2, t: t)
+            }
+
+            // Clip against max bound
+            let newCoord1 = p1.component(axis: otherAxis)
+            let newCoord2 = p2.component(axis: otherAxis)
+
+            if newCoord1 > maxBound {
+                let t = (maxBound - newCoord1) / (newCoord2 - newCoord1)
+                p1 = interpolate(p1, p2, t: t)
+            } else if newCoord2 > maxBound {
+                let t = (maxBound - newCoord1) / (newCoord2 - newCoord1)
+                p2 = interpolate(p1, p2, t: t)
+            }
+        }
+
+        return CutEdge(start: p1, end: p2, axis: axis)
+    }
+
+    /// Interpolate between two points
+    private static func interpolate(_ p1: Vector3, _ p2: Vector3, t: Double) -> Vector3 {
+        return Vector3(
+            p1.x + t * (p2.x - p1.x),
+            p1.y + t * (p2.y - p1.y),
+            p1.z + t * (p2.z - p1.z)
+        )
     }
 
     /// Clip a single triangle against an axis-aligned plane

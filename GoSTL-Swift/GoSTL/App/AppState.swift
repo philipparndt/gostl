@@ -82,7 +82,8 @@ final class AppState: @unchecked Sendable {
             if !slicedResult.triangles.isEmpty {
                 let slicedModel = STLModel(triangles: slicedResult.triangles, name: model.name)
                 self.meshData = try MeshData(device: device, model: slicedModel)
-                self.wireframeData = try WireframeData(device: device, model: slicedModel, thickness: thickness)
+                // Create wireframe from ORIGINAL model edges, clipped to bounds (preserves edge directions)
+                self.wireframeData = try WireframeData(device: device, model: model, thickness: thickness, sliceBounds: slicingState.bounds)
             } else {
                 // No triangles in bounds - don't render mesh or wireframe
                 self.meshData = nil

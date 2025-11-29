@@ -9,7 +9,11 @@ struct MainMenuPanel: View {
             // Info Section
             if let modelInfo = appState.modelInfo {
                 MenuSection(title: "Info", icon: "info.circle") {
-                    InfoSectionContent(modelInfo: modelInfo)
+                    InfoSectionContent(
+                        modelInfo: modelInfo,
+                        slicingState: appState.slicingState,
+                        visibleTriangleCount: (appState.meshData?.vertexCount ?? 0) / 3
+                    )
                 }
             }
 
@@ -86,6 +90,8 @@ struct MenuSection<Content: View>: View {
 
 struct InfoSectionContent: View {
     let modelInfo: ModelInfo
+    let slicingState: SlicingState
+    let visibleTriangleCount: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -95,8 +101,31 @@ struct InfoSectionContent: View {
                 .foregroundColor(.white)
                 .lineLimit(1)
 
-            // Triangle count
-            InfoRow(label: "Triangles:", value: ModelInfo.formatCount(modelInfo.triangleCount))
+            // Triangle count (with slicing info if active)
+            if slicingState.isVisible {
+                HStack(spacing: 4) {
+                    Text("Triangles:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.8))
+                    Text("\(ModelInfo.formatCount(visibleTriangleCount))")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.orange)
+                    Text("/ \(ModelInfo.formatCount(modelInfo.triangleCount))")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                HStack(spacing: 4) {
+                    Image(systemName: "scissors")
+                        .font(.system(size: 8))
+                        .foregroundColor(.orange)
+                    Text("Slicing active")
+                        .font(.system(size: 9))
+                        .foregroundColor(.orange)
+                    KeyHint(key: "⇧S")
+                }
+            } else {
+                InfoRow(label: "Triangles:", value: ModelInfo.formatCount(modelInfo.triangleCount))
+            }
 
             // Dimensions
             InfoRow(label: "W:", value: ModelInfo.formatDimension(modelInfo.width))
@@ -182,6 +211,22 @@ struct ViewSectionContent: View {
                 }
                 .buttonStyle(.plain)
                 KeyHint(key: "g")
+            }
+
+            // Slicing toggle
+            HStack(spacing: 4) {
+                Button(action: { appState.slicingState.toggleVisibility() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: appState.slicingState.isVisible ? "checkmark.square.fill" : "square")
+                            .font(.system(size: 10))
+                            .foregroundColor(appState.slicingState.isVisible ? .orange : .white.opacity(0.5))
+                        Text("Slicing")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                }
+                .buttonStyle(.plain)
+                KeyHint(key: "⇧S")
             }
 
             Divider()
