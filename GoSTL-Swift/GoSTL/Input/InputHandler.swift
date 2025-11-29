@@ -108,6 +108,9 @@ final class InputHandler {
         case "g":
             appState.showGrid.toggle()
             return true
+        case "i":
+            appState.showModelInfo.toggle()
+            return true
 
         // Camera controls
         case "r":

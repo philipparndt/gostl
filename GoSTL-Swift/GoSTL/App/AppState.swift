@@ -13,6 +13,9 @@ final class AppState {
     /// Currently loaded STL model
     var model: STLModel?
 
+    /// Information about the loaded model
+    var modelInfo: ModelInfo?
+
     /// GPU mesh data for rendering
     var meshData: MeshData?
 
@@ -27,6 +30,9 @@ final class AppState {
 
     /// Whether to show grid
     var showGrid: Bool = true
+
+    /// Whether to show model info overlay
+    var showModelInfo: Bool = true
 
     init() {}
 
@@ -55,6 +61,7 @@ final class AppState {
         print("Loading STL file: \(url.lastPathComponent)")
         let model = try STLParser.parse(url: url)
         try loadModel(model, device: device)
+        self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
         print("Successfully loaded: \(model.triangleCount) triangles")
     }
 }

@@ -9,12 +9,19 @@ struct ContentView: View {
     }
 
     var body: some View {
-        MetalView(appState: appState)
-            .frame(minWidth: 800, minHeight: 600)
-            .onAppear {
-                loadTestModel()
-                setupNotifications()
+        ZStack(alignment: .topLeading) {
+            MetalView(appState: appState)
+
+            // Model info overlay (top-left)
+            if appState.showModelInfo, let modelInfo = appState.modelInfo {
+                ModelInfoOverlay(modelInfo: modelInfo)
             }
+        }
+        .frame(minWidth: 800, minHeight: 600)
+        .onAppear {
+            loadTestModel()
+            setupNotifications()
+        }
     }
 
     private func setupNotifications() {
@@ -55,7 +62,13 @@ struct ContentView: View {
             // Load test cube
             let testCube = createTestCube()
             try appState.loadModel(testCube, device: device)
+            appState.modelInfo = ModelInfo(fileName: "test_cube.stl", model: testCube)
             print("Test cube loaded: \(testCube.triangleCount) triangles")
+            if let wireframeData = appState.wireframeData {
+                print("Wireframe data created: \(wireframeData.instanceCount) edges")
+            } else {
+                print("WARNING: No wireframe data created")
+            }
         } catch {
             print("ERROR: Failed to initialize scene: \(error)")
         }
