@@ -8,6 +8,7 @@ final class MetalRenderer {
     let wireframePipelineState: MTLRenderPipelineState
     let gridPipelineState: MTLRenderPipelineState
     let measurementPipelineState: MTLRenderPipelineState
+    let cutEdgePipelineState: MTLRenderPipelineState
     let depthStencilState: MTLDepthStencilState
 
     init(device: MTLDevice) throws {
@@ -25,6 +26,7 @@ final class MetalRenderer {
         self.wireframePipelineState = try Self.createWireframePipeline(device: device)
         self.gridPipelineState = try Self.createGridPipeline(device: device)
         self.measurementPipelineState = try Self.createMeshPipeline(device: device) // Reuse mesh pipeline for measurements
+        self.cutEdgePipelineState = try Self.createCutEdgePipeline(device: device)
 
         // Create depth stencil state
         self.depthStencilState = Self.createDepthStencilState(device: device)
@@ -135,6 +137,35 @@ final class MetalRenderer {
         return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
     }
 
+    private static func createCutEdgePipeline(device: MTLDevice) throws -> MTLRenderPipelineState {
+        let library = try loadShaderLibrary(device: device)
+
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.vertexFunction = library.makeFunction(name: "cutEdgeVertexShader")
+        pipelineDescriptor.fragmentFunction = library.makeFunction(name: "cutEdgeFragmentShader")
+        pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+        pipelineDescriptor.rasterSampleCount = 4  // 4x MSAA for smooth edges
+
+        // Same vertex descriptor as mesh/wireframe
+        let vertexDescriptor = MTLVertexDescriptor()
+        vertexDescriptor.attributes[0].format = .float3
+        vertexDescriptor.attributes[0].offset = 0
+        vertexDescriptor.attributes[0].bufferIndex = 0
+        vertexDescriptor.attributes[1].format = .float3
+        vertexDescriptor.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
+        vertexDescriptor.attributes[1].bufferIndex = 0
+        vertexDescriptor.attributes[2].format = .float4
+        vertexDescriptor.attributes[2].offset = MemoryLayout<SIMD3<Float>>.stride * 2
+        vertexDescriptor.attributes[2].bufferIndex = 0
+        vertexDescriptor.layouts[0].stride = MemoryLayout<VertexIn>.stride
+        vertexDescriptor.layouts[0].stepFunction = .perVertex
+
+        pipelineDescriptor.vertexDescriptor = vertexDescriptor
+
+        return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+    }
+
     private static func createDepthStencilState(device: MTLDevice) -> MTLDepthStencilState {
         let depthDescriptor = MTLDepthStencilDescriptor()
         depthDescriptor.depthCompareFunction = .less
@@ -206,6 +237,11 @@ final class MetalRenderer {
         // Render wireframe if enabled and available
         if appState.showWireframe, let wireframeData = appState.wireframeData {
             renderWireframe(encoder: renderEncoder, wireframeData: wireframeData, appState: appState, viewSize: view.drawableSize)
+        }
+
+        // Render cut edges (from slicing)
+        if let cutEdgeData = appState.cutEdgeData {
+            renderCutEdges(encoder: renderEncoder, cutEdgeData: cutEdgeData, appState: appState, viewSize: view.drawableSize)
         }
 
         // Update and render measurements
@@ -296,6 +332,32 @@ final class MetalRenderer {
             indexBuffer: wireframeData.cylinderIndexBuffer,
             indexBufferOffset: 0,
             instanceCount: wireframeData.instanceCount
+        )
+    }
+
+    private func renderCutEdges(encoder: MTLRenderCommandEncoder, cutEdgeData: CutEdgeData, appState: AppState, viewSize: CGSize) {
+        encoder.setRenderPipelineState(cutEdgePipelineState)
+        encoder.setDepthStencilState(depthStencilState)
+
+        // Set vertex buffer (cylinder geometry)
+        encoder.setVertexBuffer(cutEdgeData.vertexBuffer, offset: 0, index: 0)
+
+        // Create and set uniforms with viewport height for pixel-perfect thickness
+        let aspect = Float(viewSize.width / viewSize.height)
+        var uniforms = createUniforms(camera: appState.camera, aspect: aspect, viewportHeight: Float(viewSize.height))
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+        // Set instance buffer (transformation matrices + colors for each edge)
+        encoder.setVertexBuffer(cutEdgeData.instanceBuffer, offset: 0, index: 2)
+
+        // Draw instanced cylinders
+        encoder.drawIndexedPrimitives(
+            type: .triangle,
+            indexCount: cutEdgeData.indexCount,
+            indexType: .uint16,
+            indexBuffer: cutEdgeData.indexBuffer,
+            indexBufferOffset: 0,
+            instanceCount: cutEdgeData.instanceCount
         )
     }
 

@@ -26,6 +26,11 @@ struct Uniforms {
     float3 _padding; // Align to 16 bytes
 };
 
+struct InstanceData {
+    float4x4 modelMatrix;
+    float4 color;
+};
+
 // MARK: - Basic Shaders (Phase 0)
 
 vertex VertexOut basicVertexShader(VertexIn in [[stage_in]]) {
@@ -138,4 +143,60 @@ fragment float4 gridFragmentShader(
     float distance = length(in.worldPosition);
     float fade = smoothstep(500.0, 100.0, distance);
     return float4(in.color.rgb, in.color.a * fade);
+}
+
+// MARK: - Cut Edge Shaders (Phase 9 - Slicing)
+
+vertex VertexOut cutEdgeVertexShader(
+    const VertexIn in [[stage_in]],
+    constant Uniforms &uniforms [[buffer(1)]],
+    constant InstanceData *instanceData [[buffer(2)]],
+    uint instanceID [[instance_id]]
+) {
+    VertexOut out;
+
+    // Get instance data
+    InstanceData instance = instanceData[instanceID];
+    float4x4 instanceMatrix = instance.modelMatrix;
+    float4 instanceColor = instance.color;
+
+    // Calculate pixel-perfect thickness (same as wireframe but 4x thicker)
+    // Wireframe is 2 pixels, cut edges are 8 pixels
+    float3 edgeStart = instanceMatrix[3].xyz;
+    float distanceToCamera = length(uniforms.cameraPosition - edgeStart);
+
+    // Calculate world-space size of 8 pixels at this distance
+    float fovY = 2.0 * atan(1.0 / uniforms.projectionMatrix[1][1]);
+    float pixelSize = (distanceToCamera * tan(fovY * 0.5) * 2.0) / uniforms.viewportHeight;
+    float cutEdgeThickness = pixelSize * 8.0; // 8 pixels (4x wireframe)
+
+    // Scale the radius (XZ plane) while keeping length (Y axis)
+    float3 scaledPosition = in.position;
+    scaledPosition.x *= cutEdgeThickness;
+    scaledPosition.z *= cutEdgeThickness;
+
+    // Transform position
+    float4 worldPos = instanceMatrix * float4(scaledPosition, 1.0);
+    worldPos = uniforms.modelMatrix * worldPos;
+    out.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPos;
+
+    // Transform normal
+    float3x3 instanceRotation = float3x3(
+        instanceMatrix[0].xyz,
+        instanceMatrix[1].xyz,
+        instanceMatrix[2].xyz
+    );
+    out.normal = uniforms.normalMatrix * instanceRotation * in.normal;
+    out.worldPosition = worldPos.xyz;
+
+    // Use instance color instead of vertex color
+    out.color = instanceColor;
+
+    return out;
+}
+
+fragment float4 cutEdgeFragmentShader(
+    VertexOut in [[stage_in]]
+) {
+    return in.color;
 }

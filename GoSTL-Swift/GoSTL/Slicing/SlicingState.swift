@@ -8,10 +8,14 @@ final class SlicingState: @unchecked Sendable {
     var isVisible: Bool = false
 
     /// Whether to show visual slice planes
-    var showPlanes: Bool = true
+    var showPlanes: Bool = false
 
     /// Whether to fill cross-sections
     var fillCrossSections: Bool = false
+
+    /// Currently active plane being dragged (axis, isMin)
+    /// nil when no slider is being dragged
+    var activePlane: (axis: Int, isMin: Bool)? = nil
 
     /// Current slice bounds for each axis [min, max]
     /// Index 0 = X axis, 1 = Y axis, 2 = Z axis

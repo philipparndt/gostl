@@ -58,6 +58,12 @@ struct ContentView: View {
         .onChange(of: appState.slicingState.showPlanes) { _, _ in
             updateSlicedMesh()
         }
+        .onChange(of: appState.slicingState.activePlane?.axis) { _, _ in
+            updateSlicedMesh()
+        }
+        .onChange(of: appState.slicingState.activePlane?.isMin) { _, _ in
+            updateSlicedMesh()
+        }
     }
 
     private func updateSlicedMesh() {

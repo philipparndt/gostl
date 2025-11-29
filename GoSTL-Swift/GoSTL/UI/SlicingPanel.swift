@@ -60,7 +60,10 @@ struct SlicingPanel: View {
                             }
                         ),
                         range: slicingState.modelBounds[axis][0]...slicingState.modelBounds[axis][1],
-                        color: axisColors[axis]
+                        color: axisColors[axis],
+                        axis: axis,
+                        isMin: true,
+                        slicingState: slicingState
                     )
 
                     // Max slider
@@ -74,7 +77,10 @@ struct SlicingPanel: View {
                             }
                         ),
                         range: slicingState.modelBounds[axis][0]...slicingState.modelBounds[axis][1],
-                        color: axisColors[axis]
+                        color: axisColors[axis],
+                        axis: axis,
+                        isMin: false,
+                        slicingState: slicingState
                     )
                 }
                 .padding(.vertical, 4)
@@ -146,6 +152,9 @@ private struct SliderRow: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let color: Color
+    let axis: Int
+    let isMin: Bool
+    let slicingState: SlicingState
 
     var body: some View {
         HStack(spacing: 8) {
@@ -154,8 +163,19 @@ private struct SliderRow: View {
                 .foregroundColor(.white.opacity(0.7))
                 .frame(width: 30, alignment: .leading)
 
-            Slider(value: $value, in: range)
-                .tint(color)
+            Slider(
+                value: $value,
+                in: range,
+                onEditingChanged: { editing in
+                    // Show only this plane while dragging
+                    if editing {
+                        slicingState.activePlane = (axis: axis, isMin: isMin)
+                    } else {
+                        slicingState.activePlane = nil
+                    }
+                }
+            )
+            .tint(color)
 
             Text(String(format: "%.1f", value))
                 .font(.system(size: 10, design: .monospaced))

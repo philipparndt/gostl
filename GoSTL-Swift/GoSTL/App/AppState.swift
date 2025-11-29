@@ -31,6 +31,9 @@ final class AppState: @unchecked Sendable {
     /// GPU slice plane data for visualizing slice boundaries
     var slicePlaneData: SlicePlaneData?
 
+    /// GPU cut edge data for rendering sliced edges in axis colors
+    var cutEdgeData: CutEdgeData?
+
     /// Whether to show wireframe overlay
     var showWireframe: Bool = true
 
@@ -66,26 +69,42 @@ final class AppState: @unchecked Sendable {
     func updateMeshData(device: MTLDevice) throws {
         guard let model else { return }
 
-        // If slicing is active, filter triangles and create slice planes
+        // Calculate wireframe thickness based on model size
+        let bbox = model.boundingBox()
+        let modelSize = bbox.diagonal
+        let thickness = Float(modelSize) * 0.002
+
+        // If slicing is active, use triangle slicer to clip geometry
         if slicingState.isVisible {
-            let filteredTriangles = model.triangles.filter { triangle in
-                slicingState.isTriangleInBounds(triangle)
-            }
+            let slicedResult = TriangleSlicer.sliceTriangles(model.triangles, bounds: slicingState.bounds)
 
             // Only create mesh data if we have triangles
-            if !filteredTriangles.isEmpty {
-                let filteredModel = STLModel(triangles: filteredTriangles, name: model.name)
-                self.meshData = try MeshData(device: device, model: filteredModel)
-                print("Slicing: showing \(filteredTriangles.count) / \(model.triangles.count) triangles")
+            if !slicedResult.triangles.isEmpty {
+                let slicedModel = STLModel(triangles: slicedResult.triangles, name: model.name)
+                self.meshData = try MeshData(device: device, model: slicedModel)
+
+                // Update wireframe to match sliced model
+                self.wireframeData = try WireframeData(device: device, model: slicedModel, thickness: thickness)
+
+                print("Slicing: showing \(slicedResult.triangles.count) triangles (from \(model.triangles.count) original)")
             } else {
-                // No triangles in bounds - don't render mesh
+                // No triangles in bounds - don't render mesh or wireframe
                 self.meshData = nil
+                self.wireframeData = nil
                 print("Slicing: no triangles in bounds")
             }
 
+            // Create cut edge visualization
+            if !slicedResult.cutEdges.isEmpty {
+                self.cutEdgeData = try CutEdgeData(device: device, cutEdges: slicedResult.cutEdges)
+                print("Slicing: \(slicedResult.cutEdges.count) cut edges")
+            } else {
+                self.cutEdgeData = nil
+            }
+
             // Create slice plane visualization
-            if slicingState.showPlanes {
-                let bbox = model.boundingBox()
+            // Show planes ONLY if: toggle is on AND a slider is being actively dragged
+            if slicingState.showPlanes && slicingState.activePlane != nil {
                 let planeSize = Float(bbox.diagonal * 1.5)  // Make planes larger than model
                 self.slicePlaneData = try SlicePlaneData(
                     device: device,
@@ -99,7 +118,9 @@ final class AppState: @unchecked Sendable {
         } else {
             // Show full model
             self.meshData = try MeshData(device: device, model: model)
+            self.wireframeData = try WireframeData(device: device, model: model, thickness: thickness)
             self.slicePlaneData = nil
+            self.cutEdgeData = nil
         }
     }
 

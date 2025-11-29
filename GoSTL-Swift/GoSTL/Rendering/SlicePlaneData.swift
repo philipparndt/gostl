@@ -19,29 +19,57 @@ final class SlicePlaneData {
         let halfSize = planeSize / 2.0
         let center = modelCenter.float3
 
-        // Create planes for each axis (min and max)
-        for axis in 0..<3 {
+        // If activePlane is set, only show that specific plane
+        if let activePlane = slicingState.activePlane {
+            let axis = activePlane.axis
             let color = axisColors[axis]
 
-            // Min plane
-            let minPos = Float(slicingState.bounds[axis][0])
-            vertices.append(contentsOf: Self.createPlane(
-                axis: axis,
-                position: minPos,
-                center: center,
-                halfSize: halfSize,
-                color: color
-            ))
+            if activePlane.isMin {
+                // Show only min plane
+                let minPos = Float(slicingState.bounds[axis][0])
+                vertices.append(contentsOf: Self.createPlane(
+                    axis: axis,
+                    position: minPos,
+                    center: center,
+                    halfSize: halfSize,
+                    color: color
+                ))
+            } else {
+                // Show only max plane
+                let maxPos = Float(slicingState.bounds[axis][1])
+                vertices.append(contentsOf: Self.createPlane(
+                    axis: axis,
+                    position: maxPos,
+                    center: center,
+                    halfSize: halfSize,
+                    color: color
+                ))
+            }
+        } else {
+            // Show all planes (when Planes toggle is enabled)
+            for axis in 0..<3 {
+                let color = axisColors[axis]
 
-            // Max plane
-            let maxPos = Float(slicingState.bounds[axis][1])
-            vertices.append(contentsOf: Self.createPlane(
-                axis: axis,
-                position: maxPos,
-                center: center,
-                halfSize: halfSize,
-                color: color
-            ))
+                // Min plane
+                let minPos = Float(slicingState.bounds[axis][0])
+                vertices.append(contentsOf: Self.createPlane(
+                    axis: axis,
+                    position: minPos,
+                    center: center,
+                    halfSize: halfSize,
+                    color: color
+                ))
+
+                // Max plane
+                let maxPos = Float(slicingState.bounds[axis][1])
+                vertices.append(contentsOf: Self.createPlane(
+                    axis: axis,
+                    position: maxPos,
+                    center: center,
+                    halfSize: halfSize,
+                    color: color
+                ))
+            }
         }
 
         self.vertexCount = vertices.count
