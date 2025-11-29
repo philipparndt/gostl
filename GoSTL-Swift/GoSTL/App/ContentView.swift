@@ -74,33 +74,35 @@ struct ContentView: View {
         }
     }
 
-    // Create a simple test cube (1x1x1 at origin)
+    // Create a simple test cube (10x10x10 centered at origin)
     private func createTestCube() -> STLModel {
         var triangles: [Triangle] = []
+        let size: Double = 10.0
+        let half = size / 2.0
 
-        // Bottom face (z = 0)
-        triangles.append(Triangle(v1: Vector3(0, 0, 0), v2: Vector3(1, 1, 0), v3: Vector3(1, 0, 0)))
-        triangles.append(Triangle(v1: Vector3(0, 0, 0), v2: Vector3(0, 1, 0), v3: Vector3(1, 1, 0)))
+        // Bottom face (z = -half)
+        triangles.append(Triangle(v1: Vector3(-half, -half, -half), v2: Vector3(half, half, -half), v3: Vector3(half, -half, -half)))
+        triangles.append(Triangle(v1: Vector3(-half, -half, -half), v2: Vector3(-half, half, -half), v3: Vector3(half, half, -half)))
 
-        // Top face (z = 1)
-        triangles.append(Triangle(v1: Vector3(0, 0, 1), v2: Vector3(1, 0, 1), v3: Vector3(1, 1, 1)))
-        triangles.append(Triangle(v1: Vector3(0, 0, 1), v2: Vector3(1, 1, 1), v3: Vector3(0, 1, 1)))
+        // Top face (z = half)
+        triangles.append(Triangle(v1: Vector3(-half, -half, half), v2: Vector3(half, -half, half), v3: Vector3(half, half, half)))
+        triangles.append(Triangle(v1: Vector3(-half, -half, half), v2: Vector3(half, half, half), v3: Vector3(-half, half, half)))
 
-        // Front face (y = 0)
-        triangles.append(Triangle(v1: Vector3(0, 0, 0), v2: Vector3(1, 0, 0), v3: Vector3(1, 0, 1)))
-        triangles.append(Triangle(v1: Vector3(0, 0, 0), v2: Vector3(1, 0, 1), v3: Vector3(0, 0, 1)))
+        // Front face (y = -half)
+        triangles.append(Triangle(v1: Vector3(-half, -half, -half), v2: Vector3(half, -half, -half), v3: Vector3(half, -half, half)))
+        triangles.append(Triangle(v1: Vector3(-half, -half, -half), v2: Vector3(half, -half, half), v3: Vector3(-half, -half, half)))
 
-        // Back face (y = 1)
-        triangles.append(Triangle(v1: Vector3(0, 1, 0), v2: Vector3(1, 1, 1), v3: Vector3(1, 1, 0)))
-        triangles.append(Triangle(v1: Vector3(0, 1, 0), v2: Vector3(0, 1, 1), v3: Vector3(1, 1, 1)))
+        // Back face (y = half)
+        triangles.append(Triangle(v1: Vector3(-half, half, -half), v2: Vector3(half, half, half), v3: Vector3(half, half, -half)))
+        triangles.append(Triangle(v1: Vector3(-half, half, -half), v2: Vector3(-half, half, half), v3: Vector3(half, half, half)))
 
-        // Left face (x = 0)
-        triangles.append(Triangle(v1: Vector3(0, 0, 0), v2: Vector3(0, 0, 1), v3: Vector3(0, 1, 1)))
-        triangles.append(Triangle(v1: Vector3(0, 0, 0), v2: Vector3(0, 1, 1), v3: Vector3(0, 1, 0)))
+        // Left face (x = -half)
+        triangles.append(Triangle(v1: Vector3(-half, -half, -half), v2: Vector3(-half, -half, half), v3: Vector3(-half, half, half)))
+        triangles.append(Triangle(v1: Vector3(-half, -half, -half), v2: Vector3(-half, half, half), v3: Vector3(-half, half, -half)))
 
-        // Right face (x = 1)
-        triangles.append(Triangle(v1: Vector3(1, 0, 0), v2: Vector3(1, 1, 0), v3: Vector3(1, 1, 1)))
-        triangles.append(Triangle(v1: Vector3(1, 0, 0), v2: Vector3(1, 1, 1), v3: Vector3(1, 0, 1)))
+        // Right face (x = half)
+        triangles.append(Triangle(v1: Vector3(half, -half, -half), v2: Vector3(half, half, -half), v3: Vector3(half, half, half)))
+        triangles.append(Triangle(v1: Vector3(half, -half, -half), v2: Vector3(half, half, half), v3: Vector3(half, -half, half)))
 
         return STLModel(triangles: triangles, name: "test_cube")
     }
