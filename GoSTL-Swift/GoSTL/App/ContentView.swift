@@ -53,6 +53,8 @@ struct ContentView: View {
             Task { @MainActor in
                 do {
                     try appState.loadFile(url, device: device)
+                    // Add to recent documents after successful load
+                    RecentDocuments.shared.addDocument(url)
                 } catch {
                     print("ERROR: Failed to load file: \(error)")
                     // TODO: Show error alert to user

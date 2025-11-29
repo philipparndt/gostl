@@ -38,6 +38,7 @@ struct MainMenuPanel: View {
                 .fill(Color.black.opacity(0.7))
                 .shadow(radius: 5)
         )
+        .frame(minWidth: 240)
         .fixedSize()
         .padding(12)
     }
@@ -193,12 +194,12 @@ struct ViewSectionContent: View {
                 .foregroundColor(.white.opacity(0.8))
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 4) {
-                CameraPresetButton(label: "Top", key: "5", preset: .top, camera: appState.camera)
                 CameraPresetButton(label: "Front", key: "1", preset: .front, camera: appState.camera)
-                CameraPresetButton(label: "Right", key: "4", preset: .right, camera: appState.camera)
-                CameraPresetButton(label: "Bottom", key: "6", preset: .bottom, camera: appState.camera)
                 CameraPresetButton(label: "Back", key: "2", preset: .back, camera: appState.camera)
                 CameraPresetButton(label: "Left", key: "3", preset: .left, camera: appState.camera)
+                CameraPresetButton(label: "Right", key: "4", preset: .right, camera: appState.camera)
+                CameraPresetButton(label: "Top", key: "5", preset: .top, camera: appState.camera)
+                CameraPresetButton(label: "Bottom", key: "6", preset: .bottom, camera: appState.camera)
             }
 
             Button(action: { appState.camera.reset() }) {
@@ -390,7 +391,7 @@ struct CameraPresetButton: View {
 
     var body: some View {
         Button(action: { camera.setPreset(preset) }) {
-            VStack(spacing: 2) {
+            HStack(spacing: 3) {
                 Text(label)
                     .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.8))
@@ -398,6 +399,7 @@ struct CameraPresetButton: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
+            .padding(.horizontal, 2)
             .background(
                 RoundedRectangle(cornerRadius: 3)
                     .fill(Color.white.opacity(0.1))
