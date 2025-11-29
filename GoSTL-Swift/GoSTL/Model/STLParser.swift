@@ -200,16 +200,22 @@ private extension Data {
     func readFloat32(at offset: Int) -> Float {
         // Copy bytes to ensure proper alignment
         var value: Float = 0
-        let range = offset..<(offset + MemoryLayout<Float>.size)
-        copyBytes(to: UnsafeMutableBufferPointer(start: &value, count: 1), from: range)
+        withUnsafeMutablePointer(to: &value) { pointer in
+            let buffer = UnsafeMutableRawBufferPointer(start: pointer, count: MemoryLayout<Float>.size)
+            let range = offset..<(offset + MemoryLayout<Float>.size)
+            _ = copyBytes(to: buffer, from: range)
+        }
         return value
     }
 
     func readUInt32(at offset: Int) -> UInt32 {
         // Copy bytes to ensure proper alignment
         var value: UInt32 = 0
-        let range = offset..<(offset + MemoryLayout<UInt32>.size)
-        copyBytes(to: UnsafeMutableBufferPointer(start: &value, count: 1), from: range)
+        withUnsafeMutablePointer(to: &value) { pointer in
+            let buffer = UnsafeMutableRawBufferPointer(start: pointer, count: MemoryLayout<UInt32>.size)
+            let range = offset..<(offset + MemoryLayout<UInt32>.size)
+            _ = copyBytes(to: buffer, from: range)
+        }
         return value
     }
 }

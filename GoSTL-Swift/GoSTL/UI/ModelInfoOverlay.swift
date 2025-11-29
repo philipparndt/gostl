@@ -36,6 +36,14 @@ struct ModelInfoOverlay: View {
                 .background(Color.white.opacity(0.3))
                 .padding(.vertical, 2)
 
+            // Material and weight
+            InfoRow(label: "Material:", value: modelInfo.material.rawValue)
+            InfoRow(label: "Weight:", value: Material.formatWeight(modelInfo.weight))
+
+            Divider()
+                .background(Color.white.opacity(0.3))
+                .padding(.vertical, 2)
+
             // Center position
             VStack(alignment: .leading, spacing: 2) {
                 Text("Center:")
@@ -48,10 +56,15 @@ struct ModelInfoOverlay: View {
             }
 
             // Help text
-            Text("Press 'i' to toggle")
-                .font(.system(size: 9))
-                .foregroundColor(.white.opacity(0.5))
-                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Press 'i' to toggle")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.5))
+                Text("Press 'm' to change material")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            .padding(.top, 4)
         }
         .padding(8)
         .background(

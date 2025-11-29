@@ -3,7 +3,7 @@ import Observation
 import Metal
 
 @Observable
-final class AppState {
+final class AppState: @unchecked Sendable {
     /// Clear color for the background (dark blue matching Go version: RGB 15, 18, 25)
     var clearColor: SIMD4<Float> = SIMD4(0.059, 0.071, 0.098, 1.0)
 
@@ -63,5 +63,14 @@ final class AppState {
         try loadModel(model, device: device)
         self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
         print("Successfully loaded: \(model.triangleCount) triangles")
+    }
+
+    /// Cycle to the next material type
+    func cycleMaterial() {
+        if var info = modelInfo {
+            info.material = info.material.next()
+            self.modelInfo = info
+            print("Material changed to: \(info.material.rawValue)")
+        }
     }
 }

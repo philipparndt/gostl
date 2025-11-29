@@ -111,6 +111,9 @@ final class InputHandler {
         case "i":
             appState.showModelInfo.toggle()
             return true
+        case "m":
+            appState.cycleMaterial()
+            return true
 
         // Camera controls
         case "r":

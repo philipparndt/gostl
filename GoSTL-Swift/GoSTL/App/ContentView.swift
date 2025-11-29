@@ -29,9 +29,8 @@ struct ContentView: View {
             forName: NSNotification.Name("LoadSTLFile"),
             object: nil,
             queue: .main
-        ) { [weak appState] notification in
-            guard let appState,
-                  let url = notification.object as? URL,
+        ) { [appState] notification in
+            guard let url = notification.object as? URL,
                   let device = MTLCreateSystemDefaultDevice() else {
                 return
             }

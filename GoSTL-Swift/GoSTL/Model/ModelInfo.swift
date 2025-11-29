@@ -17,6 +17,9 @@ struct ModelInfo {
     /// Surface area of the model
     let surfaceArea: Double
 
+    /// Selected material for weight calculation
+    var material: Material = .pla
+
     /// Computed properties for display
 
     var dimensions: Vector3 {
@@ -37,6 +40,11 @@ struct ModelInfo {
 
     var center: Vector3 {
         boundingBox.center
+    }
+
+    /// Calculated weight based on volume and material density
+    var weight: Double {
+        material.weight(volume: volume)
     }
 
     /// Create model info from an STL model
