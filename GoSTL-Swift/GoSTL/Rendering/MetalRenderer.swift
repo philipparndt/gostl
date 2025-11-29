@@ -41,6 +41,7 @@ final class MetalRenderer {
         pipelineDescriptor.fragmentFunction = library.makeFunction(name: "meshFragmentShader")
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
         pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+        pipelineDescriptor.rasterSampleCount = 4  // 4x MSAA for smooth edges
 
         // Vertex descriptor
         let vertexDescriptor = MTLVertexDescriptor()
@@ -73,6 +74,7 @@ final class MetalRenderer {
         pipelineDescriptor.fragmentFunction = library.makeFunction(name: "wireframeFragmentShader")
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
         pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+        pipelineDescriptor.rasterSampleCount = 4  // 4x MSAA for smooth edges
 
         // Use same vertex descriptor as mesh
         let vertexDescriptor = MTLVertexDescriptor()
@@ -101,6 +103,7 @@ final class MetalRenderer {
         pipelineDescriptor.fragmentFunction = library.makeFunction(name: "gridFragmentShader")
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
         pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+        pipelineDescriptor.rasterSampleCount = 4  // 4x MSAA for smooth edges
 
         // Enable alpha blending for grid fade
         pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true

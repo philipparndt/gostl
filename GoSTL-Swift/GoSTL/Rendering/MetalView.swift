@@ -25,6 +25,7 @@ struct MetalView: NSViewRepresentable {
         mtkView.isPaused = false
         mtkView.colorPixelFormat = .bgra8Unorm
         mtkView.depthStencilPixelFormat = .depth32Float
+        mtkView.sampleCount = 4  // 4x MSAA for smooth edges
         mtkView.clearColor = MTLClearColor(
             red: Double(appState.clearColor.x),
             green: Double(appState.clearColor.y),
