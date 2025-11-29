@@ -19,10 +19,21 @@ final class AppState {
     /// GPU wireframe data for edge rendering
     var wireframeData: WireframeData?
 
+    /// GPU grid data for spatial reference
+    var gridData: GridData?
+
     /// Whether to show wireframe overlay
     var showWireframe: Bool = true
 
+    /// Whether to show grid
+    var showGrid: Bool = true
+
     init() {}
+
+    /// Initialize grid
+    func initializeGrid(device: MTLDevice) throws {
+        self.gridData = try GridData(device: device, size: 100.0, spacing: 10.0)
+    }
 
     /// Load an STL model and create mesh data for rendering
     func loadModel(_ model: STLModel, device: MTLDevice) throws {

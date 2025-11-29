@@ -97,3 +97,27 @@ fragment float4 wireframeFragmentShader(
 ) {
     return in.color;
 }
+
+// MARK: - Grid Shaders (Phase 6)
+
+vertex VertexOut gridVertexShader(
+    const VertexIn in [[stage_in]],
+    constant Uniforms &uniforms [[buffer(1)]]
+) {
+    VertexOut out;
+    float4 worldPos = uniforms.modelMatrix * float4(in.position, 1.0);
+    out.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPos;
+    out.normal = uniforms.normalMatrix * in.normal;
+    out.worldPosition = worldPos.xyz;
+    out.color = in.color;
+    return out;
+}
+
+fragment float4 gridFragmentShader(
+    VertexOut in [[stage_in]]
+) {
+    // Fade grid lines with distance from camera
+    float distance = length(in.worldPosition);
+    float fade = smoothstep(500.0, 100.0, distance);
+    return float4(in.color.rgb, in.color.a * fade);
+}

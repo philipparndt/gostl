@@ -23,12 +23,17 @@ struct ContentView: View {
             return
         }
 
-        let testCube = createTestCube()
         do {
+            // Initialize grid
+            try appState.initializeGrid(device: device)
+            print("Grid initialized")
+
+            // Load test cube
+            let testCube = createTestCube()
             try appState.loadModel(testCube, device: device)
             print("Test cube loaded: \(testCube.triangleCount) triangles")
         } catch {
-            print("ERROR: Failed to load test cube: \(error)")
+            print("ERROR: Failed to initialize scene: \(error)")
         }
     }
 
