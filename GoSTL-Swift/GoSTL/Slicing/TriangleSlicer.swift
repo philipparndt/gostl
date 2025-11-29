@@ -25,6 +25,49 @@ final class TriangleSlicer {
         var cutEdges: [CutEdge] = []
 
         for triangle in triangles {
+            let vertices = [triangle.v1, triangle.v2, triangle.v3]
+
+            // Early exit: if triangle is completely inside bounds, no clipping needed
+            var fullyInside = true
+            var fullyOutside = false
+
+            for axis in 0..<3 {
+                let minBound = bounds[axis][0]
+                let maxBound = bounds[axis][1]
+
+                var allBeforeMin = true
+                var allAfterMax = true
+                var allInside = true
+
+                for vertex in vertices {
+                    let coord = vertex.component(axis: axis)
+                    if coord >= minBound { allBeforeMin = false }
+                    if coord <= maxBound { allAfterMax = false }
+                    if coord < minBound || coord > maxBound { allInside = false }
+                }
+
+                // All vertices outside on same side of this axis - discard triangle
+                if allBeforeMin || allAfterMax {
+                    fullyOutside = true
+                    break
+                }
+
+                if !allInside {
+                    fullyInside = false
+                }
+            }
+
+            // Triangle is fully outside - discard immediately
+            if fullyOutside {
+                continue
+            }
+
+            // Triangle is fully inside - keep as-is, no clipping needed
+            if fullyInside {
+                resultTriangles.append(triangle)
+                continue
+            }
+
             // Start with the original triangle
             var currentTriangles = [triangle]
             var currentCutEdges: [CutEdge] = []

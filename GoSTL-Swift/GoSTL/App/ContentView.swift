@@ -55,14 +55,19 @@ struct ContentView: View {
         .onChange(of: appState.slicingState.isVisible) { _, _ in
             updateSlicedMesh()
         }
-        .onChange(of: appState.slicingState.showPlanes) { _, _ in
-            updateSlicedMesh()
+        .onChange(of: appState.slicingState.showPlanes) { _, newValue in
+            // Only update mesh if planes are being turned on (need to create slice plane data)
+            // Turning off doesn't require mesh update
+            if newValue {
+                updateSlicedMesh()
+            } else {
+                // Just clear slice plane data without full mesh update
+                appState.slicePlaneData = nil
+            }
         }
-        .onChange(of: appState.slicingState.activePlane?.axis) { _, _ in
-            updateSlicedMesh()
-        }
-        .onChange(of: appState.slicingState.activePlane?.isMin) { _, _ in
-            updateSlicedMesh()
+        .onChange(of: appState.slicingState.activePlane != nil) { _, _ in
+            // Only update slice plane visualization, not the whole mesh
+            updateSlicePlaneOnly()
         }
     }
 
@@ -72,6 +77,28 @@ struct ContentView: View {
             try appState.updateMeshData(device: device)
         } catch {
             print("ERROR: Failed to update sliced mesh: \(error)")
+        }
+    }
+
+    private func updateSlicePlaneOnly() {
+        guard let device = MTLCreateSystemDefaultDevice(),
+              let model = appState.model else { return }
+        do {
+            // Only update slice plane visualization without recalculating mesh
+            if appState.slicingState.showPlanes && appState.slicingState.activePlane != nil {
+                let bbox = model.boundingBox()
+                let planeSize = Float(bbox.diagonal * 1.5)
+                appState.slicePlaneData = try SlicePlaneData(
+                    device: device,
+                    slicingState: appState.slicingState,
+                    modelCenter: bbox.center,
+                    planeSize: planeSize
+                )
+            } else {
+                appState.slicePlaneData = nil
+            }
+        } catch {
+            print("ERROR: Failed to update slice plane: \(error)")
         }
     }
 

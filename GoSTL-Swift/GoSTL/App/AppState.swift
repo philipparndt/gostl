@@ -69,6 +69,8 @@ final class AppState: @unchecked Sendable {
     func updateMeshData(device: MTLDevice) throws {
         guard let model else { return }
 
+        let startTime = CFAbsoluteTimeGetCurrent()
+
         // Calculate wireframe thickness based on model size
         let bbox = model.boundingBox()
         let modelSize = bbox.diagonal
@@ -76,17 +78,24 @@ final class AppState: @unchecked Sendable {
 
         // If slicing is active, use triangle slicer to clip geometry
         if slicingState.isVisible {
+            let sliceStart = CFAbsoluteTimeGetCurrent()
             let slicedResult = TriangleSlicer.sliceTriangles(model.triangles, bounds: slicingState.bounds)
+            let sliceTime = (CFAbsoluteTimeGetCurrent() - sliceStart) * 1000
 
             // Only create mesh data if we have triangles
             if !slicedResult.triangles.isEmpty {
                 let slicedModel = STLModel(triangles: slicedResult.triangles, name: model.name)
+
+                let meshStart = CFAbsoluteTimeGetCurrent()
                 self.meshData = try MeshData(device: device, model: slicedModel)
+                let meshTime = (CFAbsoluteTimeGetCurrent() - meshStart) * 1000
 
                 // Update wireframe to match sliced model
+                let wireframeStart = CFAbsoluteTimeGetCurrent()
                 self.wireframeData = try WireframeData(device: device, model: slicedModel, thickness: thickness)
+                let wireframeTime = (CFAbsoluteTimeGetCurrent() - wireframeStart) * 1000
 
-                print("Slicing: showing \(slicedResult.triangles.count) triangles (from \(model.triangles.count) original)")
+                print("Slicing: \(slicedResult.triangles.count)/\(model.triangles.count) tris | Slice: \(String(format: "%.1f", sliceTime))ms | Mesh: \(String(format: "%.1f", meshTime))ms | Wire: \(String(format: "%.1f", wireframeTime))ms")
             } else {
                 // No triangles in bounds - don't render mesh or wireframe
                 self.meshData = nil
@@ -96,11 +105,16 @@ final class AppState: @unchecked Sendable {
 
             // Create cut edge visualization
             if !slicedResult.cutEdges.isEmpty {
+                let cutEdgeStart = CFAbsoluteTimeGetCurrent()
                 self.cutEdgeData = try CutEdgeData(device: device, cutEdges: slicedResult.cutEdges)
-                print("Slicing: \(slicedResult.cutEdges.count) cut edges")
+                let cutEdgeTime = (CFAbsoluteTimeGetCurrent() - cutEdgeStart) * 1000
+                print("Cut edges: \(slicedResult.cutEdges.count) edges | Time: \(String(format: "%.1f", cutEdgeTime))ms")
             } else {
                 self.cutEdgeData = nil
             }
+
+            let totalTime = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            print("Total update time: \(String(format: "%.1f", totalTime))ms\n")
 
             // Create slice plane visualization
             // Show planes ONLY if: toggle is on AND a slider is being actively dragged
