@@ -39,10 +39,22 @@ final class AppState {
     func loadModel(_ model: STLModel, device: MTLDevice) throws {
         self.model = model
         self.meshData = try MeshData(device: device, model: model)
-        self.wireframeData = try WireframeData(device: device, model: model)
+
+        // Calculate wireframe thickness based on model size
+        let bbox = model.boundingBox()
+        let modelSize = bbox.diagonal
+        let thickness = Float(modelSize) * 0.002 // 0.2% of model size
+        self.wireframeData = try WireframeData(device: device, model: model, thickness: thickness)
 
         // Frame the model in view
-        let bbox = model.boundingBox()
         camera.frameBoundingBox(bbox)
+    }
+
+    /// Load an STL file from URL
+    func loadFile(_ url: URL, device: MTLDevice) throws {
+        print("Loading STL file: \(url.lastPathComponent)")
+        let model = try STLParser.parse(url: url)
+        try loadModel(model, device: device)
+        print("Successfully loaded: \(model.triangleCount) triangles")
     }
 }

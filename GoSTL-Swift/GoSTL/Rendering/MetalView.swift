@@ -88,6 +88,16 @@ class InteractiveMTKView: MTKView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override init(frame frameRect: CGRect, device: MTLDevice?) {
+        super.init(frame: frameRect, device: device)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes([.fileURL])
+    }
+
     // MARK: - Mouse Events
 
     override func mouseDown(with event: NSEvent) {
@@ -157,5 +167,46 @@ class InteractiveMTKView: MTKView {
         if !handled {
             super.keyDown(with: event)
         }
+    }
+
+    // MARK: - Drag and Drop
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        // Check if dragged item is a file URL
+        guard sender.draggingPasteboard.availableType(from: [.fileURL]) != nil else {
+            return []
+        }
+
+        // Check if it's an STL file
+        if let url = sender.draggingPasteboard.url,
+           url.pathExtension.lowercased() == "stl" {
+            return .copy
+        }
+
+        return []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let url = sender.draggingPasteboard.url,
+              url.pathExtension.lowercased() == "stl" else {
+            return false
+        }
+
+        // Post notification to load file
+        NotificationCenter.default.post(
+            name: NSNotification.Name("LoadSTLFile"),
+            object: url
+        )
+
+        return true
+    }
+}
+
+// MARK: - Pasteboard Helpers
+
+extension NSPasteboard {
+    var url: URL? {
+        guard let urlString = string(forType: .fileURL) else { return nil }
+        return URL(string: urlString)
     }
 }

@@ -13,7 +13,31 @@ struct ContentView: View {
             .frame(minWidth: 800, minHeight: 600)
             .onAppear {
                 loadTestModel()
+                setupNotifications()
             }
+    }
+
+    private func setupNotifications() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("LoadSTLFile"),
+            object: nil,
+            queue: .main
+        ) { [weak appState] notification in
+            guard let appState,
+                  let url = notification.object as? URL,
+                  let device = MTLCreateSystemDefaultDevice() else {
+                return
+            }
+
+            Task { @MainActor in
+                do {
+                    try appState.loadFile(url, device: device)
+                } catch {
+                    print("ERROR: Failed to load file: \(error)")
+                    // TODO: Show error alert to user
+                }
+            }
+        }
     }
 
     private func loadTestModel() {

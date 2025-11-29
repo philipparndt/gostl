@@ -22,6 +22,8 @@ struct Uniforms {
     float4x4 projectionMatrix;
     float3x3 normalMatrix;
     float3 cameraPosition;
+    float viewportHeight;
+    float3 _padding; // Align to 16 bytes
 };
 
 // MARK: - Basic Shaders (Phase 0)
@@ -61,7 +63,7 @@ fragment float4 meshFragmentShader(
     return in.color; // Lighting already baked into vertex colors
 }
 
-// MARK: - Wireframe Shaders (Phase 5 - Instanced rendering)
+// MARK: - Wireframe Shaders (Phase 5 - Instanced rendering with screen-space sizing)
 
 vertex VertexOut wireframeVertexShader(
     const VertexIn in [[stage_in]],
@@ -73,7 +75,23 @@ vertex VertexOut wireframeVertexShader(
 
     // Apply instance transformation to position cylinder along edge
     float4x4 instanceMatrix = instanceMatrices[instanceID];
-    float4 worldPos = instanceMatrix * float4(in.position, 1.0);
+
+    // Calculate edge position in world space
+    float3 edgeStart = instanceMatrix[3].xyz;
+    float distanceToCamera = length(uniforms.cameraPosition - edgeStart);
+
+    // Calculate world-space size of 2 pixels at this distance
+    // Extract FOV from projection matrix (assuming perspective projection)
+    float fovY = 2.0 * atan(1.0 / uniforms.projectionMatrix[1][1]);
+    float pixelSize = (distanceToCamera * tan(fovY * 0.5) * 2.0) / uniforms.viewportHeight;
+    float wireframeThickness = pixelSize * 2.0; // 2 pixels
+
+    // Scale the radius (XZ plane) while keeping length (Y axis)
+    float3 scaledPosition = in.position;
+    scaledPosition.x *= wireframeThickness;
+    scaledPosition.z *= wireframeThickness;
+
+    float4 worldPos = instanceMatrix * float4(scaledPosition, 1.0);
 
     // Apply view and projection
     worldPos = uniforms.modelMatrix * worldPos;

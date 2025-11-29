@@ -233,7 +233,7 @@ final class MetalRenderer {
 
         // Create and set uniforms
         let aspect = Float(viewSize.width / viewSize.height)
-        var uniforms = createUniforms(camera: appState.camera, aspect: aspect)
+        var uniforms = createUniforms(camera: appState.camera, aspect: aspect, viewportHeight: Float(viewSize.height))
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
 
         // Draw grid lines
@@ -247,9 +247,9 @@ final class MetalRenderer {
         // Set vertex buffer (cylinder geometry)
         encoder.setVertexBuffer(wireframeData.cylinderVertexBuffer, offset: 0, index: 0)
 
-        // Create and set uniforms
+        // Create and set uniforms with viewport height for pixel-perfect wireframe
         let aspect = Float(viewSize.width / viewSize.height)
-        var uniforms = createUniforms(camera: appState.camera, aspect: aspect)
+        var uniforms = createUniforms(camera: appState.camera, aspect: aspect, viewportHeight: Float(viewSize.height))
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
 
         // Set instance buffer (transformation matrices for each edge)
@@ -266,7 +266,7 @@ final class MetalRenderer {
         )
     }
 
-    private func createUniforms(camera: Camera, aspect: Float) -> Uniforms {
+    private func createUniforms(camera: Camera, aspect: Float, viewportHeight: Float = 0) -> Uniforms {
         let modelMatrix = simd_float4x4(1.0) // Identity - model at origin
         let viewMatrix = camera.viewMatrix()
         let projectionMatrix = camera.projectionMatrix(aspect: aspect)
@@ -284,7 +284,8 @@ final class MetalRenderer {
             viewMatrix: viewMatrix,
             projectionMatrix: projectionMatrix,
             normalMatrix: normalMatrix,
-            cameraPosition: camera.position
+            cameraPosition: camera.position,
+            viewportHeight: viewportHeight
         )
     }
 }

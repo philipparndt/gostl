@@ -9,6 +9,8 @@ struct Uniforms {
     var projectionMatrix: simd_float4x4
     var normalMatrix: simd_float3x3
     var cameraPosition: simd_float3
+    var viewportHeight: Float
+    var _padding: SIMD3<Float> = .zero // Align to 16 bytes
 }
 
 struct VertexIn {

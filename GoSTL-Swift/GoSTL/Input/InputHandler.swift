@@ -60,7 +60,7 @@ final class InputHandler {
 
     func handleScroll(deltaY: CGFloat, camera: Camera) {
         // Zoom with scroll wheel (inverted for natural scrolling)
-        let sensitivity = 0.5
+        let sensitivity = 1.0
         camera.zoom(delta: -Double(deltaY) * sensitivity)
     }
 
@@ -71,7 +71,9 @@ final class InputHandler {
 
         // Ctrl+C to quit (terminal style)
         if characters == "c" && event.modifierFlags.contains(.control) {
-            NSApplication.shared.terminate(nil)
+            Task { @MainActor in
+                NSApplication.shared.terminate(nil)
+            }
             return true
         }
 

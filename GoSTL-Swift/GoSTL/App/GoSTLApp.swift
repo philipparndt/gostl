@@ -31,8 +31,33 @@ struct GoSTLApp: App {
         }
         .defaultSize(width: 1400, height: 900)
         .commands {
-            // Add basic commands
-            CommandGroup(replacing: .newItem) { }
+            CommandGroup(replacing: .newItem) {
+                Button("Open...") {
+                    openFile()
+                }
+                .keyboardShortcut("o", modifiers: .command)
+            }
+        }
+    }
+
+    // MARK: - File Operations
+
+    private func openFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "stl")!]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.message = "Select an STL file to open"
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+
+            // Post notification to load file
+            NotificationCenter.default.post(
+                name: NSNotification.Name("LoadSTLFile"),
+                object: url
+            )
         }
     }
 }

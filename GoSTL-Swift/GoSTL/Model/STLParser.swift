@@ -141,9 +141,7 @@ enum STLParser {
         var offset = 80 // Skip header
 
         // Read triangle count
-        let triangleCount = data.withUnsafeBytes { buffer in
-            buffer.load(fromByteOffset: offset, as: UInt32.self)
-        }
+        let triangleCount = data.readUInt32(at: offset)
         offset += 4
 
         let expectedSize = 84 + (Int(triangleCount) * 50)
@@ -200,9 +198,19 @@ enum STLParser {
 
 private extension Data {
     func readFloat32(at offset: Int) -> Float {
-        withUnsafeBytes { buffer in
-            buffer.load(fromByteOffset: offset, as: Float.self)
-        }
+        // Copy bytes to ensure proper alignment
+        var value: Float = 0
+        let range = offset..<(offset + MemoryLayout<Float>.size)
+        copyBytes(to: UnsafeMutableBufferPointer(start: &value, count: 1), from: range)
+        return value
+    }
+
+    func readUInt32(at offset: Int) -> UInt32 {
+        // Copy bytes to ensure proper alignment
+        var value: UInt32 = 0
+        let range = offset..<(offset + MemoryLayout<UInt32>.size)
+        copyBytes(to: UnsafeMutableBufferPointer(start: &value, count: 1), from: range)
+        return value
     }
 }
 
