@@ -60,3 +60,40 @@ fragment float4 meshFragmentShader(
 ) {
     return in.color; // Lighting already baked into vertex colors
 }
+
+// MARK: - Wireframe Shaders (Phase 5 - Instanced rendering)
+
+vertex VertexOut wireframeVertexShader(
+    const VertexIn in [[stage_in]],
+    constant Uniforms &uniforms [[buffer(1)]],
+    constant float4x4 *instanceMatrices [[buffer(2)]],
+    uint instanceID [[instance_id]]
+) {
+    VertexOut out;
+
+    // Apply instance transformation to position cylinder along edge
+    float4x4 instanceMatrix = instanceMatrices[instanceID];
+    float4 worldPos = instanceMatrix * float4(in.position, 1.0);
+
+    // Apply view and projection
+    worldPos = uniforms.modelMatrix * worldPos;
+    out.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPos;
+
+    // Transform normal
+    float3x3 instanceRotation = float3x3(
+        instanceMatrix[0].xyz,
+        instanceMatrix[1].xyz,
+        instanceMatrix[2].xyz
+    );
+    out.normal = uniforms.normalMatrix * instanceRotation * in.normal;
+    out.worldPosition = worldPos.xyz;
+    out.color = in.color;
+
+    return out;
+}
+
+fragment float4 wireframeFragmentShader(
+    VertexOut in [[stage_in]]
+) {
+    return in.color;
+}

@@ -5,6 +5,7 @@ final class MetalRenderer {
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
     let meshPipelineState: MTLRenderPipelineState
+    let wireframePipelineState: MTLRenderPipelineState
     let depthStencilState: MTLDepthStencilState
 
     init(device: MTLDevice) throws {
@@ -17,8 +18,9 @@ final class MetalRenderer {
         }
         self.commandQueue = queue
 
-        // Create mesh rendering pipeline
+        // Create rendering pipelines
         self.meshPipelineState = try Self.createMeshPipeline(device: device)
+        self.wireframePipelineState = try Self.createWireframePipeline(device: device)
 
         // Create depth stencil state
         self.depthStencilState = Self.createDepthStencilState(device: device)
@@ -29,9 +31,8 @@ final class MetalRenderer {
     // MARK: - Pipeline Creation
 
     private static func createMeshPipeline(device: MTLDevice) throws -> MTLRenderPipelineState {
-        guard let library = device.makeDefaultLibrary() else {
-            throw MetalError.shaderLoadingFailed
-        }
+        // Load shader source and compile
+        let library = try loadShaderLibrary(device: device)
 
         let pipelineDescriptor = MTLRenderPipelineDescriptor()
         pipelineDescriptor.vertexFunction = library.makeFunction(name: "meshVertexShader")
@@ -62,11 +63,53 @@ final class MetalRenderer {
         return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
     }
 
+    private static func createWireframePipeline(device: MTLDevice) throws -> MTLRenderPipelineState {
+        let library = try loadShaderLibrary(device: device)
+
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.vertexFunction = library.makeFunction(name: "wireframeVertexShader")
+        pipelineDescriptor.fragmentFunction = library.makeFunction(name: "wireframeFragmentShader")
+        pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+
+        // Use same vertex descriptor as mesh
+        let vertexDescriptor = MTLVertexDescriptor()
+        vertexDescriptor.attributes[0].format = .float3
+        vertexDescriptor.attributes[0].offset = 0
+        vertexDescriptor.attributes[0].bufferIndex = 0
+        vertexDescriptor.attributes[1].format = .float3
+        vertexDescriptor.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
+        vertexDescriptor.attributes[1].bufferIndex = 0
+        vertexDescriptor.attributes[2].format = .float4
+        vertexDescriptor.attributes[2].offset = MemoryLayout<SIMD3<Float>>.stride * 2
+        vertexDescriptor.attributes[2].bufferIndex = 0
+        vertexDescriptor.layouts[0].stride = MemoryLayout<VertexIn>.stride
+        vertexDescriptor.layouts[0].stepFunction = .perVertex
+
+        pipelineDescriptor.vertexDescriptor = vertexDescriptor
+
+        return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+    }
+
     private static func createDepthStencilState(device: MTLDevice) -> MTLDepthStencilState {
         let depthDescriptor = MTLDepthStencilDescriptor()
         depthDescriptor.depthCompareFunction = .less
         depthDescriptor.isDepthWriteEnabled = true
         return device.makeDepthStencilState(descriptor: depthDescriptor)!
+    }
+
+    private static func loadShaderLibrary(device: MTLDevice) throws -> MTLLibrary {
+        // For SPM builds, load from the module bundle
+        let bundle = Bundle.module
+
+        // Look for the compiled Metal library (default.metallib)
+        guard let libraryURL = bundle.url(forResource: "default", withExtension: "metallib") else {
+            print("DEBUG: Failed to find default.metallib in bundle: \(bundle.bundlePath)")
+            throw MetalError.shaderLoadingFailed
+        }
+
+        print("DEBUG: Loading Metal library from: \(libraryURL.path)")
+        return try device.makeLibrary(URL: libraryURL)
     }
 
     @MainActor
@@ -106,6 +149,11 @@ final class MetalRenderer {
             renderMesh(encoder: renderEncoder, meshData: meshData, appState: appState, viewSize: view.drawableSize)
         }
 
+        // Render wireframe if enabled and available
+        if appState.showWireframe, let wireframeData = appState.wireframeData {
+            renderWireframe(encoder: renderEncoder, wireframeData: wireframeData, appState: appState, viewSize: view.drawableSize)
+        }
+
         renderEncoder.endEncoding()
 
         commandBuffer.present(drawable)
@@ -130,6 +178,32 @@ final class MetalRenderer {
 
         // Draw triangles
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: meshData.vertexCount)
+    }
+
+    private func renderWireframe(encoder: MTLRenderCommandEncoder, wireframeData: WireframeData, appState: AppState, viewSize: CGSize) {
+        encoder.setRenderPipelineState(wireframePipelineState)
+        encoder.setDepthStencilState(depthStencilState)
+
+        // Set vertex buffer (cylinder geometry)
+        encoder.setVertexBuffer(wireframeData.cylinderVertexBuffer, offset: 0, index: 0)
+
+        // Create and set uniforms
+        let aspect = Float(viewSize.width / viewSize.height)
+        var uniforms = createUniforms(camera: appState.camera, aspect: aspect)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+        // Set instance buffer (transformation matrices for each edge)
+        encoder.setVertexBuffer(wireframeData.instanceBuffer, offset: 0, index: 2)
+
+        // Draw instanced cylinders
+        encoder.drawIndexedPrimitives(
+            type: .triangle,
+            indexCount: wireframeData.indexCount,
+            indexType: .uint16,
+            indexBuffer: wireframeData.cylinderIndexBuffer,
+            indexBufferOffset: 0,
+            instanceCount: wireframeData.instanceCount
+        )
     }
 
     private func createUniforms(camera: Camera, aspect: Float) -> Uniforms {

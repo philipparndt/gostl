@@ -16,12 +16,19 @@ final class AppState {
     /// GPU mesh data for rendering
     var meshData: MeshData?
 
+    /// GPU wireframe data for edge rendering
+    var wireframeData: WireframeData?
+
+    /// Whether to show wireframe overlay
+    var showWireframe: Bool = true
+
     init() {}
 
     /// Load an STL model and create mesh data for rendering
     func loadModel(_ model: STLModel, device: MTLDevice) throws {
         self.model = model
         self.meshData = try MeshData(device: device, model: model)
+        self.wireframeData = try WireframeData(device: device, model: model)
 
         // Frame the model in view
         let bbox = model.boundingBox()
