@@ -131,8 +131,13 @@ jobs:
               bin.install "GoSTL" => "gostl"
               # Install resource bundle alongside the binary (required for Metal shaders)
               bin.install "GoSTL_GoSTL.bundle"
+            end
+
+            def post_install
               # Create symlink in HOMEBREW_PREFIX/bin so bundle is found when running via symlink
-              (HOMEBREW_PREFIX/"bin/GoSTL_GoSTL.bundle").make_relative_symlink(bin/"GoSTL_GoSTL.bundle")
+              bundle_link = HOMEBREW_PREFIX/"bin/GoSTL_GoSTL.bundle"
+              bundle_link.unlink if bundle_link.symlink?
+              bundle_link.make_symlink(opt_bin/"GoSTL_GoSTL.bundle")
             end
 
             test do
