@@ -38,3 +38,5 @@ Thumbs.db
 # Binary executables (in root and cmd directories)
 /gostl-raylib
 cmd/*/gostl-raylib
+
+out/

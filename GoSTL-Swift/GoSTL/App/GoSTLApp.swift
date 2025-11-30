@@ -235,7 +235,29 @@ struct GoSTLApp: App {
                 }
                 .keyboardShortcut("m", modifiers: .command)
             }
+
+            // Help menu with About
+            CommandGroup(replacing: .appInfo) {
+                Button("About GoSTL") {
+                    showAboutPanel()
+                }
+            }
         }
+    }
+
+    private func showAboutPanel() {
+        let alert = NSAlert()
+        alert.messageText = "GoSTL"
+        alert.informativeText = """
+            \(AppVersion.fullVersion)
+
+            3D STL Viewer and OpenSCAD Renderer
+
+            \(AppVersion.version != "dev" ? "Commit: \(AppVersion.gitCommit)\nBuilt: \(AppVersion.buildDate)" : "")
+            """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     // MARK: - File Operations
