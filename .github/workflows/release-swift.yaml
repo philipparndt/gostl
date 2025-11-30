@@ -1,9 +1,9 @@
-name: release-swift
+name: release
 
 on:
   push:
     tags:
-      - "swift-*"
+      - "*"
 
 jobs:
   build:
@@ -24,7 +24,7 @@ jobs:
       - name: Get version from tag
         id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/swift-}
+          VERSION=${GITHUB_REF#refs/tags/}
           VERSION=${VERSION#v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
@@ -43,38 +43,16 @@ jobs:
             "${{ steps.version.outputs.commit }}" \
             "${{ steps.version.outputs.date }}"
 
-      - name: Build for arm64
+      - name: Build
         run: swift build -c release --arch arm64
 
-      - name: Build for x86_64
-        run: swift build -c release --arch x86_64
-
-      - name: Create Universal Binary
+      - name: Create release archive
         run: |
           mkdir -p dist
-          lipo -create \
-            .build/arm64-apple-macosx/release/GoSTL \
-            .build/x86_64-apple-macosx/release/GoSTL \
-            -output dist/GoSTL
+          cp .build/arm64-apple-macosx/release/GoSTL dist/
           chmod +x dist/GoSTL
-
-      - name: Create release archives
-        run: |
           cd dist
-          # Universal binary archive
-          tar -czvf GoSTL-Swift_darwin_universal.tar.gz GoSTL
-          cd ..
-          # arm64 archive
-          mkdir -p dist/arm64
-          cp .build/arm64-apple-macosx/release/GoSTL dist/arm64/
-          cd dist/arm64
-          tar -czvf ../GoSTL-Swift_darwin_arm64.tar.gz GoSTL
-          cd ../..
-          # x86_64 archive
-          mkdir -p dist/x86_64
-          cp .build/x86_64-apple-macosx/release/GoSTL dist/x86_64/
-          cd dist/x86_64
-          tar -czvf ../GoSTL-Swift_darwin_x86_64.tar.gz GoSTL
+          tar -czvf GoSTL_darwin_arm64.tar.gz GoSTL
 
       - name: Generate checksums
         run: |
@@ -85,11 +63,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          name: "GoSTL Swift ${{ steps.version.outputs.version }}"
+          name: "GoSTL ${{ steps.version.outputs.version }}"
           files: |
-            GoSTL-Swift/dist/GoSTL-Swift_darwin_universal.tar.gz
-            GoSTL-Swift/dist/GoSTL-Swift_darwin_arm64.tar.gz
-            GoSTL-Swift/dist/GoSTL-Swift_darwin_x86_64.tar.gz
+            GoSTL-Swift/dist/GoSTL_darwin_arm64.tar.gz
             GoSTL-Swift/dist/checksums.txt
           generate_release_notes: true
         env:
@@ -100,7 +76,7 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           # Calculate SHA256 for binary
-          SHA256=$(shasum -a 256 dist/GoSTL-Swift_darwin_arm64.tar.gz | cut -d ' ' -f 1)
+          SHA256=$(shasum -a 256 dist/GoSTL_darwin_arm64.tar.gz | cut -d ' ' -f 1)
           VERSION=${{ steps.version.outputs.version }}
           TAG=${{ steps.version.outputs.tag }}
 
@@ -110,35 +86,35 @@ jobs:
 
           # Create/update the formula
           mkdir -p Formula
-          cat > Formula/gostl-swift.rb << 'FORMULA'
-          class GostlSwift < Formula
-            desc "3D STL viewer and OpenSCAD renderer (Swift version)"
+          cat > Formula/gostl.rb << 'FORMULA'
+          class Gostl < Formula
+            desc "3D STL viewer and OpenSCAD renderer"
             homepage "https://github.com/philipparndt/gostl"
             license "Apache-2.0"
 
             depends_on arch: :arm64
             depends_on :macos
 
-            url "https://github.com/philipparndt/gostl/releases/download/TAG_PLACEHOLDER/GoSTL-Swift_darwin_arm64.tar.gz"
+            url "https://github.com/philipparndt/gostl/releases/download/TAG_PLACEHOLDER/GoSTL_darwin_arm64.tar.gz"
             sha256 "SHA_PLACEHOLDER"
 
             def install
-              bin.install "GoSTL" => "gostl-swift"
+              bin.install "GoSTL" => "gostl"
             end
 
             test do
-              assert_match "GoSTL", shell_output("#{bin}/gostl-swift --help 2>&1", 0)
+              assert_match "GoSTL", shell_output("#{bin}/gostl --help 2>&1", 0)
             end
           end
           FORMULA
 
           # Replace placeholders
-          sed -i '' "s/TAG_PLACEHOLDER/${TAG}/g" Formula/gostl-swift.rb
-          sed -i '' "s/SHA_PLACEHOLDER/${SHA256}/g" Formula/gostl-swift.rb
+          sed -i '' "s/TAG_PLACEHOLDER/${TAG}/g" Formula/gostl.rb
+          sed -i '' "s/SHA_PLACEHOLDER/${SHA256}/g" Formula/gostl.rb
 
           # Commit and push
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add Formula/gostl-swift.rb
-          git commit -m "Update gostl-swift to ${VERSION}" || echo "No changes to commit"
+          git add Formula/gostl.rb
+          git commit -m "Update gostl to ${VERSION}" || echo "No changes to commit"
           git push
