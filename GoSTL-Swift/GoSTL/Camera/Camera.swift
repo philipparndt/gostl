@@ -47,7 +47,7 @@ final class Camera {
     }
 
     /// Generate projection matrix
-    func projectionMatrix(aspect: Float, fov: Float = .pi / 4, near: Float = 0.1, far: Float = 1000.0) -> simd_float4x4 {
+    func projectionMatrix(aspect: Float, fov: Float = .pi / 4, near: Float = 0.1, far: Float = 10000.0) -> simd_float4x4 {
         matrix_perspective(fov: fov, aspect: aspect, near: near, far: far)
     }
 
