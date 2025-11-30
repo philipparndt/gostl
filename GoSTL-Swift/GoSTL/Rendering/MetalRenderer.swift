@@ -645,6 +645,32 @@ final class MetalRenderer {
             }
         }
 
+        // Render keyboard shortcut backgrounds (with rounded rectangle texture)
+        if let shortcutBgBuffer = cubeData.shortcutBackgroundBuffer,
+           let backgroundTexture = cubeData.shortcutBackgroundTexture,
+           cubeData.shortcutBackgroundCount > 0 {
+            encoder.setRenderPipelineState(texturedPipelineState)
+            encoder.setVertexBuffer(shortcutBgBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+            encoder.setFragmentTexture(backgroundTexture, index: 0)
+            encoder.setFragmentSamplerState(samplerState, index: 0)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: cubeData.shortcutBackgroundCount)
+        }
+
+        // Render keyboard shortcut text
+        if let shortcutTextBuffer = cubeData.shortcutTextVertexBuffer, !cubeData.shortcutTextTextures.isEmpty {
+            encoder.setRenderPipelineState(texturedPipelineState)
+            encoder.setVertexBuffer(shortcutTextBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+            encoder.setFragmentSamplerState(samplerState, index: 0)
+
+            // Render each shortcut text quad with its texture
+            for (texture, vertexOffset) in cubeData.shortcutTextTextures {
+                encoder.setFragmentTexture(texture, index: 0)
+                encoder.drawPrimitives(type: .triangle, vertexStart: vertexOffset, vertexCount: 6)
+            }
+        }
+
         // Reset viewport to full screen
         encoder.setViewport(MTLViewport(
             originX: 0,

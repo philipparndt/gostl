@@ -24,6 +24,17 @@ enum CubeFace: Int, CaseIterable {
         }
     }
 
+    var keyboardShortcut: String {
+        switch self {
+        case .front: return "1"
+        case .back: return "2"
+        case .left: return "3"
+        case .right: return "4"
+        case .top: return "5"
+        case .bottom: return "6"
+        }
+    }
+
     var baseColor: SIMD4<Float> {
         switch self {
         case .top:    return SIMD4(0.3, 0.3, 0.35, 1.0)  // Slightly lighter gray
@@ -99,9 +110,16 @@ final class OrientationCubeData {
     let vertexBuffer: MTLBuffer
     let vertexCount: Int
 
-    // Text rendering data
+    // Text rendering data (face labels)
     let textVertexBuffer: MTLBuffer?
     let textTextures: [(texture: MTLTexture, vertexOffset: Int)]
+
+    // Keyboard shortcut rendering data
+    let shortcutBackgroundBuffer: MTLBuffer?
+    let shortcutBackgroundCount: Int
+    let shortcutBackgroundTexture: MTLTexture?
+    let shortcutTextVertexBuffer: MTLBuffer?
+    let shortcutTextTextures: [(texture: MTLTexture, vertexOffset: Int)]
 
     // Axis lines rendering data (using cylinders for thickness)
     let axisVertexBuffer: MTLBuffer?
@@ -166,6 +184,14 @@ final class OrientationCubeData {
 
         // Generate axis label info (textures and positions)
         self.axisLabels = try Self.generateAxisLabelInfo(device: device, size: size)
+
+        // Generate keyboard shortcut backgrounds and text
+        let shortcutData = try Self.generateKeyboardShortcuts(device: device, size: size)
+        self.shortcutBackgroundBuffer = shortcutData.backgroundBuffer
+        self.shortcutBackgroundCount = shortcutData.backgroundCount
+        self.shortcutBackgroundTexture = shortcutData.backgroundTexture
+        self.shortcutTextVertexBuffer = shortcutData.textVertexBuffer
+        self.shortcutTextTextures = shortcutData.textureData
     }
 
     /// Generate cube vertices with per-face colors
@@ -612,6 +638,286 @@ final class OrientationCubeData {
             mipmapLevel: 0,
             withBytes: data,
             bytesPerRow: textureSize * 4
+        )
+
+        return texture
+    }
+
+    /// Generate keyboard shortcut backgrounds and text for each face
+    private static func generateKeyboardShortcuts(device: MTLDevice, size: Float) throws -> (
+        backgroundBuffer: MTLBuffer?,
+        backgroundCount: Int,
+        backgroundTexture: MTLTexture?,
+        textVertexBuffer: MTLBuffer?,
+        textureData: [(texture: MTLTexture, vertexOffset: Int)]
+    ) {
+        var backgroundVertices: [VertexIn] = []
+        var textVertices: [VertexIn] = []
+        var textureData: [(texture: MTLTexture, vertexOffset: Int)] = []
+
+        let shortcutSize = size * 0.25  // Size of the shortcut badge
+        let offset = size * 0.30  // Position from center (lower = higher on face)
+        let backgroundPadding: Float = 0.02  // Padding around text
+        let depthOffset: Float = 0.001  // Tiny offset between background and text
+
+        for face in CubeFace.allCases {
+            // Create text texture for keyboard shortcut
+            guard let texture = Self.createShortcutTexture(device: device, text: face.keyboardShortcut) else {
+                continue
+            }
+
+            let vertexOffset = textVertices.count
+            textureData.append((texture: texture, vertexOffset: vertexOffset))
+
+            // Calculate position at bottom center of face
+            // Offset to position shortcuts in front of face labels (which are at 0.51)
+            let (position, right, up): (SIMD3<Float>, SIMD3<Float>, SIMD3<Float>) = {
+                let faceOffset = offset
+                let cubeOffset: Float = 0.015  // Enough to be in front of face labels at 0.51
+                switch face {
+                case .top:
+                    // Top face - bottom center (fix mirrored + rotated 180°)
+                    return (
+                        SIMD3(0, size * 0.5 + cubeOffset, faceOffset),
+                        SIMD3(1, 0, 0),      // Keep right same
+                        SIMD3(0, 0, 1)       // Flip up for combined fix
+                    )
+                case .bottom:
+                    // Bottom face - bottom center (fix mirrored + rotated 180°)
+                    return (
+                        SIMD3(0, -size * 0.5 - cubeOffset, -faceOffset),
+                        SIMD3(1, 0, 0),      // Keep right same
+                        SIMD3(0, 0, -1)      // Flip up for combined fix
+                    )
+                case .front:
+                    // Front face - bottom center (fix mirroring)
+                    return (
+                        SIMD3(0, -faceOffset, size * 0.5 + cubeOffset),
+                        SIMD3(1, 0, 0),   // Flipped right vector to fix mirror
+                        SIMD3(0, -1, 0)
+                    )
+                case .back:
+                    // Back face - bottom center (fix mirroring)
+                    return (
+                        SIMD3(0, -faceOffset, -size * 0.5 - cubeOffset),
+                        SIMD3(-1, 0, 0),  // Flipped right vector to fix mirror
+                        SIMD3(0, -1, 0)
+                    )
+                case .left:
+                    // Left face - bottom center (already correct)
+                    return (
+                        SIMD3(-size * 0.5 - cubeOffset, -faceOffset, 0),
+                        SIMD3(0, 0, 1),
+                        SIMD3(0, 1, 0)
+                    )
+                case .right:
+                    // Right face - bottom center (fix 180° rotation)
+                    return (
+                        SIMD3(size * 0.5 + cubeOffset, -faceOffset, 0),
+                        SIMD3(0, 0, -1),  // Flipped for 180° rotation
+                        SIMD3(0, -1, 0)   // Flipped for 180° rotation
+                    )
+                }
+            }()
+
+            let whiteColor = SIMD4<Float>(1, 1, 1, 1)
+
+            // Create background quad - portrait orientation (taller than wide) for single digit shortcuts
+            let bgHalfWidth = shortcutSize / 3.0 + backgroundPadding  // Narrower
+            let bgHalfHeight = shortcutSize / 2.2 + backgroundPadding  // Slightly reduced height
+            let bgV0 = position - right * bgHalfWidth - up * bgHalfHeight
+            let bgV1 = position + right * bgHalfWidth - up * bgHalfHeight
+            let bgV2 = position + right * bgHalfWidth + up * bgHalfHeight
+            let bgV3 = position - right * bgHalfWidth + up * bgHalfHeight
+            backgroundVertices.append(contentsOf: [
+                VertexIn(position: bgV0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),  // bottom-left
+                VertexIn(position: bgV1, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 1)),  // bottom-right
+                VertexIn(position: bgV2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),  // top-right
+                VertexIn(position: bgV0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),  // bottom-left
+                VertexIn(position: bgV2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),  // top-right
+                VertexIn(position: bgV3, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 0))   // top-left
+            ])
+
+            // Create text quad - same portrait orientation as background
+            let halfWidth = shortcutSize / 3.0  // Narrower
+            let halfHeight = shortcutSize / 2.2  // Slightly reduced height
+            let v0 = position - right * halfWidth - up * halfHeight + face.normal * depthOffset
+            let v1 = position + right * halfWidth - up * halfHeight + face.normal * depthOffset
+            let v2 = position + right * halfWidth + up * halfHeight + face.normal * depthOffset
+            let v3 = position - right * halfWidth + up * halfHeight + face.normal * depthOffset
+
+            textVertices.append(contentsOf: [
+                VertexIn(position: v0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),  // bottom-left
+                VertexIn(position: v1, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 1)),  // bottom-right
+                VertexIn(position: v2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),  // top-right
+                VertexIn(position: v0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),  // bottom-left
+                VertexIn(position: v2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),  // top-right
+                VertexIn(position: v3, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 0))   // top-left
+            ])
+        }
+
+        // Create background buffer
+        let backgroundBuffer: MTLBuffer?
+        if !backgroundVertices.isEmpty {
+            backgroundBuffer = device.makeBuffer(
+                bytes: backgroundVertices,
+                length: backgroundVertices.count * MemoryLayout<VertexIn>.stride,
+                options: .storageModeShared
+            )
+        } else {
+            backgroundBuffer = nil
+        }
+
+        // Create text vertex buffer
+        let textBuffer: MTLBuffer?
+        if !textVertices.isEmpty {
+            textBuffer = device.makeBuffer(
+                bytes: textVertices,
+                length: textVertices.count * MemoryLayout<VertexIn>.stride,
+                options: .storageModeShared
+            )
+        } else {
+            textBuffer = nil
+        }
+
+        // Create background texture (shared across all shortcuts)
+        let backgroundTexture = Self.createRoundedBackgroundTexture(device: device)
+
+        return (backgroundBuffer, backgroundVertices.count, backgroundTexture, textBuffer, textureData)
+    }
+
+    /// Create text texture for a keyboard shortcut (single digit)
+    private static func createShortcutTexture(device: MTLDevice, text: String) -> MTLTexture? {
+        let textureSize = 64
+        let fontSize: CGFloat = 32
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
+            .foregroundColor: NSColor.white
+        ]
+
+        let attributedString = NSAttributedString(string: text, attributes: attributes)
+        let textSize = attributedString.size()
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: textureSize,
+            height: textureSize,
+            bitsPerComponent: 8,
+            bytesPerRow: textureSize * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+
+        context.clear(CGRect(x: 0, y: 0, width: textureSize, height: textureSize))
+        context.textMatrix = .identity
+        context.translateBy(x: 0, y: CGFloat(textureSize))
+        context.scaleBy(x: 1.0, y: -1.0)
+
+        let line = CTLineCreateWithAttributedString(attributedString)
+        let bounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
+
+        let xOffset = (CGFloat(textureSize) - textSize.width) / 2.0
+        let centerOffset = (CGFloat(textureSize) - bounds.height) / 2.0 - bounds.origin.y
+        let yOffset = centerOffset
+
+        context.textPosition = CGPoint(x: xOffset, y: yOffset)
+        CTLineDraw(line, context)
+
+        guard let data = context.data else {
+            return nil
+        }
+
+        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: textureSize,
+            height: textureSize,
+            mipmapped: false
+        )
+        textureDescriptor.usage = [.shaderRead]
+
+        guard let texture = device.makeTexture(descriptor: textureDescriptor) else {
+            return nil
+        }
+
+        texture.replace(
+            region: MTLRegionMake2D(0, 0, textureSize, textureSize),
+            mipmapLevel: 0,
+            withBytes: data,
+            bytesPerRow: textureSize * 4
+        )
+
+        return texture
+    }
+
+    /// Create rounded rectangle background texture (portrait orientation for single digits)
+    private static func createRoundedBackgroundTexture(device: MTLDevice) -> MTLTexture? {
+        let textureWidth = 48   // Narrower
+        let textureHeight = 64  // Taller (portrait, ratio ~0.75)
+        let cornerRadius: CGFloat = 10  // Increased for more rounded corners
+        let borderWidth: CGFloat = 4    // Border thickness (doubled)
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: textureWidth,
+            height: textureHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: textureWidth * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+
+        // Clear the context
+        context.clear(CGRect(x: 0, y: 0, width: textureWidth, height: textureHeight))
+
+        // Draw rounded rectangle with inset to accommodate border
+        let inset = borderWidth / 2
+        let rect = CGRect(x: inset, y: inset, width: CGFloat(textureWidth) - borderWidth, height: CGFloat(textureHeight) - borderWidth)
+        let path = CGPath(
+            roundedRect: rect,
+            cornerWidth: cornerRadius,
+            cornerHeight: cornerRadius,
+            transform: nil
+        )
+
+        // Fill with background color - white with low opacity (matching KeyHint UI)
+        context.setFillColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.2)
+        context.addPath(path)
+        context.fillPath()
+
+        // Draw border/stroke - white with medium opacity (matching KeyHint UI)
+        context.addPath(path)
+        context.setStrokeColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.4)
+        context.setLineWidth(borderWidth)
+        context.strokePath()
+
+        guard let data = context.data else {
+            return nil
+        }
+
+        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: textureWidth,
+            height: textureHeight,
+            mipmapped: false
+        )
+        textureDescriptor.usage = [.shaderRead]
+
+        guard let texture = device.makeTexture(descriptor: textureDescriptor) else {
+            return nil
+        }
+
+        texture.replace(
+            region: MTLRegionMake2D(0, 0, textureWidth, textureHeight),
+            mipmapLevel: 0,
+            withBytes: data,
+            bytesPerRow: textureWidth * 4
         )
 
         return texture
