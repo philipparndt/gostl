@@ -99,9 +99,8 @@ jobs:
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          # Calculate SHA256 for binaries
-          ARM64_SHA256=$(shasum -a 256 dist/GoSTL-Swift_darwin_arm64.tar.gz | cut -d ' ' -f 1)
-          X86_64_SHA256=$(shasum -a 256 dist/GoSTL-Swift_darwin_x86_64.tar.gz | cut -d ' ' -f 1)
+          # Calculate SHA256 for binary
+          SHA256=$(shasum -a 256 dist/GoSTL-Swift_darwin_arm64.tar.gz | cut -d ' ' -f 1)
           VERSION=${{ steps.version.outputs.version }}
           TAG=${{ steps.version.outputs.tag }}
 
@@ -117,16 +116,11 @@ jobs:
             homepage "https://github.com/philipparndt/gostl"
             license "Apache-2.0"
 
-            on_macos do
-              on_arm do
-                url "https://github.com/philipparndt/gostl/releases/download/TAG_PLACEHOLDER/GoSTL-Swift_darwin_arm64.tar.gz"
-                sha256 "ARM64_SHA_PLACEHOLDER"
-              end
-              on_intel do
-                url "https://github.com/philipparndt/gostl/releases/download/TAG_PLACEHOLDER/GoSTL-Swift_darwin_x86_64.tar.gz"
-                sha256 "X86_64_SHA_PLACEHOLDER"
-              end
-            end
+            depends_on arch: :arm64
+            depends_on :macos
+
+            url "https://github.com/philipparndt/gostl/releases/download/TAG_PLACEHOLDER/GoSTL-Swift_darwin_arm64.tar.gz"
+            sha256 "SHA_PLACEHOLDER"
 
             def install
               bin.install "GoSTL" => "gostl-swift"
@@ -140,8 +134,7 @@ jobs:
 
           # Replace placeholders
           sed -i '' "s/TAG_PLACEHOLDER/${TAG}/g" Formula/gostl-swift.rb
-          sed -i '' "s/ARM64_SHA_PLACEHOLDER/${ARM64_SHA256}/g" Formula/gostl-swift.rb
-          sed -i '' "s/X86_64_SHA_PLACEHOLDER/${X86_64_SHA256}/g" Formula/gostl-swift.rb
+          sed -i '' "s/SHA_PLACEHOLDER/${SHA256}/g" Formula/gostl-swift.rb
 
           # Commit and push
           git config user.name "GitHub Actions"
