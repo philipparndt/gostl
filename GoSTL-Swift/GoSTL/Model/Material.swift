@@ -1,4 +1,5 @@
 import Foundation
+import simd
 
 /// Common 3D printing materials with their densities
 enum Material: String, CaseIterable {
@@ -21,6 +22,62 @@ enum Material: String, CaseIterable {
             return 1.21
         case .nylon:
             return 1.14
+        }
+    }
+
+    /// Base color of the material (RGB)
+    var baseColor: SIMD3<Float> {
+        switch self {
+        case .pla:
+            return SIMD3<Float>(0.9, 0.9, 0.95)  // Light gray/white
+        case .abs:
+            return SIMD3<Float>(0.85, 0.85, 0.8) // Slightly warmer gray
+        case .petg:
+            return SIMD3<Float>(0.88, 0.92, 0.98) // Slightly blue tinted (transparent looking)
+        case .tpu:
+            return SIMD3<Float>(0.75, 0.75, 0.8) // Darker, more neutral
+        case .nylon:
+            return SIMD3<Float>(0.95, 0.93, 0.88) // Slightly cream/beige
+        }
+    }
+
+    /// Glossiness/shininess of the material (0 = matte, 1 = very glossy)
+    var glossiness: Float {
+        switch self {
+        case .pla:
+            return 0.2  // Matte finish
+        case .abs:
+            return 0.3  // Semi-glossy
+        case .petg:
+            return 0.8  // Very glossy/shiny
+        case .tpu:
+            return 0.1  // Very matte (flexible)
+        case .nylon:
+            return 0.4  // Semi-glossy
+        }
+    }
+
+    /// Metalness of the material (0 = dielectric, 1 = metallic)
+    var metalness: Float {
+        switch self {
+        case .pla, .abs, .petg, .tpu, .nylon:
+            return 0.0  // All plastics are non-metallic
+        }
+    }
+
+    /// Specular intensity multiplier
+    var specularIntensity: Float {
+        switch self {
+        case .pla:
+            return 0.3
+        case .abs:
+            return 0.4
+        case .petg:
+            return 0.9  // High specular for glossy PETG
+        case .tpu:
+            return 0.15
+        case .nylon:
+            return 0.5
         }
     }
 

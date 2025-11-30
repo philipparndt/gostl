@@ -13,6 +13,15 @@ struct Uniforms {
     var _padding: SIMD2<Float> = .zero // Align to 16 bytes
 }
 
+struct MaterialProperties {
+    var baseColor: simd_float3
+    var glossiness: Float
+    var metalness: Float
+    var specularIntensity: Float
+    var _padding1: SIMD2<Float> = .zero
+    var _padding2: SIMD4<Float> = .zero // Extra padding to match Metal's 48-byte layout
+}
+
 struct VertexIn {
     var position: simd_float3
     var normal: simd_float3

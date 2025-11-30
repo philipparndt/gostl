@@ -28,6 +28,15 @@ struct Uniforms {
     float2 _padding; // Align to 16 bytes
 };
 
+struct MaterialProperties {
+    float3 baseColor;
+    float glossiness;
+    float metalness;
+    float specularIntensity;
+    float2 _padding1;
+    float4 _padding2; // Extra padding for proper alignment (total 48 bytes)
+};
+
 struct InstanceData {
     float4x4 modelMatrix;
     float4 color;
@@ -65,9 +74,52 @@ vertex VertexOut meshVertexShader(
 
 fragment float4 meshFragmentShader(
     VertexOut in [[stage_in]],
-    constant Uniforms &uniforms [[buffer(0)]]
+    constant Uniforms &uniforms [[buffer(0)]],
+    constant MaterialProperties &material [[buffer(1)]]
 ) {
-    return in.color; // Lighting already baked into vertex colors
+    // Normalize the interpolated normal
+    float3 N = normalize(in.normal);
+
+    // View direction (from fragment to camera)
+    float3 V = normalize(uniforms.cameraPosition - in.worldPosition);
+
+    // Three-light setup (same as pre-baked)
+    float3 keyLight = normalize(float3(0.5, 1.0, 0.5));
+    float3 fillLight = normalize(float3(-0.5, 0.3, 0.8));
+    float3 rimLight = normalize(float3(0.0, 0.5, -1.0));
+
+    // Diffuse lighting
+    float keyDiffuse = max(0.0, dot(N, keyLight));
+    float fillDiffuse = max(0.0, dot(N, fillLight));
+    float rimDiffuse = max(0.0, dot(N, rimLight));
+
+    // Specular lighting (Blinn-Phong)
+    float shininess = mix(8.0, 128.0, material.glossiness); // Map glossiness to shininess
+
+    float3 H_key = normalize(keyLight + V);
+    float3 H_fill = normalize(fillLight + V);
+    float3 H_rim = normalize(rimLight + V);
+
+    float keySpecular = pow(max(0.0, dot(N, H_key)), shininess);
+    float fillSpecular = pow(max(0.0, dot(N, H_fill)), shininess);
+    float rimSpecular = pow(max(0.0, dot(N, H_rim)), shininess);
+
+    // Combine specular contributions
+    float specular = (keySpecular * 0.6 + fillSpecular * 0.3 + rimSpecular * 0.2) * material.specularIntensity;
+
+    // Ambient + diffuse
+    float ambient = 0.3;
+    float diffuse = keyDiffuse * 0.6 + fillDiffuse * 0.3 + rimDiffuse * 0.2;
+
+    // Blend material base color with vertex color (for orientation cube support)
+    // When material.baseColor is white (1,1,1), vertex color dominates
+    // When vertex color is white, material.baseColor dominates
+    float3 baseColor = material.baseColor * in.color.rgb;
+
+    // Final color = base color * (ambient + diffuse) + specular highlights
+    float3 finalColor = baseColor * (ambient + diffuse) + float3(specular);
+
+    return float4(finalColor, 1.0);
 }
 
 // MARK: - Wireframe Shaders (Phase 5 - Instanced rendering with screen-space sizing)

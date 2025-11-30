@@ -364,6 +364,21 @@ final class MetalRenderer {
         // Set uniforms
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
 
+        // Get material from app state and create material properties
+        let material = appState.modelInfo?.material ?? .pla
+        var materialProperties = MaterialProperties(
+            baseColor: material.baseColor,
+            glossiness: material.glossiness,
+            metalness: material.metalness,
+            specularIntensity: material.specularIntensity
+        )
+
+        // Set material properties for fragment shader
+        encoder.setFragmentBytes(&materialProperties, length: MemoryLayout<MaterialProperties>.size, index: 1)
+
+        // Also pass uniforms to fragment shader for camera position
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 0)
+
         // Draw triangles
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: meshData.vertexCount)
     }
@@ -591,6 +606,16 @@ final class MetalRenderer {
         }
 
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+        // Create default material properties for orientation cube (non-glossy, neutral)
+        var materialProperties = MaterialProperties(
+            baseColor: SIMD3<Float>(1.0, 1.0, 1.0),  // White (vertex colors will multiply)
+            glossiness: 0.1,
+            metalness: 0.0,
+            specularIntensity: 0.2
+        )
+        encoder.setFragmentBytes(&materialProperties, length: MemoryLayout<MaterialProperties>.size, index: 1)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 0)
 
         // Draw cube
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: cubeData.vertexCount)
