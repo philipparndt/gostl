@@ -7,6 +7,7 @@ final class InputHandler {
     private var lastMousePosition: CGPoint?
     private var isRotating = false
     private var isPanning = false
+    private var optionWasPressed = false  // Track Option key state for constraint release
 
     // MARK: - Mouse Events
 
@@ -63,8 +64,18 @@ final class InputHandler {
     /// Handle mouse click for measurements (click without drag)
     func handleMouseClick(at location: CGPoint, camera: Camera, viewSize: CGSize, appState: AppState) {
         // Check if click is on orientation cube first
-        if let clickedFace = checkOrientationCubeHover(at: location, viewSize: viewSize, appState: appState) {
-            // Change camera to the clicked face's preset
+        let cubeHit = checkOrientationCubeHover(at: location, viewSize: viewSize, appState: appState)
+
+        // If measuring distance with at least one point and clicked on axis label, toggle constraint
+        if appState.measurementSystem.mode == .distance &&
+           !appState.measurementSystem.currentPoints.isEmpty,
+           let axisLabel = cubeHit.axisLabel {
+            appState.measurementSystem.toggleAxisConstraint(axisLabel)
+            return
+        }
+
+        // If clicked on cube face, change camera preset
+        if let clickedFace = cubeHit.face {
             camera.setPreset(clickedFace.cameraPreset)
             print("Camera set to: \(clickedFace.label)")
             return
@@ -73,6 +84,21 @@ final class InputHandler {
         // Then check for measurement clicks
         guard appState.measurementSystem.isCollecting,
               let model = appState.model else {
+            return
+        }
+
+        // If constraint is active, use the constrained endpoint
+        if let constrainedEndpoint = appState.measurementSystem.constrainedEndpoint,
+           appState.measurementSystem.constraint != nil {
+            // Create a measurement point at the constrained endpoint
+            let constrainedPoint = MeasurementPoint(
+                position: constrainedEndpoint,
+                normal: Vector3(0, 1, 0)  // Dummy normal
+            )
+            _ = appState.measurementSystem.addPoint(constrainedPoint)
+            appState.measurementSystem.constraint = nil
+            appState.measurementSystem.constrainedEndpoint = nil
+            print("Picked constrained point: \(constrainedEndpoint)")
             return
         }
 
@@ -89,9 +115,18 @@ final class InputHandler {
     /// Handle mouse move for hover detection
     func handleMouseMoved(at location: CGPoint, camera: Camera, viewSize: CGSize, appState: AppState) {
         // Check if mouse is over orientation cube first
-        if let hoveredFace = checkOrientationCubeHover(at: location, viewSize: viewSize, appState: appState) {
+        let cubeHit = checkOrientationCubeHover(at: location, viewSize: viewSize, appState: appState)
+
+        // Update hovered axis label (for visual feedback)
+        appState.measurementSystem.hoveredAxisLabel = cubeHit.axisLabel ?? -1
+
+        if let hoveredFace = cubeHit.face {
             appState.hoveredCubeFace = hoveredFace
             return
+        } else if cubeHit.axisLabel != nil {
+            // Hovering over axis label - don't set cube face hover
+            appState.hoveredCubeFace = nil
+            // Still continue to update measurement hover for preview line
         } else {
             appState.hoveredCubeFace = nil
         }
@@ -99,6 +134,7 @@ final class InputHandler {
         // Then check for measurement hover
         guard appState.measurementSystem.isCollecting else {
             appState.measurementSystem.hoverPoint = nil
+            appState.measurementSystem.constrainedEndpoint = nil
             return
         }
 
@@ -109,11 +145,12 @@ final class InputHandler {
         appState.measurementSystem.updateHover(ray: ray, model: appState.model)
     }
 
-    /// Check if mouse is hovering over orientation cube and which face
+    /// Check if mouse is hovering over orientation cube and which face or axis label
     /// Note: location is in AppKit screen coordinates (pixels, Y=0 at BOTTOM)
     /// viewSize is the drawable size in pixels
-    private func checkOrientationCubeHover(at location: CGPoint, viewSize: CGSize, appState: AppState) -> CubeFace? {
-        guard let cubeData = appState.orientationCubeData else { return nil }
+    /// Returns: (face: CubeFace?, axisLabel: Int?) - face for cube faces, axisLabel for X/Y/Z labels
+    private func checkOrientationCubeHover(at location: CGPoint, viewSize: CGSize, appState: AppState) -> (face: CubeFace?, axisLabel: Int?) {
+        guard let cubeData = appState.orientationCubeData else { return (nil, nil) }
 
         // Define cube viewport bounds (must match MetalRenderer)
         //
@@ -137,7 +174,7 @@ final class InputHandler {
         // Check if mouse is within cube viewport
         guard location.x >= cubeMinX && location.x <= cubeMaxX &&
               location.y >= cubeMinY && location.y <= cubeMaxY else {
-            return nil
+            return (nil, nil)
         }
 
         // Convert to cube viewport local coordinates
@@ -161,14 +198,42 @@ final class InputHandler {
 
         let ray = cubeCamera.mouseRay(screenPos: localPos, viewSize: cubeViewSize)
 
+        // Check axis labels first (they have priority when measuring)
+        if let axisLabel = cubeData.hitTestAxisLabel(ray: ray) {
+            return (nil, axisLabel)
+        }
+
         // Test ray against cube faces
-        return cubeData.hitTest(ray: ray)
+        return (cubeData.hitTest(ray: ray), nil)
+    }
+
+    /// Legacy method for backward compatibility
+    private func checkOrientationCubeFaceHover(at location: CGPoint, viewSize: CGSize, appState: AppState) -> CubeFace? {
+        return checkOrientationCubeHover(at: location, viewSize: viewSize, appState: appState).face
     }
 
     func handleScroll(deltaY: CGFloat, camera: Camera) {
         // Zoom with scroll wheel (inverted for natural scrolling)
         let sensitivity = 1.0
         camera.zoom(delta: -Double(deltaY) * sensitivity)
+    }
+
+    // MARK: - Modifier Key Events
+
+    /// Handle modifier key changes (Option key to release constraint)
+    func handleFlagsChanged(event: NSEvent, appState: AppState) {
+        let optionPressed = event.modifierFlags.contains(.option)
+
+        // Option key just pressed - release constraint
+        if optionPressed && !optionWasPressed {
+            if appState.measurementSystem.constraint != nil {
+                appState.measurementSystem.constraint = nil
+                appState.measurementSystem.constrainedEndpoint = nil
+                print("Constraint released (Option key)")
+            }
+        }
+
+        optionWasPressed = optionPressed
     }
 
     // MARK: - Keyboard Events
@@ -266,9 +331,32 @@ final class InputHandler {
             }
             return false
         case "x":
-            if appState.measurementSystem.isCollecting {
+            // X key: toggle X axis constraint when measuring, or end measurement
+            if appState.measurementSystem.mode == .distance &&
+               !appState.measurementSystem.currentPoints.isEmpty {
+                appState.measurementSystem.toggleAxisConstraint(0)  // X axis
+                return true
+            } else if appState.measurementSystem.isCollecting {
                 appState.measurementSystem.endMeasurement()
                 print("Measurement ended")
+                return true
+            }
+            return false
+
+        case "y":
+            // Y key: toggle Y axis constraint when measuring
+            if appState.measurementSystem.mode == .distance &&
+               !appState.measurementSystem.currentPoints.isEmpty {
+                appState.measurementSystem.toggleAxisConstraint(1)  // Y axis
+                return true
+            }
+            return false
+
+        case "z":
+            // Z key: toggle Z axis constraint when measuring
+            if appState.measurementSystem.mode == .distance &&
+               !appState.measurementSystem.currentPoints.isEmpty {
+                appState.measurementSystem.toggleAxisConstraint(2)  // Z axis
                 return true
             }
             return false

@@ -16,29 +16,38 @@ final class MeasurementRenderData {
     // Instance buffers
     var lineInstanceBuffer: MTLBuffer?
     var previewLineInstanceBuffer: MTLBuffer?
+    var constraintLineInstanceBuffer: MTLBuffer?  // Red line from constrained point to snap point
     var pointBuffer: MTLBuffer?
     var hoverBuffer: MTLBuffer?
+    var constrainedPointBuffer: MTLBuffer?  // Yellow marker at constrained endpoint
     var radiusCircleInstanceBuffer: MTLBuffer?
     var radiusCenterBuffer: MTLBuffer?
 
     // Counts
     var lineInstanceCount: Int = 0
     var previewLineInstanceCount: Int = 0
+    var constraintLineInstanceCount: Int = 0
     var pointCount: Int = 0
     var hoverVertexCount: Int = 0
+    var constrainedPointVertexCount: Int = 0
     var radiusCircleInstanceCount: Int = 0
     var radiusCenterVertexCount: Int = 0
 
     // Radius circle cylinder geometry
     let radiusCircleCylinderVertexBuffer: MTLBuffer
 
+    // Constraint line cylinder geometry (red)
+    let constraintCylinderVertexBuffer: MTLBuffer
+
     init(device: MTLDevice, thickness: Float) throws {
         self.device = device
 
+        // Measurement line thickness multiplier (relative to wireframe thickness)
+        let measurementThickness: Float = 6.0
+
         // Create unit cylinder geometry (along Y-axis, from 0 to 1)
-        // Use 3x the thickness of wireframe for better visibility
         let cylinderGeometry = Self.createCylinderGeometry(
-            radius: thickness * 3.0,
+            radius: thickness * measurementThickness,
             segments: 8,
             color: SIMD4<Float>(1.0, 1.0, 0.0, 1.0) // Yellow
         )
@@ -60,7 +69,7 @@ final class MeasurementRenderData {
 
         // Create preview cylinder with green color
         let previewCylinderGeometry = Self.createCylinderGeometry(
-            radius: thickness * 3.0,
+            radius: thickness * measurementThickness,
             segments: 8,
             color: SIMD4<Float>(0.5, 1.0, 0.5, 1.0) // Bright green
         )
@@ -70,9 +79,9 @@ final class MeasurementRenderData {
         }
         self.previewCylinderVertexBuffer = previewVertexBuffer
 
-        // Create radius circle cylinder with magenta color (thicker than measurement lines)
+        // Create radius circle cylinder with magenta color (slightly thicker than measurement lines)
         let radiusCircleCylinderGeometry = Self.createCylinderGeometry(
-            radius: thickness * 4.0,
+            radius: thickness * measurementThickness * 1.2,
             segments: 8,
             color: SIMD4<Float>(1.0, 0.59, 1.0, 0.78) // Magenta with transparency
         )
@@ -81,6 +90,18 @@ final class MeasurementRenderData {
             throw MetalError.bufferCreationFailed
         }
         self.radiusCircleCylinderVertexBuffer = radiusCircleVertexBuffer
+
+        // Create constraint line cylinder with red color (for showing offset from constrained point to snap point)
+        let constraintCylinderGeometry = Self.createCylinderGeometry(
+            radius: thickness * measurementThickness,
+            segments: 8,
+            color: SIMD4<Float>(1.0, 0.0, 0.0, 1.0) // Red
+        )
+        let constraintVertexSize = constraintCylinderGeometry.vertices.count * MemoryLayout<VertexIn>.stride
+        guard let constraintVertexBuffer = device.makeBuffer(bytes: constraintCylinderGeometry.vertices, length: constraintVertexSize, options: []) else {
+            throw MetalError.bufferCreationFailed
+        }
+        self.constraintCylinderVertexBuffer = constraintVertexBuffer
     }
 
     /// Update buffers based on measurement system state
@@ -89,6 +110,10 @@ final class MeasurementRenderData {
         if !measurementSystem.isCollecting {
             hoverBuffer = nil
             hoverVertexCount = 0
+            constraintLineInstanceBuffer = nil
+            constraintLineInstanceCount = 0
+            constrainedPointBuffer = nil
+            constrainedPointVertexCount = 0
         }
 
         // Update hover point
@@ -99,6 +124,9 @@ final class MeasurementRenderData {
             hoverVertexCount = 0
         }
 
+        // Update constrained point marker and constraint line
+        updateConstrainedVisualization(measurementSystem)
+
         // Create point markers (pass measurement system to determine colors/sizes)
         updatePoints(measurementSystem)
 
@@ -107,6 +135,33 @@ final class MeasurementRenderData {
 
         // Create radius circles
         updateRadiusCircles(measurementSystem)
+    }
+
+    /// Update visualization for axis-constrained measurement
+    private func updateConstrainedVisualization(_ measurementSystem: MeasurementSystem) {
+        guard let constrainedEndpoint = measurementSystem.constrainedEndpoint,
+              let hoverPoint = measurementSystem.hoverPoint,
+              measurementSystem.constraint != nil else {
+            constraintLineInstanceBuffer = nil
+            constraintLineInstanceCount = 0
+            constrainedPointBuffer = nil
+            constrainedPointVertexCount = 0
+            return
+        }
+
+        // Create red line from constrained endpoint to actual snap point (hover point)
+        let constraintEdge = Edge(constrainedEndpoint, hoverPoint.position)
+        let instances = Self.createInstanceMatrices(edges: [constraintEdge])
+        let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
+        constraintLineInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
+        constraintLineInstanceCount = instances.count
+
+        // Create yellow marker at constrained endpoint
+        let markerColor = SIMD4<Float>(1.0, 1.0, 0.0, 1.0) // Yellow
+        let vertices = createCube(center: constrainedEndpoint.float3, size: 0.5, color: markerColor)
+        constrainedPointVertexCount = vertices.count
+        let bufferSize = vertices.count * MemoryLayout<VertexIn>.stride
+        constrainedPointBuffer = device.makeBuffer(bytes: vertices, length: bufferSize, options: [])
     }
 
     // MARK: - Point Rendering
@@ -190,12 +245,19 @@ final class MeasurementRenderData {
             }
         }
 
-        // Preview line from last current point to hover
-        if let hoverPoint = measurementSystem.hoverPoint,
-           !measurementSystem.currentPoints.isEmpty {
+        // Preview line from last current point to hover (or constrained endpoint)
+        if !measurementSystem.currentPoints.isEmpty {
             let lastPoint = measurementSystem.currentPoints.last!.position
-            let hoverPos = hoverPoint.position
-            previewEdges.append(Edge(lastPoint, hoverPos))
+
+            // If constraint is active, draw preview line to constrained endpoint (yellow line)
+            // The red line from constrained endpoint to snap point is handled separately
+            if let constrainedEndpoint = measurementSystem.constrainedEndpoint,
+               measurementSystem.constraint != nil {
+                previewEdges.append(Edge(lastPoint, constrainedEndpoint))
+            } else if let hoverPoint = measurementSystem.hoverPoint {
+                // Normal mode: draw line directly to hover point
+                previewEdges.append(Edge(lastPoint, hoverPoint.position))
+            }
         }
 
         // Create instance buffers

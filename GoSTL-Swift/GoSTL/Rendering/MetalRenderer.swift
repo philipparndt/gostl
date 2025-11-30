@@ -496,7 +496,7 @@ final class MetalRenderer {
             )
         }
 
-        // Render preview line (bright green)
+        // Render preview line (bright green for normal, uses cylinder color for preview which is yellow for constrained)
         if let previewInstanceBuffer = measurementData.previewLineInstanceBuffer, measurementData.previewLineInstanceCount > 0 {
             encoder.setRenderPipelineState(wireframePipelineState)
             encoder.setDepthStencilState(depthStencilState)
@@ -514,6 +514,37 @@ final class MetalRenderer {
                 indexBufferOffset: 0,
                 instanceCount: measurementData.previewLineInstanceCount
             )
+        }
+
+        // Render constraint line (red line from constrained endpoint to snap point)
+        if let constraintInstanceBuffer = measurementData.constraintLineInstanceBuffer, measurementData.constraintLineInstanceCount > 0 {
+            encoder.setRenderPipelineState(wireframePipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(measurementData.constraintCylinderVertexBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.size, index: 1)
+            encoder.setVertexBuffer(constraintInstanceBuffer, offset: 0, index: 2)
+
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: measurementData.indexCount,
+                indexType: .uint16,
+                indexBuffer: measurementData.cylinderIndexBuffer,
+                indexBufferOffset: 0,
+                instanceCount: measurementData.constraintLineInstanceCount
+            )
+        }
+
+        // Render constrained endpoint marker (yellow cube at constrained position)
+        if let constrainedPointBuffer = measurementData.constrainedPointBuffer, measurementData.constrainedPointVertexCount > 0 {
+            encoder.setRenderPipelineState(measurementPipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(constrainedPointBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.constrainedPointVertexCount)
         }
 
         // Render measurement points
@@ -687,13 +718,38 @@ final class MetalRenderer {
             encoder.setRenderPipelineState(texturedPipelineState)
             encoder.setFragmentSamplerState(samplerState, index: 0)
 
+            let hoveredAxis = appState.measurementSystem.hoveredAxisLabel
+            let constrainedAxis = appState.measurementSystem.constrainedAxis
+            let hasConstraint = constrainedAxis >= 0
+
             // Generate billboard quads for each label based on current camera orientation
             for label in cubeData.axisLabels {
-                let billboardVertices = createBillboardQuad(
+                let axisIndex = label.axis.rawValue
+                let isHovered = axisIndex == hoveredAxis
+                let isConstrained = axisIndex == constrainedAxis
+
+                // Calculate size: larger when hovered
+                let displaySize = isHovered ? label.size * 1.3 : label.size
+
+                // Calculate alpha: dim non-constrained axes when constraint is active
+                let alpha: Float
+                if hasConstraint {
+                    alpha = isConstrained ? 1.0 : 0.3
+                } else {
+                    alpha = isHovered ? 1.0 : 0.8
+                }
+
+                var billboardVertices = createBillboardQuad(
                     position: label.position,
-                    size: label.size,
+                    size: displaySize,
                     camera: cubeCamera
                 )
+
+                // Apply alpha to vertex colors
+                for i in 0..<billboardVertices.count {
+                    billboardVertices[i].color.w = alpha
+                }
+
                 encoder.setVertexBytes(billboardVertices, length: billboardVertices.count * MemoryLayout<VertexIn>.stride, index: 0)
                 encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
                 encoder.setFragmentTexture(label.texture, index: 0)

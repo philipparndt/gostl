@@ -29,7 +29,7 @@ enum Material: String, CaseIterable {
     var baseColor: SIMD3<Float> {
         switch self {
         case .pla:
-            return SIMD3<Float>(0.5, 0.6, 0.8)  // gray/blue
+            return SIMD3<Float>(0.5, 0.6, 0.9)  // gray/blue
         case .abs:
             return SIMD3<Float>(0.85, 0.85, 0.8) // Slightly warmer gray
         case .petg:

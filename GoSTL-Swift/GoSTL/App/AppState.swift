@@ -314,6 +314,9 @@ final class AppState: @unchecked Sendable {
 
         // Clear all measurements when loading a new model
         measurementSystem.clearAll()
+
+        // Clear loading state
+        isLoading = false
     }
 
     /// Load a file from URL (supports both .stl and .scad files)

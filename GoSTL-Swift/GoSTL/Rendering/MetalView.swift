@@ -240,6 +240,15 @@ class InteractiveMTKView: MTKView {
         }
     }
 
+    override func flagsChanged(with event: NSEvent) {
+        guard let coordinator = coordinator else {
+            super.flagsChanged(with: event)
+            return
+        }
+
+        coordinator.inputHandler.handleFlagsChanged(event: event, appState: coordinator.appState)
+    }
+
     // MARK: - Drag and Drop
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

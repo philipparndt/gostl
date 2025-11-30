@@ -13,9 +13,20 @@ struct MeasurementOverlay: View {
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.green)
                             .frame(width: 8, height: 8)
-                        Text("Measuring: \(modeLabel(mode))")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.white)
+                        if let constraint = measurementSystem.constraint {
+                            let axisName = constraintAxisName(constraint)
+                            let axisColor = constraintAxisColor(constraint)
+                            Text("Measuring: \(modeLabel(mode))")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.white)
+                            Text("(\(axisName))")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(axisColor)
+                        } else {
+                            Text("Measuring: \(modeLabel(mode))")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
                     }
 
                     Text("Points: \(measurementSystem.pointsNeededText)")
@@ -28,6 +39,35 @@ struct MeasurementOverlay: View {
                         .italic()
 
                     if mode == .distance {
+                        // Show constraint status when at least one point is selected
+                        if !measurementSystem.currentPoints.isEmpty {
+                            if let constraint = measurementSystem.constraint {
+                                let axisName = constraintAxisName(constraint)
+                                let axisColor = constraintAxisColor(constraint)
+                                HStack(spacing: 4) {
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(axisColor)
+                                        .frame(width: 6, height: 6)
+                                    Text("Constraint: \(axisName) axis")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(axisColor)
+                                }
+                                .padding(.vertical, 2)
+
+                                HStack(spacing: 4) {
+                                    KeyHint_MeasurementLegacy(key: "⌥")
+                                    Text("to release")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.white.opacity(0.6))
+                                }
+                            } else {
+                                Text("Click X/Y/Z on cube or press key")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.white.opacity(0.5))
+                                    .italic()
+                            }
+                        }
+
                         HStack(spacing: 4) {
                             KeyHint_MeasurementLegacy(key: "x")
                             Text("to end / ")
@@ -103,6 +143,25 @@ struct MeasurementOverlay: View {
             return "Angle"
         case .radius:
             return "Radius"
+        }
+    }
+
+    private func constraintAxisName(_ constraint: ConstraintType) -> String {
+        switch constraint {
+        case .axis(let axis):
+            return ["X", "Y", "Z"][axis]
+        }
+    }
+
+    private func constraintAxisColor(_ constraint: ConstraintType) -> Color {
+        switch constraint {
+        case .axis(let axis):
+            switch axis {
+            case 0: return Color.red      // X axis
+            case 1: return Color.green    // Y axis
+            case 2: return Color.blue     // Z axis
+            default: return Color.white
+            }
         }
     }
 }

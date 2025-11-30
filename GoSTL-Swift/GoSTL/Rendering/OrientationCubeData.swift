@@ -923,6 +923,33 @@ final class OrientationCubeData {
         return texture
     }
 
+    /// Find which axis label (if any) is hit by a ray in cube-local space
+    /// Returns the axis index (0=X, 1=Y, 2=Z) or nil if no axis label is hit
+    func hitTestAxisLabel(ray: Ray) -> Int? {
+        // Check hit against each axis label position
+        // Labels are positioned at the end of each axis line
+        let hitRadius: Float = 0.15  // Detection radius for axis labels
+
+        for (index, labelInfo) in axisLabels.enumerated() {
+            // Calculate distance from ray to axis label center
+            let rayToLabel = labelInfo.position - ray.origin
+            let t = simd_dot(rayToLabel, ray.direction)
+
+            // Skip if label is behind ray
+            if t < 0 { continue }
+
+            // Find closest point on ray to label center
+            let closestPoint = ray.origin + ray.direction * t
+            let distance = simd_length(closestPoint - labelInfo.position)
+
+            if distance < hitRadius {
+                return index
+            }
+        }
+
+        return nil
+    }
+
     /// Find which face (if any) is hit by a ray in cube-local space
     /// Only returns faces that are visible (front-facing) from the ray origin
     func hitTest(ray: Ray) -> CubeFace? {

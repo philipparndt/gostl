@@ -19,6 +19,8 @@ struct ContentView: View {
         GeometryReader { geometry in
             ZStack {
                 MetalView(appState: appState)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
 
                 // Measurement labels (in 3D space)
                 MeasurementLabelsOverlay(
@@ -50,6 +52,12 @@ struct ContentView: View {
                     }
                 }
 
+                // Loading overlay (shown while waiting for file to load)
+                if appState.isLoading {
+                    LoadingOverlay()
+                        .transition(.opacity)
+                }
+
                 // Error overlay (shown for auto-reload errors)
                 if showErrorOverlay, let error = appState.loadError as? OpenSCADError {
                     ErrorOverlay(error: error) {
@@ -67,7 +75,8 @@ struct ContentView: View {
             if let fileURL = fileURL {
                 loadFileOnStartup(fileURL)
             } else {
-                loadTestModel()
+                // Don't load test cube - wait for file restoration or user action
+                setupInitialState()
             }
             setupNotifications()
         }
@@ -251,6 +260,35 @@ struct ContentView: View {
         }
     }
 
+    private func setupInitialState() {
+        // Initialize rendering components but don't load a model
+        // This shows a clean loading state until a file is opened
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            print("ERROR: Metal device not available")
+            return
+        }
+
+        do {
+            // Initialize grid
+            try appState.initializeGrid(device: device)
+            print("Grid initialized")
+
+            // Initialize measurements
+            appState.initializeMeasurements(device: device)
+            print("Measurements initialized")
+
+            // Initialize orientation cube
+            appState.initializeOrientationCube(device: device)
+            print("Orientation cube initialized")
+
+            // Set loading state - will be cleared when file is loaded
+            appState.isLoading = true
+            print("Waiting for file to load...")
+        } catch {
+            print("ERROR: Failed to initialize scene: \(error)")
+        }
+    }
+
     private func loadTestModel() {
         // Create a test cube to verify rendering works
         guard let device = MTLCreateSystemDefaultDevice() else {
@@ -325,6 +363,27 @@ struct ErrorAlert: Identifiable {
     let id = UUID()
     let title: String
     let message: String
+}
+
+/// Loading overlay shown while waiting for file to load
+struct LoadingOverlay: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                .scaleEffect(2.0)
+
+            Text("Loading...")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white.opacity(0.9))
+        }
+        .padding(32)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.black.opacity(0.7))
+                .shadow(color: .black.opacity(0.5), radius: 20, x: 0, y: 10)
+        )
+    }
 }
 
 #Preview {

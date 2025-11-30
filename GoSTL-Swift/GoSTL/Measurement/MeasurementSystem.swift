@@ -2,6 +2,11 @@ import Foundation
 import Observation
 import simd
 
+/// Constraint type for axis-constrained measurements
+enum ConstraintType {
+    case axis(Int)  // 0=X, 1=Y, 2=Z
+}
+
 /// Manages measurement state and calculations
 @Observable
 final class MeasurementSystem: @unchecked Sendable {
@@ -16,6 +21,16 @@ final class MeasurementSystem: @unchecked Sendable {
 
     /// Hover point (preview of where next point would be picked)
     var hoverPoint: MeasurementPoint?
+
+    /// Active constraint for measurement (nil = no constraint)
+    var constraint: ConstraintType?
+
+    /// The constrained endpoint position (where the measurement line will actually end)
+    /// This is calculated based on the constraint axis
+    var constrainedEndpoint: Vector3?
+
+    /// Currently hovered axis label on orientation cube (-1 = none, 0=X, 1=Y, 2=Z)
+    var hoveredAxisLabel: Int = -1
 
     /// Number of points required for current mode
     var pointsNeeded: Int {
@@ -59,15 +74,21 @@ final class MeasurementSystem: @unchecked Sendable {
         mode = nil
         currentPoints = []
         hoverPoint = nil
+        constraint = nil
+        constrainedEndpoint = nil
     }
 
     /// Update hover point based on mouse position
     func updateHover(ray: Ray, model: STLModel?) {
         guard isCollecting, let model else {
             hoverPoint = nil
+            constrainedEndpoint = nil
             return
         }
         hoverPoint = findIntersection(ray: ray, model: model)
+
+        // Update constrained endpoint if constraint is active
+        updateConstrainedMeasurement()
     }
 
     /// Add a point to the current measurement
@@ -122,6 +143,8 @@ final class MeasurementSystem: @unchecked Sendable {
         mode = nil
         currentPoints = []
         hoverPoint = nil
+        constraint = nil
+        constrainedEndpoint = nil
     }
 
     /// Complete the current measurement
@@ -192,6 +215,80 @@ final class MeasurementSystem: @unchecked Sendable {
         mode = nil
         currentPoints = []
         measurements = []
+        constraint = nil
+        constrainedEndpoint = nil
+    }
+
+    // MARK: - Axis Constraint Methods
+
+    /// Toggle axis constraint (set or clear constraint on specified axis)
+    func toggleAxisConstraint(_ axis: Int) {
+        // Only valid when measuring distance with at least one point selected
+        guard mode == .distance && !currentPoints.isEmpty else { return }
+
+        if case .axis(let currentAxis) = constraint, currentAxis == axis {
+            // Same axis - toggle off
+            constraint = nil
+            constrainedEndpoint = nil
+            print("Constraint disabled")
+        } else {
+            // Set new axis constraint
+            constraint = .axis(axis)
+            print("Constraint: \(["X", "Y", "Z"][axis]) axis")
+        }
+    }
+
+    /// Check if constraint is active on a specific axis
+    func isConstraintActive(on axis: Int) -> Bool {
+        if case .axis(let constraintAxis) = constraint {
+            return constraintAxis == axis
+        }
+        return false
+    }
+
+    /// Get currently constrained axis (-1 if no constraint)
+    var constrainedAxis: Int {
+        if case .axis(let axis) = constraint {
+            return axis
+        }
+        return -1
+    }
+
+    /// Calculate the constrained endpoint based on current constraint
+    /// - Parameter snapPoint: The point under the cursor (where user would normally click)
+    /// - Returns: The constrained endpoint position (along the constraint axis only)
+    func calculateConstrainedEndpoint(snapPoint: Vector3) -> Vector3? {
+        guard !currentPoints.isEmpty,
+              case .axis(let axis) = constraint,
+              let lastPoint = currentPoints.last else {
+            return nil
+        }
+
+        let referencePoint = lastPoint.position
+
+        // Calculate endpoint that only changes along the constrained axis
+        switch axis {
+        case 0: // X axis
+            return Vector3(snapPoint.x, referencePoint.y, referencePoint.z)
+        case 1: // Y axis
+            return Vector3(referencePoint.x, snapPoint.y, referencePoint.z)
+        case 2: // Z axis
+            return Vector3(referencePoint.x, referencePoint.y, snapPoint.z)
+        default:
+            return nil
+        }
+    }
+
+    /// Update constraint state when hover point changes
+    func updateConstrainedMeasurement() {
+        guard let hoverPoint = hoverPoint,
+              !currentPoints.isEmpty,
+              constraint != nil else {
+            constrainedEndpoint = nil
+            return
+        }
+
+        constrainedEndpoint = calculateConstrainedEndpoint(snapPoint: hoverPoint.position)
     }
 
     /// Remove most recent measurement

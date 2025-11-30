@@ -289,6 +289,11 @@ struct ToolsSectionContent: View {
                         Text("Measuring: \(modeLabel(mode))")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.white)
+                        if let constraint = measurementSystem.constraint {
+                            Text("(\(constraintAxisName(constraint)))")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(constraintAxisColor(constraint))
+                        }
                     }
 
                     Text("Points: \(measurementSystem.pointsNeededText)")
@@ -301,6 +306,23 @@ struct ToolsSectionContent: View {
                         .italic()
 
                     if mode == .distance {
+                        // Show constraint hint when at least one point is selected
+                        if !measurementSystem.currentPoints.isEmpty {
+                            if measurementSystem.constraint != nil {
+                                HStack(spacing: 4) {
+                                    KeyHint(key: "⌥")
+                                    Text("Release constraint")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.white.opacity(0.7))
+                                }
+                            } else {
+                                Text("Press X/Y/Z to constrain axis")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.white.opacity(0.5))
+                                    .italic()
+                            }
+                        }
+
                         HStack(spacing: 4) {
                             KeyHint(key: "⌫")
                             Text("Undo")
@@ -399,6 +421,25 @@ struct ToolsSectionContent: View {
         case .distance: return "Distance"
         case .angle: return "Angle"
         case .radius: return "Radius"
+        }
+    }
+
+    private func constraintAxisName(_ constraint: ConstraintType) -> String {
+        switch constraint {
+        case .axis(let axis):
+            return ["X", "Y", "Z"][axis]
+        }
+    }
+
+    private func constraintAxisColor(_ constraint: ConstraintType) -> Color {
+        switch constraint {
+        case .axis(let axis):
+            switch axis {
+            case 0: return Color.red      // X axis
+            case 1: return Color.green    // Y axis
+            case 2: return Color.blue     // Z axis
+            default: return Color.white
+            }
         }
     }
 }
