@@ -148,12 +148,13 @@ class InteractiveMTKView: MTKView {
 
         // If it was a click (not a drag), handle measurement point picking
         if !didDrag, let location = mouseDownLocation {
-            // Convert location from points to pixels and flip Y-axis
-            // AppKit: Y=0 at bottom, Metal: Y=0 at top
+            // Convert location from points to pixels
+            // DO NOT flip Y-axis - Camera.mouseRay expects Y=0 at bottom (AppKit convention)
+            // which maps directly to NDC where Y=-1 at bottom, Y=+1 at top
             let scale = drawableSize.width / bounds.size.width
             let scaledLocation = CGPoint(
                 x: location.x * scale,
-                y: drawableSize.height - (location.y * scale)
+                y: location.y * scale
             )
 
             coordinator.inputHandler.handleMouseClick(
@@ -172,12 +173,13 @@ class InteractiveMTKView: MTKView {
         guard let coordinator = coordinator else { return }
         let location = convert(event.locationInWindow, from: nil)
 
-        // Convert location from points to pixels and flip Y-axis
-        // AppKit: Y=0 at bottom, Metal: Y=0 at top
+        // Convert location from points to pixels
+        // DO NOT flip Y-axis - Camera.mouseRay expects Y=0 at bottom (AppKit convention)
+        // which maps directly to NDC where Y=-1 at bottom, Y=+1 at top
         let scale = drawableSize.width / bounds.size.width
         let scaledLocation = CGPoint(
             x: location.x * scale,
-            y: drawableSize.height - (location.y * scale)
+            y: location.y * scale
         )
 
         coordinator.inputHandler.handleMouseMoved(

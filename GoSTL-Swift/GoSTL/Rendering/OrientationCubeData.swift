@@ -243,8 +243,8 @@ final class OrientationCubeData {
                 // Was correct before - reverting
                 return (SIMD3(1, 0, 0), SIMD3(0, 0, 1))
             case .bottom:
-                // Horizontally mirrored - flip right vector
-                return (SIMD3(-1, 0, 0), SIMD3(0, 0, 1))
+                // Rotated 180deg - flip only up vector (not right, to avoid mirroring)
+                return (SIMD3(1, 0, 0), SIMD3(0, 0, -1))
             case .front:
                 // Vertically mirrored - flip up vector
                 return (SIMD3(1, 0, 0), SIMD3(0, -1, 0))
@@ -389,10 +389,13 @@ final class OrientationCubeData {
             let abs_normal = abs(faceInfo.normal)
 
             // Check if point is within face bounds on the two perpendicular axes
+            // When normal is along X axis (abs_normal.x >= 0.5), check Y and Z bounds
+            // When normal is along Y axis (abs_normal.y >= 0.5), check X and Z bounds
+            // When normal is along Z axis (abs_normal.z >= 0.5), check X and Y bounds
             let margin = Float(0.5)
-            let inBounds = (abs_normal.x < 0.5 && abs_hp.y <= margin && abs_hp.z <= margin) ||
-                          (abs_normal.y < 0.5 && abs_hp.x <= margin && abs_hp.z <= margin) ||
-                          (abs_normal.z < 0.5 && abs_hp.x <= margin && abs_hp.y <= margin)
+            let inBounds = (abs_normal.x >= 0.5 && abs_hp.y <= margin && abs_hp.z <= margin) ||
+                          (abs_normal.y >= 0.5 && abs_hp.x <= margin && abs_hp.z <= margin) ||
+                          (abs_normal.z >= 0.5 && abs_hp.x <= margin && abs_hp.y <= margin)
 
             if inBounds && t < closestDistance {
                 closestDistance = t

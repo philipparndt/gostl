@@ -544,11 +544,13 @@ final class MetalRenderer {
 
     private func renderOrientationCube(encoder: MTLRenderCommandEncoder, cubeData: OrientationCubeData, appState: AppState, viewSize: CGSize) {
         // Define cube viewport in top-right corner
+        // Note: Metal framebuffer coordinates have Y=0 at TOP, so originY=margin places
+        // the viewport margin pixels from the top edge, resulting in top-right placement.
         let cubeSize: Double = 300  // Size of the cube viewport in pixels (2.5x larger: 120 * 2.5 = 300)
         let margin: Double = 20
         let viewport = MTLViewport(
             originX: viewSize.width - cubeSize - margin,
-            originY: margin,  // Top of screen (Metal has Y=0 at top)
+            originY: margin,  // Top-right corner (Metal framebuffer has Y=0 at TOP)
             width: cubeSize,
             height: cubeSize,
             znear: 0.0,

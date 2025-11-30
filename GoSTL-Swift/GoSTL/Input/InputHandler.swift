@@ -110,25 +110,39 @@ final class InputHandler {
     }
 
     /// Check if mouse is hovering over orientation cube and which face
-    /// Note: location and viewSize are both in Metal coordinates (pixels, Y=0 at top)
+    /// Note: location is in AppKit screen coordinates (pixels, Y=0 at BOTTOM)
+    /// viewSize is the drawable size in pixels
     private func checkOrientationCubeHover(at location: CGPoint, viewSize: CGSize, appState: AppState) -> CubeFace? {
         guard let cubeData = appState.orientationCubeData else { return nil }
 
         // Define cube viewport bounds (must match MetalRenderer)
-        // Metal coordinates: Y=0 at top
-        let cubeSize: CGFloat = 300  // 2.5x larger
+        //
+        // The cube viewport is positioned at TOP-RIGHT of the screen.
+        // MetalRenderer uses (in Metal framebuffer coords where Y=0 at TOP):
+        //   originX: viewSize.width - cubeSize - margin  (right side)
+        //   originY: margin  (places viewport at top, 20 pixels from top edge)
+        //
+        // Mouse coordinates from MetalView (AppKit convention, Y=0 at BOTTOM):
+        //   We need to convert Metal's Y=0-at-top to our Y=0-at-bottom
+        //   Metal originY=margin means TOP of cube is at margin from top
+        //   In Y=0-at-bottom: TOP of cube is at viewSize.height - margin
+        //   BOTTOM of cube is at viewSize.height - margin - cubeSize
+        let cubeSize: CGFloat = 300
         let margin: CGFloat = 20
-        let cubeMinX = viewSize.width - cubeSize - margin
-        let cubeMinY = margin  // Top of screen in Metal coordinates
-        let cubeMaxY = cubeMinY + cubeSize
+        let cubeMinX = viewSize.width - cubeSize - margin  // Left edge of cube viewport
+        let cubeMaxX = cubeMinX + cubeSize  // Right edge
+        let cubeMinY = viewSize.height - margin - cubeSize  // Bottom edge (in Y=0-at-bottom coords)
+        let cubeMaxY = viewSize.height - margin  // Top edge (in Y=0-at-bottom coords)
 
-        // Check if mouse is within cube viewport (Metal coordinates: Y=0 at top)
-        guard location.x >= cubeMinX && location.x <= cubeMinX + cubeSize &&
+        // Check if mouse is within cube viewport
+        guard location.x >= cubeMinX && location.x <= cubeMaxX &&
               location.y >= cubeMinY && location.y <= cubeMaxY else {
             return nil
         }
 
         // Convert to cube viewport local coordinates
+        // localX: 0 at left edge of cube viewport
+        // localY: 0 at BOTTOM of cube viewport (matching AppKit/NDC convention)
         let localX = location.x - cubeMinX
         let localY = location.y - cubeMinY
 
@@ -140,10 +154,10 @@ final class InputHandler {
         cubeCamera.target = SIMD3<Float>(0, 0, 0)
 
         // Generate ray from mouse position in cube viewport
-        // localY is in Metal coordinates (Y=0 at top)
-        // mouseRay expects Y=0 at bottom, so flip it
+        // localY is now in Y=0-at-bottom coordinates (matches what mouseRay expects)
+        // No flip needed - localY=0 at bottom maps to NDC Y=-1, localY=cubeSize at top maps to NDC Y=+1
         let cubeViewSize = CGSize(width: cubeSize, height: cubeSize)
-        let localPos = CGPoint(x: localX, y: cubeSize - localY)
+        let localPos = CGPoint(x: localX, y: localY)
 
         let ray = cubeCamera.mouseRay(screenPos: localPos, viewSize: cubeViewSize)
 
