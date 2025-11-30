@@ -77,7 +77,7 @@ struct MeasurementOverlay: View {
                             .foregroundColor(.white.opacity(0.7))
                     }
                     HStack(spacing: 4) {
-                        KeyHint_MeasurementLegacy(key: "c")
+                        KeyHint_MeasurementLegacy(key: "r")
                         Text("Radius")
                             .font(.system(size: 9))
                             .foregroundColor(.white.opacity(0.7))

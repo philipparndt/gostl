@@ -29,7 +29,7 @@ enum Material: String, CaseIterable {
     var baseColor: SIMD3<Float> {
         switch self {
         case .pla:
-            return SIMD3<Float>(0.9, 0.9, 0.95)  // Light gray/white
+            return SIMD3<Float>(0.5, 0.6, 0.8)  // gray/blue
         case .abs:
             return SIMD3<Float>(0.85, 0.85, 0.8) // Slightly warmer gray
         case .petg:
@@ -45,7 +45,7 @@ enum Material: String, CaseIterable {
     var glossiness: Float {
         switch self {
         case .pla:
-            return 0.2  // Matte finish
+            return 0.0  // Matte finish
         case .abs:
             return 0.3  // Semi-glossy
         case .petg:
@@ -69,7 +69,7 @@ enum Material: String, CaseIterable {
     var specularIntensity: Float {
         switch self {
         case .pla:
-            return 0.3
+            return 0.0
         case .abs:
             return 0.4
         case .petg:

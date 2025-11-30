@@ -250,16 +250,17 @@ struct ViewSectionContent: View {
             }
 
             Button(action: { appState.camera.reset() }) {
-                HStack {
-                    Spacer()
+                HStack(spacing: 3) {
                     Image(systemName: "arrow.counterclockwise")
                         .font(.system(size: 9))
                     Text("Reset View")
                         .font(.system(size: 10))
                     Spacer()
+                    KeyHint(key: "ESC")
                 }
                 .foregroundColor(.white.opacity(0.8))
                 .padding(.vertical, 4)
+                .padding(.horizontal, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color.white.opacity(0.1))
@@ -360,7 +361,7 @@ struct ToolsSectionContent: View {
                 MeasurementToolButton(
                     icon: "circle",
                     label: "Radius",
-                    key: "c",
+                    key: "r",
                     action: { measurementSystem.startMeasurement(type: .radius) }
                 )
             }

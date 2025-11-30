@@ -23,11 +23,13 @@ struct Measurement {
     let type: MeasurementType
     let points: [MeasurementPoint]
     let value: Double
+    let circle: Circle? // For radius measurements, stores the fitted circle
 
-    init(type: MeasurementType, points: [MeasurementPoint], value: Double) {
+    init(type: MeasurementType, points: [MeasurementPoint], value: Double, circle: Circle? = nil) {
         self.type = type
         self.points = points
         self.value = value
+        self.circle = circle
     }
 
     /// Format the measurement value for display

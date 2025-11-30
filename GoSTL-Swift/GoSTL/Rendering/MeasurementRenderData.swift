@@ -18,12 +18,19 @@ final class MeasurementRenderData {
     var previewLineInstanceBuffer: MTLBuffer?
     var pointBuffer: MTLBuffer?
     var hoverBuffer: MTLBuffer?
+    var radiusCircleInstanceBuffer: MTLBuffer?
+    var radiusCenterBuffer: MTLBuffer?
 
     // Counts
     var lineInstanceCount: Int = 0
     var previewLineInstanceCount: Int = 0
     var pointCount: Int = 0
     var hoverVertexCount: Int = 0
+    var radiusCircleInstanceCount: Int = 0
+    var radiusCenterVertexCount: Int = 0
+
+    // Radius circle cylinder geometry
+    let radiusCircleCylinderVertexBuffer: MTLBuffer
 
     init(device: MTLDevice, thickness: Float) throws {
         self.device = device
@@ -62,6 +69,18 @@ final class MeasurementRenderData {
             throw MetalError.bufferCreationFailed
         }
         self.previewCylinderVertexBuffer = previewVertexBuffer
+
+        // Create radius circle cylinder with magenta color (thicker than measurement lines)
+        let radiusCircleCylinderGeometry = Self.createCylinderGeometry(
+            radius: thickness * 4.0,
+            segments: 8,
+            color: SIMD4<Float>(1.0, 0.59, 1.0, 0.78) // Magenta with transparency
+        )
+        let radiusCircleVertexSize = radiusCircleCylinderGeometry.vertices.count * MemoryLayout<VertexIn>.stride
+        guard let radiusCircleVertexBuffer = device.makeBuffer(bytes: radiusCircleCylinderGeometry.vertices, length: radiusCircleVertexSize, options: []) else {
+            throw MetalError.bufferCreationFailed
+        }
+        self.radiusCircleCylinderVertexBuffer = radiusCircleVertexBuffer
     }
 
     /// Update buffers based on measurement system state
@@ -80,45 +99,51 @@ final class MeasurementRenderData {
             hoverVertexCount = 0
         }
 
-        // Update current measurement points
-        var allPoints: [MeasurementPoint] = measurementSystem.currentPoints
-
-        // Add completed measurement points
-        for measurement in measurementSystem.measurements {
-            allPoints.append(contentsOf: measurement.points)
-        }
-
-        // Create point markers
-        updatePoints(allPoints)
+        // Create point markers (pass measurement system to determine colors/sizes)
+        updatePoints(measurementSystem)
 
         // Create lines for measurements
         updateLines(measurementSystem)
+
+        // Create radius circles
+        updateRadiusCircles(measurementSystem)
     }
 
     // MARK: - Point Rendering
 
     /// Create small cube marker for a point
-    private func updatePoints(_ points: [MeasurementPoint]) {
-        guard !points.isEmpty else {
-            pointBuffer = nil
-            pointCount = 0
-            return
-        }
-
-        let size: Float = 0.5 // Small marker size
+    private func updatePoints(_ measurementSystem: MeasurementSystem) {
         var vertices: [VertexIn] = []
 
-        for point in points {
-            let pos = point.position.float3
-            let color = SIMD4<Float>(1.0, 0.3, 0.3, 1.0) // Red for measurement points
+        // Add current measurement points (in progress)
+        let defaultSize: Float = 0.5
+        let defaultColor = SIMD4<Float>(1.0, 0.3, 0.3, 1.0) // Red for regular measurement points
 
-            // Create a small cube at the point
+        for point in measurementSystem.currentPoints {
+            let pos = point.position.float3
+            let size = measurementSystem.mode == .radius ? Float(0.3) : defaultSize
+            let color = measurementSystem.mode == .radius ? SIMD4<Float>(1.0, 0.59, 1.0, 1.0) : defaultColor // Same magenta as circle line
             vertices.append(contentsOf: createCube(center: pos, size: size, color: color))
         }
 
-        pointCount = vertices.count
-        let bufferSize = vertices.count * MemoryLayout<VertexIn>.stride
-        pointBuffer = device.makeBuffer(bytes: vertices, length: bufferSize, options: [])
+        // Add completed measurement points
+        for measurement in measurementSystem.measurements {
+            for point in measurement.points {
+                let pos = point.position.float3
+                let size = measurement.type == .radius ? Float(0.3) : defaultSize
+                let color = measurement.type == .radius ? SIMD4<Float>(1.0, 0.59, 1.0, 1.0) : defaultColor // Same magenta as circle line
+                vertices.append(contentsOf: createCube(center: pos, size: size, color: color))
+            }
+        }
+
+        if !vertices.isEmpty {
+            pointCount = vertices.count
+            let bufferSize = vertices.count * MemoryLayout<VertexIn>.stride
+            pointBuffer = device.makeBuffer(bytes: vertices, length: bufferSize, options: [])
+        } else {
+            pointBuffer = nil
+            pointCount = 0
+        }
     }
 
     /// Create hover point marker
@@ -149,19 +174,17 @@ final class MeasurementRenderData {
             }
         }
 
-        // Lines for completed measurements
+        // Lines for completed measurements (excluding radius measurements)
         for measurement in measurementSystem.measurements {
+            // Skip radius measurements - they will be rendered as circles
+            if measurement.type == .radius {
+                continue
+            }
+
             if measurement.points.count >= 2 {
                 for i in 0..<(measurement.points.count - 1) {
                     let p1 = measurement.points[i].position
                     let p2 = measurement.points[i + 1].position
-                    lineEdges.append(Edge(p1, p2))
-                }
-
-                // For radius measurements, show all three points connected
-                if measurement.type == .radius && measurement.points.count == 3 {
-                    let p1 = measurement.points[2].position
-                    let p2 = measurement.points[0].position
                     lineEdges.append(Edge(p1, p2))
                 }
             }
@@ -311,6 +334,152 @@ final class MeasurementRenderData {
                 normal: SIMD3(0, 1, 0), // Simple normal
                 color: color
             ))
+        }
+
+        return vertices
+    }
+
+    // MARK: - Radius Circle Rendering
+
+    /// Update radius circle rendering data
+    private func updateRadiusCircles(_ measurementSystem: MeasurementSystem) {
+        var circleEdges: [Edge] = []
+        var centerVertices: [VertexIn] = []
+
+        // Process completed radius measurements
+        for measurement in measurementSystem.measurements {
+            guard measurement.type == .radius,
+                  let circle = measurement.circle else {
+                continue
+            }
+
+            // Create circle arc as edges between adjacent points
+            circleEdges.append(contentsOf: createCircleArcEdges(circle: circle))
+
+            // Create center point marker (smoother sphere, very small)
+            let centerColor = SIMD4<Float>(1.0, 0.59, 1.0, 1.0) // Same magenta as circle line (255, 150, 255, 255)
+            centerVertices.append(contentsOf: createSmoothSphere(center: circle.center.float3, radius: 0.25, color: centerColor))
+        }
+
+        // Update circle instance buffer (using instanced cylinders like measurement lines)
+        if !circleEdges.isEmpty {
+            let instances = Self.createInstanceMatrices(edges: circleEdges)
+            let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
+            radiusCircleInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
+            radiusCircleInstanceCount = instances.count
+        } else {
+            radiusCircleInstanceBuffer = nil
+            radiusCircleInstanceCount = 0
+        }
+
+        // Update center buffer
+        if !centerVertices.isEmpty {
+            radiusCenterVertexCount = centerVertices.count
+            let bufferSize = centerVertices.count * MemoryLayout<VertexIn>.stride
+            radiusCenterBuffer = device.makeBuffer(bytes: centerVertices, length: bufferSize, options: [])
+        } else {
+            radiusCenterBuffer = nil
+            radiusCenterVertexCount = 0
+        }
+    }
+
+    /// Create a circle arc as edges for instanced cylinder rendering
+    private func createCircleArcEdges(circle: Circle) -> [Edge] {
+        var edges: [Edge] = []
+        let segments = 64 // Same as Go version
+        let radius = Float(circle.radius)
+        let center = circle.center.float3
+        let normal = circle.normal.float3
+
+        // Create orthogonal basis vectors for the circle plane
+        let (u, v) = createOrthogonalBasis(normal: normal)
+
+        // Generate circle points
+        var points: [SIMD3<Float>] = []
+        for i in 0..<segments {
+            let angle = Float(i) * 2.0 * .pi / Float(segments)
+            let x = radius * cos(angle)
+            let y = radius * sin(angle)
+            let position = center + u * x + v * y
+            points.append(position)
+        }
+
+        // Create edges between consecutive points
+        for i in 0..<segments {
+            let p1 = points[i]
+            let p2 = points[(i + 1) % segments] // Wrap around to close the circle
+            edges.append(Edge(
+                Vector3(Double(p1.x), Double(p1.y), Double(p1.z)),
+                Vector3(Double(p2.x), Double(p2.y), Double(p2.z))
+            ))
+        }
+
+        return edges
+    }
+
+    /// Create orthogonal basis vectors perpendicular to a normal
+    private func createOrthogonalBasis(normal: SIMD3<Float>) -> (u: SIMD3<Float>, v: SIMD3<Float>) {
+        // Choose an arbitrary vector not parallel to normal
+        let arbitrary: SIMD3<Float> = abs(normal.y) < 0.9 ? SIMD3(0, 1, 0) : SIMD3(1, 0, 0)
+        let u = simd_normalize(simd_cross(normal, arbitrary))
+        let v = simd_cross(normal, u)
+        return (u, v)
+    }
+
+    /// Create a smooth sphere using UV sphere approach
+    private func createSmoothSphere(center: SIMD3<Float>, radius: Float, color: SIMD4<Float>) -> [VertexIn] {
+        var vertices: [VertexIn] = []
+
+        let latitudeBands = 16
+        let longitudeBands = 16
+
+        // Generate sphere vertices using latitude/longitude
+        for lat in 0...latitudeBands {
+            let theta = Float(lat) * .pi / Float(latitudeBands)
+            let sinTheta = sin(theta)
+            let cosTheta = cos(theta)
+
+            for lon in 0...longitudeBands {
+                let phi = Float(lon) * 2.0 * .pi / Float(longitudeBands)
+                let sinPhi = sin(phi)
+                let cosPhi = cos(phi)
+
+                let x = cosPhi * sinTheta
+                let y = cosTheta
+                let z = sinPhi * sinTheta
+
+                let normal = SIMD3<Float>(x, y, z)
+                let position = center + normal * radius
+
+                // Create triangles (skip last row)
+                if lat < latitudeBands && lon < longitudeBands {
+                    // First triangle
+                    vertices.append(VertexIn(position: position, normal: normal, color: color))
+
+                    let theta2 = Float(lat + 1) * .pi / Float(latitudeBands)
+                    let sinTheta2 = sin(theta2)
+                    let cosTheta2 = cos(theta2)
+                    let normal2 = SIMD3<Float>(cosPhi * sinTheta2, cosTheta2, sinPhi * sinTheta2)
+                    let position2 = center + normal2 * radius
+                    vertices.append(VertexIn(position: position2, normal: normal2, color: color))
+
+                    let phi3 = Float(lon + 1) * 2.0 * .pi / Float(longitudeBands)
+                    let sinPhi3 = sin(phi3)
+                    let cosPhi3 = cos(phi3)
+                    let normal3 = SIMD3<Float>(cosPhi3 * sinTheta, cosTheta, sinPhi3 * sinTheta)
+                    let position3 = center + normal3 * radius
+                    vertices.append(VertexIn(position: position3, normal: normal3, color: color))
+
+                    // Second triangle
+                    vertices.append(VertexIn(position: position2, normal: normal2, color: color))
+
+                    let normal4 = SIMD3<Float>(cosPhi3 * sinTheta2, cosTheta2, sinPhi3 * sinTheta2)
+                    let position4 = center + normal4 * radius
+                    vertices.append(VertexIn(position: position4, normal: normal4, color: color))
+
+                    vertices.append(VertexIn(position: position3, normal: normal3, color: color))
+                }
+            }
         }
 
         return vertices

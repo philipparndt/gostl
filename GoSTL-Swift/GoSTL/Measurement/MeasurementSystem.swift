@@ -83,8 +83,8 @@ final class MeasurementSystem: @unchecked Sendable {
                     // Clicked on existing point - create final segment first, then end measurement
                     if let lastPoint = currentPoints.last {
                         let segmentPoints = [lastPoint, existingPoint]
-                        let value = calculateValue(type: .distance, points: segmentPoints)
-                        let measurement = Measurement(type: .distance, points: segmentPoints, value: value)
+                        let result = calculateValue(type: .distance, points: segmentPoints)
+                        let measurement = Measurement(type: .distance, points: segmentPoints, value: result.value, circle: result.circle)
                         measurements.append(measurement)
                     }
                     endMeasurement()
@@ -101,8 +101,8 @@ final class MeasurementSystem: @unchecked Sendable {
             if currentPoints.count >= 2 {
                 // Create a measurement for the last segment
                 let segmentPoints = Array(currentPoints.suffix(2))
-                let value = calculateValue(type: .distance, points: segmentPoints)
-                let measurement = Measurement(type: .distance, points: segmentPoints, value: value)
+                let result = calculateValue(type: .distance, points: segmentPoints)
+                let measurement = Measurement(type: .distance, points: segmentPoints, value: result.value, circle: result.circle)
                 measurements.append(measurement)
             }
             // Continue measuring - don't reset
@@ -128,8 +128,8 @@ final class MeasurementSystem: @unchecked Sendable {
     private func completeMeasurement() {
         guard let mode, currentPoints.count >= pointsNeeded else { return }
 
-        let value = calculateValue(type: mode, points: currentPoints)
-        let measurement = Measurement(type: mode, points: currentPoints, value: value)
+        let result = calculateValue(type: mode, points: currentPoints)
+        let measurement = Measurement(type: mode, points: currentPoints, value: result.value, circle: result.circle)
         measurements.append(measurement)
 
         // Reset for next measurement
@@ -138,29 +138,30 @@ final class MeasurementSystem: @unchecked Sendable {
     }
 
     /// Calculate measurement value based on type
-    private func calculateValue(type: MeasurementType, points: [MeasurementPoint]) -> Double {
+    private func calculateValue(type: MeasurementType, points: [MeasurementPoint]) -> (value: Double, circle: Circle?) {
         switch type {
         case .distance:
-            guard points.count >= 2 else { return 0 }
-            return points[0].position.distance(to: points[1].position)
+            guard points.count >= 2 else { return (0, nil) }
+            return (points[0].position.distance(to: points[1].position), nil)
 
         case .angle:
-            guard points.count >= 3 else { return 0 }
+            guard points.count >= 3 else { return (0, nil) }
             // Calculate angle at middle point (points[1])
             let v1 = (points[0].position - points[1].position).normalized()
             let v2 = (points[2].position - points[1].position).normalized()
             let cosAngle = v1.dot(v2)
             let angleRadians = acos(max(-1.0, min(1.0, cosAngle)))
-            return angleRadians * 180.0 / .pi // Convert to degrees
+            let degrees = angleRadians * 180.0 / .pi // Convert to degrees
+            return (degrees, nil)
 
         case .radius:
-            guard points.count >= 3 else { return 0 }
+            guard points.count >= 3 else { return (0, nil) }
             // Fit a circle to the three points
             let positions = points.map { $0.position }
             if let circle = Circle.fit(points: positions) {
-                return circle.radius
+                return (circle.radius, circle)
             }
-            return 0
+            return (0, nil)
         }
     }
 

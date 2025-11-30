@@ -537,6 +537,37 @@ final class MetalRenderer {
             encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.hoverVertexCount)
         }
+
+        // Render radius measurement circles (using instanced cylinders)
+        if let circleInstanceBuffer = measurementData.radiusCircleInstanceBuffer, measurementData.radiusCircleInstanceCount > 0 {
+            encoder.setRenderPipelineState(wireframePipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(measurementData.radiusCircleCylinderVertexBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.size, index: 1)
+            encoder.setVertexBuffer(circleInstanceBuffer, offset: 0, index: 2)
+
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: measurementData.indexCount,
+                indexType: .uint16,
+                indexBuffer: measurementData.cylinderIndexBuffer,
+                indexBufferOffset: 0,
+                instanceCount: measurementData.radiusCircleInstanceCount
+            )
+        }
+
+        // Render radius measurement centers
+        if let centerBuffer = measurementData.radiusCenterBuffer, measurementData.radiusCenterVertexCount > 0 {
+            encoder.setRenderPipelineState(measurementPipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(centerBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.radiusCenterVertexCount)
+        }
     }
 
     private func renderTextBillboards(encoder: MTLRenderCommandEncoder, textData: TextBillboardData, appState: AppState, viewSize: CGSize) {

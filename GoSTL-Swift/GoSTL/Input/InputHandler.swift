@@ -233,15 +233,10 @@ final class InputHandler {
             appState.cycleMaterial()
             return true
 
-        // Camera controls
+        // Radius measurement
         case "r":
-            // If slicing is visible, reset slicing bounds; otherwise reset camera
-            if appState.slicingState.isVisible {
-                appState.slicingState.reset()
-                print("Slicing bounds reset")
-            } else {
-                camera.reset()
-            }
+            appState.measurementSystem.startMeasurement(type: .radius)
+            print("Radius measurement mode activated (pick 3 points)")
             return true
         case "f":
             // Frame model in view
@@ -262,16 +257,12 @@ final class InputHandler {
         case "c":
             // Only if not Ctrl+C (which is quit)
             if !event.modifierFlags.contains(.control) {
-                // If there are measurements, clear them
+                // Clear all measurements
                 if !appState.measurementSystem.measurements.isEmpty {
                     appState.measurementSystem.clearAll()
                     print("All measurements cleared")
                     return true
                 }
-                // Otherwise start radius measurement
-                appState.measurementSystem.startMeasurement(type: .radius)
-                print("Radius measurement mode activated (pick 3 points)")
-                return true
             }
             return false
         case "x":
@@ -283,11 +274,21 @@ final class InputHandler {
             return false
 
         default:
-            // ESC key to cancel measurement
+            // ESC key to cancel measurement or reset view
             if event.keyCode == 53 {  // ESC key code
                 if appState.measurementSystem.isCollecting {
                     appState.measurementSystem.cancelMeasurement()
                     print("Measurement cancelled")
+                    return true
+                } else {
+                    // If slicing is visible, reset slicing bounds; otherwise reset camera
+                    if appState.slicingState.isVisible {
+                        appState.slicingState.reset()
+                        print("Slicing bounds reset")
+                    } else {
+                        camera.reset()
+                        print("Camera reset")
+                    }
                     return true
                 }
             }

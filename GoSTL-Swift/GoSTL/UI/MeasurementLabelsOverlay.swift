@@ -15,7 +15,7 @@ struct MeasurementLabelsOverlay: View {
                         MeasurementLabel(
                             text: measurement.formattedValue,
                             position: screenPos,
-                            color: .yellow
+                            color: measurement.type == .radius ? Color(red: 1.0, green: 0.59, blue: 1.0) : .yellow
                         )
                     }
                 }
