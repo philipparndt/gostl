@@ -547,6 +547,17 @@ final class MetalRenderer {
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.constrainedPointVertexCount)
         }
 
+        // Render constraining point marker (cyan cube for point constraint)
+        if let constrainingPointBuffer = measurementData.constrainingPointBuffer, measurementData.constrainingPointVertexCount > 0 {
+            encoder.setRenderPipelineState(measurementPipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(constrainingPointBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.constrainingPointVertexCount)
+        }
+
         // Render measurement points
         if let pointBuffer = measurementData.pointBuffer, measurementData.pointCount > 0 {
             encoder.setRenderPipelineState(measurementPipelineState)

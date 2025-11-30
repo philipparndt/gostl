@@ -290,9 +290,9 @@ struct ToolsSectionContent: View {
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.white)
                         if let constraint = measurementSystem.constraint {
-                            Text("(\(constraintAxisName(constraint)))")
+                            Text("(\(constraintLabel(constraint)))")
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(constraintAxisColor(constraint))
+                                .foregroundColor(constraintColor(constraint))
                         }
                     }
 
@@ -316,10 +316,17 @@ struct ToolsSectionContent: View {
                                         .foregroundColor(.white.opacity(0.7))
                                 }
                             } else {
-                                Text("Press X/Y/Z to constrain axis")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.white.opacity(0.5))
-                                    .italic()
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("X/Y/Z: constrain to axis")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.white.opacity(0.5))
+                                    HStack(spacing: 4) {
+                                        KeyHint(key: "⌥")
+                                        Text("Constrain to direction")
+                                            .font(.system(size: 9))
+                                            .foregroundColor(.white.opacity(0.5))
+                                    }
+                                }
                             }
                         }
 
@@ -428,6 +435,8 @@ struct ToolsSectionContent: View {
         switch constraint {
         case .axis(let axis):
             return ["X", "Y", "Z"][axis]
+        case .point:
+            return "Point"
         }
     }
 
@@ -440,6 +449,31 @@ struct ToolsSectionContent: View {
             case 2: return Color.blue     // Z axis
             default: return Color.white
             }
+        case .point:
+            return Color.cyan
+        }
+    }
+
+    private func constraintLabel(_ constraint: ConstraintType) -> String {
+        switch constraint {
+        case .axis(let axis):
+            return ["X", "Y", "Z"][axis]
+        case .point:
+            return "→"  // Arrow to indicate direction constraint
+        }
+    }
+
+    private func constraintColor(_ constraint: ConstraintType) -> Color {
+        switch constraint {
+        case .axis(let axis):
+            switch axis {
+            case 0: return Color.red
+            case 1: return Color.green
+            case 2: return Color.blue
+            default: return Color.white
+            }
+        case .point:
+            return Color.cyan
         }
     }
 }

@@ -5,6 +5,7 @@ import simd
 /// Constraint type for axis-constrained measurements
 enum ConstraintType {
     case axis(Int)  // 0=X, 1=Y, 2=Z
+    case point(Vector3)  // Constrains to direction towards this point
 }
 
 /// Manages measurement state and calculations
@@ -246,7 +247,7 @@ final class MeasurementSystem: @unchecked Sendable {
         return false
     }
 
-    /// Get currently constrained axis (-1 if no constraint)
+    /// Get currently constrained axis (-1 if no constraint or point constraint)
     var constrainedAxis: Int {
         if case .axis(let axis) = constraint {
             return axis
@@ -254,28 +255,89 @@ final class MeasurementSystem: @unchecked Sendable {
         return -1
     }
 
+    /// Check if point constraint is active
+    var hasPointConstraint: Bool {
+        if case .point = constraint {
+            return true
+        }
+        return false
+    }
+
+    /// Get the constraining point (if point constraint is active)
+    var constrainingPoint: Vector3? {
+        if case .point(let point) = constraint {
+            return point
+        }
+        return nil
+    }
+
+    /// Toggle point constraint using the current hover point
+    func togglePointConstraint() {
+        guard mode == .distance && !currentPoints.isEmpty else { return }
+
+        // If already have a point constraint, clear it
+        if case .point = constraint {
+            constraint = nil
+            constrainedEndpoint = nil
+            print("Point constraint disabled")
+            return
+        }
+
+        // Set point constraint using current hover point
+        guard let hoverPoint = hoverPoint else {
+            print("No hover point for constraint")
+            return
+        }
+
+        constraint = .point(hoverPoint.position)
+        print("Point constraint: \(hoverPoint.position)")
+    }
+
     /// Calculate the constrained endpoint based on current constraint
     /// - Parameter snapPoint: The point under the cursor (where user would normally click)
-    /// - Returns: The constrained endpoint position (along the constraint axis only)
+    /// - Returns: The constrained endpoint position (along the constraint axis or direction)
     func calculateConstrainedEndpoint(snapPoint: Vector3) -> Vector3? {
         guard !currentPoints.isEmpty,
-              case .axis(let axis) = constraint,
-              let lastPoint = currentPoints.last else {
+              let lastPoint = currentPoints.last,
+              let constraint = constraint else {
             return nil
         }
 
         let referencePoint = lastPoint.position
 
-        // Calculate endpoint that only changes along the constrained axis
-        switch axis {
-        case 0: // X axis
-            return Vector3(snapPoint.x, referencePoint.y, referencePoint.z)
-        case 1: // Y axis
-            return Vector3(referencePoint.x, snapPoint.y, referencePoint.z)
-        case 2: // Z axis
-            return Vector3(referencePoint.x, referencePoint.y, snapPoint.z)
-        default:
-            return nil
+        switch constraint {
+        case .axis(let axis):
+            // Calculate endpoint that only changes along the constrained axis
+            switch axis {
+            case 0: // X axis
+                return Vector3(snapPoint.x, referencePoint.y, referencePoint.z)
+            case 1: // Y axis
+                return Vector3(referencePoint.x, snapPoint.y, referencePoint.z)
+            case 2: // Z axis
+                return Vector3(referencePoint.x, referencePoint.y, snapPoint.z)
+            default:
+                return nil
+            }
+
+        case .point(let constrainingPoint):
+            // Calculate direction from reference point to constraining point
+            let direction = constrainingPoint - referencePoint
+            let dirLength = direction.length
+
+            if dirLength < 0.0001 {
+                // Constraining point is same as reference point
+                return nil
+            }
+
+            // Normalize direction
+            let normDir = direction / dirLength
+
+            // Project the snap point onto the constraint line
+            let toSnapPoint = snapPoint - referencePoint
+            let t = toSnapPoint.dot(normDir)
+
+            // Calculate the projected point on the constraint line
+            return referencePoint + normDir * t
         }
     }
 

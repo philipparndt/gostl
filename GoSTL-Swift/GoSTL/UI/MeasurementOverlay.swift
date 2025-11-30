@@ -150,6 +150,8 @@ struct MeasurementOverlay: View {
         switch constraint {
         case .axis(let axis):
             return ["X", "Y", "Z"][axis]
+        case .point:
+            return "→"
         }
     }
 
@@ -162,6 +164,8 @@ struct MeasurementOverlay: View {
             case 2: return Color.blue     // Z axis
             default: return Color.white
             }
+        case .point:
+            return Color.cyan
         }
     }
 }

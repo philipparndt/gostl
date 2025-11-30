@@ -220,16 +220,29 @@ final class InputHandler {
 
     // MARK: - Modifier Key Events
 
-    /// Handle modifier key changes (Option key to release constraint)
+    /// Handle modifier key changes (Option key for point constraint)
     func handleFlagsChanged(event: NSEvent, appState: AppState) {
         let optionPressed = event.modifierFlags.contains(.option)
 
-        // Option key just pressed - release constraint
+        // Option key just pressed - toggle point constraint or release axis constraint
         if optionPressed && !optionWasPressed {
-            if appState.measurementSystem.constraint != nil {
+            // If we have an axis constraint, release it
+            if case .axis = appState.measurementSystem.constraint {
                 appState.measurementSystem.constraint = nil
                 appState.measurementSystem.constrainedEndpoint = nil
-                print("Constraint released (Option key)")
+                print("Axis constraint released (Option key)")
+            }
+            // If we're in distance mode with points and have a hover point, set point constraint
+            else if appState.measurementSystem.mode == .distance &&
+                    !appState.measurementSystem.currentPoints.isEmpty &&
+                    appState.measurementSystem.hoverPoint != nil {
+                appState.measurementSystem.togglePointConstraint()
+            }
+            // If we have a point constraint, release it
+            else if case .point = appState.measurementSystem.constraint {
+                appState.measurementSystem.constraint = nil
+                appState.measurementSystem.constrainedEndpoint = nil
+                print("Point constraint released (Option key)")
             }
         }
 

@@ -30,6 +30,8 @@ final class MeasurementRenderData {
     var pointCount: Int = 0
     var hoverVertexCount: Int = 0
     var constrainedPointVertexCount: Int = 0
+    var constrainingPointBuffer: MTLBuffer?  // Marker at the constraining point (for point constraint)
+    var constrainingPointVertexCount: Int = 0
     var radiusCircleInstanceCount: Int = 0
     var radiusCenterVertexCount: Int = 0
 
@@ -141,11 +143,13 @@ final class MeasurementRenderData {
     private func updateConstrainedVisualization(_ measurementSystem: MeasurementSystem) {
         guard let constrainedEndpoint = measurementSystem.constrainedEndpoint,
               let hoverPoint = measurementSystem.hoverPoint,
-              measurementSystem.constraint != nil else {
+              let constraint = measurementSystem.constraint else {
             constraintLineInstanceBuffer = nil
             constraintLineInstanceCount = 0
             constrainedPointBuffer = nil
             constrainedPointVertexCount = 0
+            constrainingPointBuffer = nil
+            constrainingPointVertexCount = 0
             return
         }
 
@@ -162,6 +166,18 @@ final class MeasurementRenderData {
         constrainedPointVertexCount = vertices.count
         let bufferSize = vertices.count * MemoryLayout<VertexIn>.stride
         constrainedPointBuffer = device.makeBuffer(bytes: vertices, length: bufferSize, options: [])
+
+        // For point constraint, also show a marker at the constraining point
+        if case .point(let constrainingPoint) = constraint {
+            let constrainingMarkerColor = SIMD4<Float>(0.0, 1.0, 1.0, 1.0) // Cyan
+            let constrainingVertices = createCube(center: constrainingPoint.float3, size: 0.6, color: constrainingMarkerColor)
+            constrainingPointVertexCount = constrainingVertices.count
+            let constrainingBufferSize = constrainingVertices.count * MemoryLayout<VertexIn>.stride
+            constrainingPointBuffer = device.makeBuffer(bytes: constrainingVertices, length: constrainingBufferSize, options: [])
+        } else {
+            constrainingPointBuffer = nil
+            constrainingPointVertexCount = 0
+        }
     }
 
     // MARK: - Point Rendering
