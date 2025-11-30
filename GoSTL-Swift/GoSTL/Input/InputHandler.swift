@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Metal
 
 /// Handles mouse and keyboard input for camera control
 final class InputHandler {
@@ -61,6 +62,15 @@ final class InputHandler {
 
     /// Handle mouse click for measurements (click without drag)
     func handleMouseClick(at location: CGPoint, camera: Camera, viewSize: CGSize, appState: AppState) {
+        // Check if click is on orientation cube first
+        if let clickedFace = checkOrientationCubeHover(at: location, viewSize: viewSize, appState: appState) {
+            // Change camera to the clicked face's preset
+            camera.setPreset(clickedFace.cameraPreset)
+            print("Camera set to: \(clickedFace.label)")
+            return
+        }
+
+        // Then check for measurement clicks
         guard appState.measurementSystem.isCollecting,
               let model = appState.model else {
             return
@@ -78,6 +88,15 @@ final class InputHandler {
 
     /// Handle mouse move for hover detection
     func handleMouseMoved(at location: CGPoint, camera: Camera, viewSize: CGSize, appState: AppState) {
+        // Check if mouse is over orientation cube first
+        if let hoveredFace = checkOrientationCubeHover(at: location, viewSize: viewSize, appState: appState) {
+            appState.hoveredCubeFace = hoveredFace
+            return
+        } else {
+            appState.hoveredCubeFace = nil
+        }
+
+        // Then check for measurement hover
         guard appState.measurementSystem.isCollecting else {
             appState.measurementSystem.hoverPoint = nil
             return
@@ -90,6 +109,48 @@ final class InputHandler {
         appState.measurementSystem.updateHover(ray: ray, model: appState.model)
     }
 
+    /// Check if mouse is hovering over orientation cube and which face
+    /// Note: location and viewSize are both in Metal coordinates (pixels, Y=0 at top)
+    private func checkOrientationCubeHover(at location: CGPoint, viewSize: CGSize, appState: AppState) -> CubeFace? {
+        guard let cubeData = appState.orientationCubeData else { return nil }
+
+        // Define cube viewport bounds (must match MetalRenderer)
+        // Metal coordinates: Y=0 at top
+        let cubeSize: CGFloat = 300  // 2.5x larger
+        let margin: CGFloat = 20
+        let cubeMinX = viewSize.width - cubeSize - margin
+        let cubeMinY = margin  // Top of screen in Metal coordinates
+        let cubeMaxY = cubeMinY + cubeSize
+
+        // Check if mouse is within cube viewport (Metal coordinates: Y=0 at top)
+        guard location.x >= cubeMinX && location.x <= cubeMinX + cubeSize &&
+              location.y >= cubeMinY && location.y <= cubeMaxY else {
+            return nil
+        }
+
+        // Convert to cube viewport local coordinates
+        let localX = location.x - cubeMinX
+        let localY = location.y - cubeMinY
+
+        // Create a camera matching the cube's view
+        let cubeCamera = Camera()
+        cubeCamera.angleX = appState.camera.angleX
+        cubeCamera.angleY = appState.camera.angleY
+        cubeCamera.distance = 3.0
+        cubeCamera.target = SIMD3<Float>(0, 0, 0)
+
+        // Generate ray from mouse position in cube viewport
+        // localY is in Metal coordinates (Y=0 at top)
+        // mouseRay expects Y=0 at bottom, so flip it
+        let cubeViewSize = CGSize(width: cubeSize, height: cubeSize)
+        let localPos = CGPoint(x: localX, y: cubeSize - localY)
+
+        let ray = cubeCamera.mouseRay(screenPos: localPos, viewSize: cubeViewSize)
+
+        // Test ray against cube faces
+        return cubeData.hitTest(ray: ray)
+    }
+
     func handleScroll(deltaY: CGFloat, camera: Camera) {
         // Zoom with scroll wheel (inverted for natural scrolling)
         let sensitivity = 1.0
@@ -98,7 +159,7 @@ final class InputHandler {
 
     // MARK: - Keyboard Events
 
-    func handleKeyDown(event: NSEvent, camera: Camera, appState: AppState) -> Bool {
+    func handleKeyDown(event: NSEvent, camera: Camera, appState: AppState, device: MTLDevice? = nil) -> Bool {
         guard let characters = event.charactersIgnoringModifiers else { return false }
 
         // Ctrl+C to quit (terminal style)
@@ -145,7 +206,11 @@ final class InputHandler {
             appState.showWireframe.toggle()
             return true
         case "g":
-            appState.showGrid.toggle()
+            appState.cycleGridMode()
+            // Update grid data when mode changes
+            if let device = device {
+                try? appState.updateGrid(device: device)
+            }
             return true
         case "i":
             appState.showModelInfo.toggle()

@@ -7,6 +7,7 @@ struct VertexIn {
     float3 position [[attribute(0)]];
     float3 normal [[attribute(1)]];
     float4 color [[attribute(2)]];
+    float2 texCoord [[attribute(3)]];
 };
 
 struct VertexOut {
@@ -14,6 +15,7 @@ struct VertexOut {
     float3 normal;
     float4 color;
     float3 worldPosition;
+    float2 texCoord;
 };
 
 struct Uniforms {
@@ -23,7 +25,7 @@ struct Uniforms {
     float3x3 normalMatrix;
     float3 cameraPosition;
     float viewportHeight;
-    float3 _padding; // Align to 16 bytes
+    float2 _padding; // Align to 16 bytes
 };
 
 struct InstanceData {
@@ -199,4 +201,32 @@ fragment float4 cutEdgeFragmentShader(
     VertexOut in [[stage_in]]
 ) {
     return in.color;
+}
+
+// MARK: - Textured Shaders (For 3D text labels)
+
+vertex VertexOut texturedVertexShader(
+    const VertexIn in [[stage_in]],
+    constant Uniforms &uniforms [[buffer(1)]]
+) {
+    VertexOut out;
+    float4 worldPos = uniforms.modelMatrix * float4(in.position, 1.0);
+    out.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPos;
+    out.normal = uniforms.normalMatrix * in.normal;
+    out.worldPosition = worldPos.xyz;
+    out.color = in.color;
+    out.texCoord = in.texCoord;
+    return out;
+}
+
+fragment float4 texturedFragmentShader(
+    VertexOut in [[stage_in]],
+    texture2d<float> colorTexture [[texture(0)]],
+    sampler textureSampler [[sampler(0)]]
+) {
+    // Sample the texture
+    float4 texColor = colorTexture.sample(textureSampler, in.texCoord);
+
+    // Multiply by vertex color (for tinting if needed)
+    return texColor * in.color;
 }

@@ -3,6 +3,8 @@ import Metal
 
 struct ContentView: View {
     @State private var appState = AppState()
+    @State private var errorAlert: ErrorAlert?
+    @State private var showErrorOverlay = false
 
     init() {
         print("DEBUG: ContentView initializing...")
@@ -42,6 +44,16 @@ struct ContentView: View {
                         }
                     }
                 }
+
+                // Error overlay (shown for auto-reload errors)
+                if showErrorOverlay, let error = appState.loadError as? OpenSCADError {
+                    ErrorOverlay(error: error) {
+                        showErrorOverlay = false
+                        appState.loadError = nil
+                        appState.loadErrorID = nil
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
         }
         .frame(minWidth: 800, minHeight: 600)
@@ -68,6 +80,28 @@ struct ContentView: View {
         .onChange(of: appState.slicingState.activePlane != nil) { _, _ in
             // Only update slice plane visualization, not the whole mesh
             updateSlicePlaneOnly()
+        }
+        .onChange(of: appState.needsReload) { _, needsReload in
+            if needsReload {
+                reloadModel()
+            }
+        }
+        .onChange(of: appState.loadErrorID) { _, errorID in
+            if let error = appState.loadError {
+                handleLoadError(error, isAutoReload: true)
+            } else if errorID == nil {
+                // Error was cleared (successful reload), dismiss overlay
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showErrorOverlay = false
+                }
+            }
+        }
+        .alert(item: $errorAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 
@@ -118,11 +152,54 @@ struct ContentView: View {
                     try appState.loadFile(url, device: device)
                     // Add to recent documents after successful load
                     RecentDocuments.shared.addDocument(url)
+
+                    // Set up file watching for auto-reload
+                    do {
+                        try appState.setupFileWatcher()
+                    } catch {
+                        print("WARNING: Failed to set up file watcher: \(error)")
+                    }
                 } catch {
                     print("ERROR: Failed to load file: \(error)")
-                    // TODO: Show error alert to user
+                    handleLoadError(error, isAutoReload: false)
                 }
             }
+        }
+    }
+
+    private func reloadModel() {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        appState.reloadModel(device: device)
+    }
+
+    private func handleLoadError(_ error: Error, isAutoReload: Bool) {
+        if let openscadError = error as? OpenSCADError {
+            // For auto-reload errors, show overlay instead of modal dialog
+            if isAutoReload {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showErrorOverlay = true
+                }
+            } else {
+                // For initial load errors, show modal dialog
+                switch openscadError {
+                case .openSCADNotFound:
+                    errorAlert = ErrorAlert(
+                        title: "OpenSCAD Not Installed",
+                        message: "OpenSCAD is required to render .scad files.\n\nPlease install OpenSCAD from:\nhttps://openscad.org/downloads.html\n\nOr install via Homebrew:\nbrew install --cask openscad"
+                    )
+                case .renderFailed(let message):
+                    errorAlert = ErrorAlert(
+                        title: "OpenSCAD Render Failed",
+                        message: message
+                    )
+                }
+            }
+        } else {
+            // For non-OpenSCAD errors, always show modal dialog
+            errorAlert = ErrorAlert(
+                title: "Failed to Load File",
+                message: error.localizedDescription
+            )
         }
     }
 
@@ -141,6 +218,10 @@ struct ContentView: View {
             // Initialize measurements
             appState.initializeMeasurements(device: device)
             print("Measurements initialized")
+
+            // Initialize orientation cube
+            appState.initializeOrientationCube(device: device)
+            print("Orientation cube initialized")
 
             // Load test cube
             let testCube = createTestCube()
@@ -189,6 +270,13 @@ struct ContentView: View {
 
         return STLModel(triangles: triangles, name: "test_cube")
     }
+}
+
+/// Error alert for displaying user-friendly error messages
+struct ErrorAlert: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
 }
 
 #Preview {

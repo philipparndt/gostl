@@ -78,9 +78,3 @@ final class MeshData {
         return SIMD4(litColor.x, litColor.y, litColor.z, 1.0)
     }
 }
-
-// MARK: - Metal Errors
-
-extension MetalError {
-    static let bufferCreationFailed = MetalError.pipelineCreationFailed
-}

@@ -36,9 +36,10 @@ struct GoSTLApp: App {
                 continue
             }
 
-            // Check if it's an STL file
+            // Check if it's an STL or OpenSCAD file
             let url = URL(fileURLWithPath: arg)
-            if url.pathExtension.lowercased() == "stl" && FileManager.default.fileExists(atPath: url.path) {
+            let ext = url.pathExtension.lowercased()
+            if (ext == "stl" || ext == "scad") && FileManager.default.fileExists(atPath: url.path) {
                 print("Loading file from command line: \(url.path)")
                 // Post notification to load file after a short delay to ensure UI is ready
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -93,11 +94,14 @@ struct GoSTLApp: App {
 
     private func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "stl")!]
+        panel.allowedContentTypes = [
+            .init(filenameExtension: "stl")!,
+            .init(filenameExtension: "scad")!
+        ]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.message = "Select an STL file to open"
+        panel.message = "Select an STL or OpenSCAD file to open"
 
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }

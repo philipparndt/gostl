@@ -138,7 +138,7 @@ class InteractiveMTKView: MTKView {
         coordinator.inputHandler.handleMouseDragged(
             to: location,
             camera: coordinator.appState.camera,
-            viewSize: bounds.size
+            viewSize: drawableSize  // Use drawableSize (pixels) not bounds.size (points)
         )
     }
 
@@ -148,10 +148,18 @@ class InteractiveMTKView: MTKView {
 
         // If it was a click (not a drag), handle measurement point picking
         if !didDrag, let location = mouseDownLocation {
+            // Convert location from points to pixels and flip Y-axis
+            // AppKit: Y=0 at bottom, Metal: Y=0 at top
+            let scale = drawableSize.width / bounds.size.width
+            let scaledLocation = CGPoint(
+                x: location.x * scale,
+                y: drawableSize.height - (location.y * scale)
+            )
+
             coordinator.inputHandler.handleMouseClick(
-                at: location,
+                at: scaledLocation,
                 camera: coordinator.appState.camera,
-                viewSize: bounds.size,
+                viewSize: drawableSize,
                 appState: coordinator.appState
             )
         }
@@ -163,10 +171,19 @@ class InteractiveMTKView: MTKView {
     override func mouseMoved(with event: NSEvent) {
         guard let coordinator = coordinator else { return }
         let location = convert(event.locationInWindow, from: nil)
+
+        // Convert location from points to pixels and flip Y-axis
+        // AppKit: Y=0 at bottom, Metal: Y=0 at top
+        let scale = drawableSize.width / bounds.size.width
+        let scaledLocation = CGPoint(
+            x: location.x * scale,
+            y: drawableSize.height - (location.y * scale)
+        )
+
         coordinator.inputHandler.handleMouseMoved(
-            at: location,
+            at: scaledLocation,
             camera: coordinator.appState.camera,
-            viewSize: bounds.size,
+            viewSize: drawableSize,
             appState: coordinator.appState
         )
     }
@@ -193,7 +210,7 @@ class InteractiveMTKView: MTKView {
         coordinator.inputHandler.handleMouseDragged(
             to: location,
             camera: coordinator.appState.camera,
-            viewSize: bounds.size
+            viewSize: drawableSize  // Use drawableSize (pixels) not bounds.size (points)
         )
     }
 
@@ -212,7 +229,8 @@ class InteractiveMTKView: MTKView {
         let handled = coordinator.inputHandler.handleKeyDown(
             event: event,
             camera: coordinator.appState.camera,
-            appState: coordinator.appState
+            appState: coordinator.appState,
+            device: device
         )
 
         if !handled {

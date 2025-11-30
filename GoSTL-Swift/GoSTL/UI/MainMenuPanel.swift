@@ -1,4 +1,5 @@
 import SwiftUI
+import Metal
 
 /// Main menu panel with Info, View, and Tools sections
 struct MainMenuPanel: View {
@@ -197,14 +198,19 @@ struct ViewSectionContent: View {
                 KeyHint(key: "w")
             }
 
-            // Grid toggle
+            // Grid mode
             HStack(spacing: 4) {
-                Button(action: { appState.showGrid.toggle() }) {
+                Button(action: {
+                    appState.cycleGridMode()
+                    if let device = MTLCreateSystemDefaultDevice() {
+                        try? appState.updateGrid(device: device)
+                    }
+                }) {
                     HStack(spacing: 4) {
-                        Image(systemName: appState.showGrid ? "checkmark.square.fill" : "square")
+                        Image(systemName: appState.gridMode != .off ? "checkmark.square.fill" : "square")
                             .font(.system(size: 10))
-                            .foregroundColor(appState.showGrid ? .blue : .white.opacity(0.5))
-                        Text("Grid")
+                            .foregroundColor(appState.gridMode != .off ? .blue : .white.opacity(0.5))
+                        Text(appState.gridMode.description)
                             .font(.system(size: 10))
                             .foregroundColor(.white.opacity(0.8))
                     }

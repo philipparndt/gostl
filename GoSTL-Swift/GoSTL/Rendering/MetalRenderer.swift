@@ -1,5 +1,7 @@
 import Metal
 import MetalKit
+import CoreText
+import CoreGraphics
 
 final class MetalRenderer {
     let device: MTLDevice
@@ -9,7 +11,9 @@ final class MetalRenderer {
     let gridPipelineState: MTLRenderPipelineState
     let measurementPipelineState: MTLRenderPipelineState
     let cutEdgePipelineState: MTLRenderPipelineState
+    let texturedPipelineState: MTLRenderPipelineState
     let depthStencilState: MTLDepthStencilState
+    let samplerState: MTLSamplerState
 
     init(device: MTLDevice) throws {
         print("DEBUG: Initializing MetalRenderer...")
@@ -27,9 +31,13 @@ final class MetalRenderer {
         self.gridPipelineState = try Self.createGridPipeline(device: device)
         self.measurementPipelineState = try Self.createMeshPipeline(device: device) // Reuse mesh pipeline for measurements
         self.cutEdgePipelineState = try Self.createCutEdgePipeline(device: device)
+        self.texturedPipelineState = try Self.createTexturedPipeline(device: device)
 
         // Create depth stencil state
         self.depthStencilState = Self.createDepthStencilState(device: device)
+
+        // Create sampler state for texture sampling
+        self.samplerState = Self.createSamplerState(device: device)
 
         print("DEBUG: MetalRenderer initialized successfully")
     }
@@ -166,6 +174,62 @@ final class MetalRenderer {
         return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
     }
 
+    private static func createTexturedPipeline(device: MTLDevice) throws -> MTLRenderPipelineState {
+        let library = try loadShaderLibrary(device: device)
+
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.vertexFunction = library.makeFunction(name: "texturedVertexShader")
+        pipelineDescriptor.fragmentFunction = library.makeFunction(name: "texturedFragmentShader")
+        pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+        pipelineDescriptor.rasterSampleCount = 4  // 4x MSAA for smooth edges
+
+        // Enable alpha blending for text transparency
+        pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+        pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        pipelineDescriptor.colorAttachments[0].rgbBlendOperation = .add
+        pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+        pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        pipelineDescriptor.colorAttachments[0].alphaBlendOperation = .add
+
+        // Vertex descriptor with texCoord
+        let vertexDescriptor = MTLVertexDescriptor()
+        // Position (attribute 0)
+        vertexDescriptor.attributes[0].format = .float3
+        vertexDescriptor.attributes[0].offset = 0
+        vertexDescriptor.attributes[0].bufferIndex = 0
+        // Normal (attribute 1)
+        vertexDescriptor.attributes[1].format = .float3
+        vertexDescriptor.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
+        vertexDescriptor.attributes[1].bufferIndex = 0
+        // Color (attribute 2)
+        vertexDescriptor.attributes[2].format = .float4
+        vertexDescriptor.attributes[2].offset = MemoryLayout<SIMD3<Float>>.stride * 2
+        vertexDescriptor.attributes[2].bufferIndex = 0
+        // TexCoord (attribute 3)
+        vertexDescriptor.attributes[3].format = .float2
+        vertexDescriptor.attributes[3].offset = MemoryLayout<SIMD3<Float>>.stride * 2 + MemoryLayout<SIMD4<Float>>.stride
+        vertexDescriptor.attributes[3].bufferIndex = 0
+        // Layout
+        vertexDescriptor.layouts[0].stride = MemoryLayout<VertexIn>.stride
+        vertexDescriptor.layouts[0].stepFunction = .perVertex
+
+        pipelineDescriptor.vertexDescriptor = vertexDescriptor
+
+        return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+    }
+
+    private static func createSamplerState(device: MTLDevice) -> MTLSamplerState {
+        let samplerDescriptor = MTLSamplerDescriptor()
+        samplerDescriptor.minFilter = .linear
+        samplerDescriptor.magFilter = .linear
+        samplerDescriptor.mipFilter = .notMipmapped
+        samplerDescriptor.sAddressMode = .clampToEdge
+        samplerDescriptor.tAddressMode = .clampToEdge
+        return device.makeSamplerState(descriptor: samplerDescriptor)!
+    }
+
     private static func createDepthStencilState(device: MTLDevice) -> MTLDepthStencilState {
         let depthDescriptor = MTLDepthStencilDescriptor()
         depthDescriptor.depthCompareFunction = .less
@@ -220,7 +284,7 @@ final class MetalRenderer {
         }
 
         // Render grid first (background)
-        if appState.showGrid, let gridData = appState.gridData {
+        if appState.gridMode != .off, let gridData = appState.gridData {
             renderGrid(encoder: renderEncoder, gridData: gridData, appState: appState, viewSize: view.drawableSize)
         }
 
@@ -248,6 +312,16 @@ final class MetalRenderer {
         if let measurementData = appState.measurementData {
             measurementData.update(measurementSystem: appState.measurementSystem)
             renderMeasurements(encoder: renderEncoder, measurementData: measurementData, appState: appState, viewSize: view.drawableSize)
+        }
+
+        // Render grid text labels (3D text)
+        if appState.gridMode != .off, let gridTextData = appState.gridTextData {
+            renderTextBillboards(encoder: renderEncoder, textData: gridTextData, appState: appState, viewSize: view.drawableSize)
+        }
+
+        // Render orientation cube (top right corner)
+        if let orientationCubeData = appState.orientationCubeData {
+            renderOrientationCube(encoder: renderEncoder, cubeData: orientationCubeData, appState: appState, viewSize: view.drawableSize)
         }
 
         renderEncoder.endEncoding()
@@ -280,16 +354,20 @@ final class MetalRenderer {
         encoder.setRenderPipelineState(gridPipelineState)
         encoder.setDepthStencilState(depthStencilState)
 
-        // Set vertex buffer
-        encoder.setVertexBuffer(gridData.vertexBuffer, offset: 0, index: 0)
-
         // Create and set uniforms
         let aspect = Float(viewSize.width / viewSize.height)
         var uniforms = createUniforms(camera: appState.camera, aspect: aspect, viewportHeight: Float(viewSize.height))
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
 
         // Draw grid lines
+        encoder.setVertexBuffer(gridData.vertexBuffer, offset: 0, index: 0)
         encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: gridData.vertexCount)
+
+        // Draw dimension lines
+        if let dimensionBuffer = gridData.dimensionLinesBuffer, gridData.dimensionLinesCount > 0 {
+            encoder.setVertexBuffer(dimensionBuffer, offset: 0, index: 0)
+            encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: gridData.dimensionLinesCount)
+        }
     }
 
     private func renderSlicePlanes(encoder: MTLRenderCommandEncoder, slicePlaneData: SlicePlaneData, appState: AppState, viewSize: CGSize) {
@@ -428,6 +506,138 @@ final class MetalRenderer {
         }
     }
 
+    private func renderTextBillboards(encoder: MTLRenderCommandEncoder, textData: TextBillboardData, appState: AppState, viewSize: CGSize) {
+        encoder.setRenderPipelineState(texturedPipelineState)
+        encoder.setDepthStencilState(depthStencilState)
+
+        // Set vertex buffer
+        encoder.setVertexBuffer(textData.vertexBuffer, offset: 0, index: 0)
+
+        // Create and set uniforms
+        let aspect = Float(viewSize.width / viewSize.height)
+        var uniforms = createUniforms(camera: appState.camera, aspect: aspect)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+        // Set sampler
+        encoder.setFragmentSamplerState(samplerState, index: 0)
+
+        // Render each text quad with its texture
+        var vertexOffset = 0
+        for textQuad in textData.textQuads {
+            // Set texture for this quad
+            encoder.setFragmentTexture(textQuad.texture, index: 0)
+
+            // Draw the quad (6 vertices = 2 triangles)
+            encoder.drawPrimitives(type: .triangle, vertexStart: vertexOffset, vertexCount: 6)
+            vertexOffset += 6
+        }
+    }
+
+    private func renderOrientationCube(encoder: MTLRenderCommandEncoder, cubeData: OrientationCubeData, appState: AppState, viewSize: CGSize) {
+        // Define cube viewport in top-right corner
+        let cubeSize: Double = 300  // Size of the cube viewport in pixels (2.5x larger: 120 * 2.5 = 300)
+        let margin: Double = 20
+        let viewport = MTLViewport(
+            originX: viewSize.width - cubeSize - margin,
+            originY: margin,  // Top of screen (Metal has Y=0 at top)
+            width: cubeSize,
+            height: cubeSize,
+            znear: 0.0,
+            zfar: 1.0
+        )
+
+        encoder.setViewport(viewport)
+        encoder.setRenderPipelineState(meshPipelineState)
+        encoder.setDepthStencilState(depthStencilState)
+
+        // Create a camera that only rotates (doesn't translate) to show orientation
+        let cubeCamera = Camera()
+        cubeCamera.angleX = appState.camera.angleX
+        cubeCamera.angleY = appState.camera.angleY
+        cubeCamera.distance = 3.0  // Fixed distance for cube
+        cubeCamera.target = SIMD3<Float>(0, 0, 0)  // Always look at origin
+
+        // Create uniforms with cube camera
+        let aspect = Float(cubeSize / cubeSize)  // Square viewport
+        var uniforms = createUniforms(camera: cubeCamera, aspect: aspect)
+
+        // Update vertex colors for hover effect if needed
+        if let hoveredFace = appState.hoveredCubeFace {
+            // Create modified vertex buffer with hover colors
+            let vertices = createCubeVerticesWithHover(cubeData: cubeData, hoveredFace: hoveredFace)
+            encoder.setVertexBytes(vertices, length: vertices.count * MemoryLayout<VertexIn>.stride, index: 0)
+        } else {
+            encoder.setVertexBuffer(cubeData.vertexBuffer, offset: 0, index: 0)
+        }
+
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+        // Draw cube
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: cubeData.vertexCount)
+
+        // Render 3D text labels on cube faces
+        if let textBuffer = cubeData.textVertexBuffer, !cubeData.textTextures.isEmpty {
+            encoder.setRenderPipelineState(texturedPipelineState)
+            encoder.setVertexBuffer(textBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+            encoder.setFragmentSamplerState(samplerState, index: 0)
+
+            // Render each text quad with its texture
+            for (texture, vertexOffset) in cubeData.textTextures {
+                encoder.setFragmentTexture(texture, index: 0)
+                encoder.drawPrimitives(type: .triangle, vertexStart: vertexOffset, vertexCount: 6)
+            }
+        }
+
+        // Reset viewport to full screen
+        encoder.setViewport(MTLViewport(
+            originX: 0,
+            originY: 0,
+            width: viewSize.width,
+            height: viewSize.height,
+            znear: 0.0,
+            zfar: 1.0
+        ))
+    }
+
+    /// Create cube vertices with hover effect for a specific face
+    private func createCubeVerticesWithHover(cubeData: OrientationCubeData, hoveredFace: CubeFace) -> [VertexIn] {
+        var vertices: [VertexIn] = []
+
+        // Regenerate all vertices with proper colors based on hover state
+        let s: Float = 0.5  // Half size
+
+        func addQuad(
+            v0: SIMD3<Float>, v1: SIMD3<Float>,
+            v2: SIMD3<Float>, v3: SIMD3<Float>,
+            normal: SIMD3<Float>, face: CubeFace
+        ) {
+            let color = (face == hoveredFace) ? face.hoverColor : face.baseColor
+            vertices.append(VertexIn(position: v0, normal: normal, color: color))
+            vertices.append(VertexIn(position: v1, normal: normal, color: color))
+            vertices.append(VertexIn(position: v2, normal: normal, color: color))
+            vertices.append(VertexIn(position: v0, normal: normal, color: color))
+            vertices.append(VertexIn(position: v2, normal: normal, color: color))
+            vertices.append(VertexIn(position: v3, normal: normal, color: color))
+        }
+
+        // Generate all faces with appropriate colors
+        addQuad(v0: SIMD3(-s, s, -s), v1: SIMD3(s, s, -s), v2: SIMD3(s, s, s), v3: SIMD3(-s, s, s),
+                normal: CubeFace.top.normal, face: .top)
+        addQuad(v0: SIMD3(-s, -s, s), v1: SIMD3(s, -s, s), v2: SIMD3(s, -s, -s), v3: SIMD3(-s, -s, -s),
+                normal: CubeFace.bottom.normal, face: .bottom)
+        addQuad(v0: SIMD3(-s, -s, s), v1: SIMD3(s, -s, s), v2: SIMD3(s, s, s), v3: SIMD3(-s, s, s),
+                normal: CubeFace.front.normal, face: .front)
+        addQuad(v0: SIMD3(s, -s, -s), v1: SIMD3(-s, -s, -s), v2: SIMD3(-s, s, -s), v3: SIMD3(s, s, -s),
+                normal: CubeFace.back.normal, face: .back)
+        addQuad(v0: SIMD3(-s, -s, -s), v1: SIMD3(-s, -s, s), v2: SIMD3(-s, s, s), v3: SIMD3(-s, s, -s),
+                normal: CubeFace.left.normal, face: .left)
+        addQuad(v0: SIMD3(s, -s, s), v1: SIMD3(s, -s, -s), v2: SIMD3(s, s, -s), v3: SIMD3(s, s, s),
+                normal: CubeFace.right.normal, face: .right)
+
+        return vertices
+    }
+
     private func createUniforms(camera: Camera, aspect: Float, viewportHeight: Float = 0) -> Uniforms {
         let modelMatrix = simd_float4x4(1.0) // Identity - model at origin
         let viewMatrix = camera.viewMatrix()
@@ -456,4 +666,5 @@ enum MetalError: Error {
     case commandQueueCreationFailed
     case pipelineCreationFailed
     case shaderLoadingFailed
+    case bufferCreationFailed
 }
