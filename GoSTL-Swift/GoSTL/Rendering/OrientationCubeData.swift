@@ -86,9 +86,9 @@ enum Axis: Int, CaseIterable {
 
     var color: SIMD4<Float> {
         switch self {
-        case .x: return SIMD4(1.0, 0.0, 0.0, 1.0)  // Red
-        case .y: return SIMD4(0.0, 1.0, 0.0, 1.0)  // Green
-        case .z: return SIMD4(0.0, 0.5, 1.0, 1.0)  // Blue
+        case .x: return AxisColors.x
+        case .y: return AxisColors.y
+        case .z: return AxisColors.z
         }
     }
 }

@@ -9,12 +9,10 @@ final class SlicePlaneData {
     init(device: MTLDevice, slicingState: SlicingState, modelCenter: Vector3, planeSize: Float) throws {
         var vertices: [VertexIn] = []
 
-        // Axis colors (matching slicing panel)
-        let axisColors: [SIMD4<Float>] = [
-            SIMD4(1.0, 0.31, 0.31, 0.15),  // X - Red (semi-transparent)
-            SIMD4(0.31, 1.0, 0.31, 0.15),  // Y - Green
-            SIMD4(0.31, 0.47, 1.0, 0.15)   // Z - Blue
-        ]
+        // Axis colors (using centralized colors with transparency)
+        let axisColors: [SIMD4<Float>] = AxisColors.all.map { color in
+            SIMD4(color.x, color.y, color.z, 0.15)  // Semi-transparent
+        }
 
         let halfSize = planeSize / 2.0
         let center = modelCenter.float3

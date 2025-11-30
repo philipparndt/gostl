@@ -10,12 +10,8 @@ final class CutEdgeData {
     let indexCount: Int
     let instanceCount: Int
 
-    /// Axis colors for cut edges
-    private static let axisColors: [SIMD4<Float>] = [
-        SIMD4(1.0, 0.31, 0.31, 1.0),  // X - Red
-        SIMD4(0.31, 1.0, 0.31, 1.0),  // Y - Green
-        SIMD4(0.31, 0.47, 1.0, 1.0)   // Z - Blue
-    ]
+    /// Axis colors for cut edges (using centralized colors)
+    private static let axisColors: [SIMD4<Float>] = AxisColors.all
 
     init(device: MTLDevice, cutEdges: [CutEdge]) throws {
         guard !cutEdges.isEmpty else {

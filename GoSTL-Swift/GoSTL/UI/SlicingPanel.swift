@@ -4,12 +4,8 @@ import SwiftUI
 struct SlicingPanel: View {
     let slicingState: SlicingState
 
-    // Axis colors (matching 3D convention)
-    private let axisColors: [Color] = [
-        Color(red: 1.0, green: 0.31, blue: 0.31),   // X - Red
-        Color(red: 0.31, green: 1.0, blue: 0.31),   // Y - Green
-        Color(red: 0.31, green: 0.47, blue: 1.0)    // Z - Blue
-    ]
+    // Axis colors (using centralized colors)
+    private let axisColors: [Color] = AxisColors.allUI
 
     private let axisNames = ["X", "Y", "Z"]
 
