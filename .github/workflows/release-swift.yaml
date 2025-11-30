@@ -50,9 +50,10 @@ jobs:
         run: |
           mkdir -p dist
           cp .build/arm64-apple-macosx/release/GoSTL dist/
+          cp -r .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle dist/
           chmod +x dist/GoSTL
           cd dist
-          tar -czvf GoSTL_darwin_arm64.tar.gz GoSTL
+          tar -czvf GoSTL_darwin_arm64.tar.gz GoSTL GoSTL_GoSTL.bundle
 
       - name: Generate checksums
         run: |
@@ -100,6 +101,8 @@ jobs:
 
             def install
               bin.install "GoSTL" => "gostl"
+              # Install resource bundle alongside the binary (required for Metal shaders)
+              bin.install "GoSTL_GoSTL.bundle"
             end
 
             test do

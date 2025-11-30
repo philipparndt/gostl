@@ -25,22 +25,11 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Build for arm64
+      - name: Build
         run: swift build -c release --arch arm64
-
-      - name: Build for x86_64
-        run: swift build -c release --arch x86_64
-
-      - name: Create Universal Binary
-        run: |
-          mkdir -p dist
-          lipo -create \
-            .build/arm64-apple-macosx/release/GoSTL \
-            .build/x86_64-apple-macosx/release/GoSTL \
-            -output dist/GoSTL
-          chmod +x dist/GoSTL
 
       - name: Verify binary
         run: |
-          file dist/GoSTL
-          dist/GoSTL --help || true
+          file .build/arm64-apple-macosx/release/GoSTL
+          ls -la .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/
+          .build/arm64-apple-macosx/release/GoSTL --help || true
