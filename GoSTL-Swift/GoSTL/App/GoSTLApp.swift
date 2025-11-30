@@ -4,6 +4,7 @@ import AppKit
 @main
 struct GoSTLApp: App {
     @State private var recentDocuments = RecentDocuments.shared
+    @State private var openWindows: [UUID: URL] = [:]
 
     init() {
         print("DEBUG: GoSTLApp initializing...")
@@ -58,6 +59,7 @@ struct GoSTLApp: App {
             ContentView()
                 .onAppear {
                     print("DEBUG: ContentView appeared")
+                    configureWindowForTabbing()
                 }
         }
         .defaultSize(width: 1400, height: 900)
@@ -87,6 +89,116 @@ struct GoSTLApp: App {
                 }
                 .disabled(recentDocuments.recentURLs.isEmpty)
             }
+
+            // View menu
+            CommandMenu("View") {
+                Button("Toggle Wireframe") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ToggleWireframe"), object: nil)
+                }
+                .keyboardShortcut("w", modifiers: .command)
+
+                Divider()
+
+                Menu("Grid") {
+                    Button("Off") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetGridMode"), object: GridMode.off)
+                    }
+                    Button("Bottom") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetGridMode"), object: GridMode.bottom)
+                    }
+                    Button("All Sides") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetGridMode"), object: GridMode.allSides)
+                    }
+                    Button("1mm Grid") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetGridMode"), object: GridMode.oneMM)
+                    }
+                }
+
+                Button("Cycle Grid Mode") {
+                    NotificationCenter.default.post(name: NSNotification.Name("CycleGridMode"), object: nil)
+                }
+                .keyboardShortcut("g", modifiers: .command)
+
+                Divider()
+
+                Button("Toggle Slicing") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ToggleSlicing"), object: nil)
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+
+                Divider()
+
+                Menu("Camera") {
+                    Button("Front") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.front)
+                    }
+                    .keyboardShortcut("1", modifiers: .command)
+
+                    Button("Back") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.back)
+                    }
+                    .keyboardShortcut("2", modifiers: .command)
+
+                    Button("Left") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.left)
+                    }
+                    .keyboardShortcut("3", modifiers: .command)
+
+                    Button("Right") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.right)
+                    }
+                    .keyboardShortcut("4", modifiers: .command)
+
+                    Button("Top") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.top)
+                    }
+                    .keyboardShortcut("5", modifiers: .command)
+
+                    Button("Bottom") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.bottom)
+                    }
+                    .keyboardShortcut("6", modifiers: .command)
+
+                    Divider()
+
+                    Button("Reset View") {
+                        NotificationCenter.default.post(name: NSNotification.Name("ResetCamera"), object: nil)
+                    }
+                    .keyboardShortcut("r", modifiers: .command)
+                }
+            }
+
+            // Tools menu
+            CommandMenu("Tools") {
+                Button("Measure Distance") {
+                    NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.distance)
+                }
+                .keyboardShortcut("d", modifiers: .command)
+
+                Button("Measure Angle") {
+                    NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.angle)
+                }
+                .keyboardShortcut("a", modifiers: .command)
+
+                Button("Measure Radius") {
+                    NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.radius)
+                }
+                // Using 'c' for radius (circle)
+
+                Divider()
+
+                Button("Clear All Measurements") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ClearMeasurements"), object: nil)
+                }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Change Material") {
+                    NotificationCenter.default.post(name: NSNotification.Name("CycleMaterial"), object: nil)
+                }
+                .keyboardShortcut("m", modifiers: .command)
+            }
         }
     }
 
@@ -109,11 +221,8 @@ struct GoSTLApp: App {
             // Add to recent documents
             recentDocuments.addDocument(url)
 
-            // Post notification to load file
-            NotificationCenter.default.post(
-                name: NSNotification.Name("LoadSTLFile"),
-                object: url
-            )
+            // Create new window for this file
+            openNewWindow(for: url)
         }
     }
 
@@ -125,10 +234,61 @@ struct GoSTLApp: App {
             return
         }
 
-        // Post notification to load file
-        NotificationCenter.default.post(
-            name: NSNotification.Name("LoadSTLFile"),
-            object: url
-        )
+        // Create new window for this file
+        openNewWindow(for: url)
+    }
+
+    private func openNewWindow(for url: URL) {
+        DispatchQueue.main.async {
+            // Check if main window exists and has only the test cube (empty state)
+            if let mainWindow = NSApp.mainWindow,
+               mainWindow.tabbingIdentifier == "GoSTLWindow",
+               self.isEmptyWindow(mainWindow) {
+                // Load in existing empty window instead of creating new one
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("LoadSTLFile"),
+                    object: url
+                )
+                return
+            }
+
+            // Create a new NSWindow with ContentView
+            let contentView = ContentView(fileURL: url)
+            let hostingController = NSHostingController(rootView: contentView)
+
+            let window = NSWindow(contentViewController: hostingController)
+            window.title = url.lastPathComponent
+            window.representedURL = url
+            window.setContentSize(NSSize(width: 1400, height: 900))
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+
+            // Configure for tabbing
+            window.tabbingMode = .preferred
+            window.tabbingIdentifier = "GoSTLWindow"
+
+            // Show the window
+            window.makeKeyAndOrderFront(nil)
+
+            // Add to existing tab group if tab bar is visible
+            if let mainWindow = NSApp.mainWindow,
+               mainWindow.tabbingIdentifier == "GoSTLWindow" {
+                mainWindow.addTabbedWindow(window, ordered: .above)
+            }
+        }
+    }
+
+    private func isEmptyWindow(_ window: NSWindow) -> Bool {
+        // A window is considered empty if it doesn't represent a file
+        return window.representedURL == nil
+    }
+
+    private func configureWindowForTabbing() {
+        DispatchQueue.main.async {
+            // Configure all windows to support tabbing
+            for window in NSApp.windows {
+                window.tabbingMode = .preferred
+                window.tabbingIdentifier = "GoSTLWindow"
+            }
+        }
     }
 }

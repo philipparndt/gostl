@@ -199,24 +199,20 @@ struct ViewSectionContent: View {
             }
 
             // Grid mode
-            HStack(spacing: 4) {
-                Button(action: {
-                    appState.cycleGridMode()
-                    if let device = MTLCreateSystemDefaultDevice() {
-                        try? appState.updateGrid(device: device)
-                    }
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: appState.gridMode != .off ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 10))
-                            .foregroundColor(appState.gridMode != .off ? .blue : .white.opacity(0.5))
-                        Text(appState.gridMode.description)
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.8))
-                    }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text("Grid:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.8))
+                    KeyHint(key: "g")
                 }
-                .buttonStyle(.plain)
-                KeyHint(key: "g")
+
+                HStack(spacing: 3) {
+                    GridModeRadio(mode: .off, label: "Off", currentMode: appState.gridMode, appState: appState)
+                    GridModeRadio(mode: .bottom, label: "Bottom", currentMode: appState.gridMode, appState: appState)
+                    GridModeRadio(mode: .allSides, label: "All", currentMode: appState.gridMode, appState: appState)
+                    GridModeRadio(mode: .oneMM, label: "1mm", currentMode: appState.gridMode, appState: appState)
+                }
             }
 
             // Slicing toggle
@@ -407,6 +403,38 @@ struct ToolsSectionContent: View {
 }
 
 // MARK: - Helper Views
+
+struct GridModeRadio: View {
+    let mode: GridMode
+    let label: String
+    let currentMode: GridMode
+    let appState: AppState
+
+    var body: some View {
+        Button(action: {
+            appState.gridMode = mode
+            if let device = MTLCreateSystemDefaultDevice() {
+                try? appState.updateGrid(device: device)
+            }
+        }) {
+            HStack(spacing: 2) {
+                Image(systemName: currentMode == mode ? "circle.fill" : "circle")
+                    .font(.system(size: 8))
+                    .foregroundColor(currentMode == mode ? .blue : .white.opacity(0.5))
+                Text(label)
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(currentMode == mode ? Color.blue.opacity(0.2) : Color.white.opacity(0.1))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 struct CameraPresetButton: View {
     let label: String

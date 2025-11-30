@@ -85,7 +85,103 @@ final class AppState: @unchecked Sendable {
     var loadError: Error?
     var loadErrorID: UUID?
 
-    init() {}
+    init() {
+        setupNotifications()
+    }
+
+    /// Set up notification observers for menu commands
+    private func setupNotifications() {
+        // View menu notifications
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ToggleWireframe"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showWireframe.toggle()
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("SetGridMode"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let mode = notification.object as? GridMode, let self = self {
+                self.gridMode = mode
+                if let device = MTLCreateSystemDefaultDevice() {
+                    try? self.updateGrid(device: device)
+                }
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CycleGridMode"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if let self = self {
+                self.cycleGridMode()
+                if let device = MTLCreateSystemDefaultDevice() {
+                    try? self.updateGrid(device: device)
+                }
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ToggleSlicing"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.slicingState.toggleVisibility()
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("SetCameraPreset"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let preset = notification.object as? CameraPreset {
+                self?.camera.setPreset(preset)
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ResetCamera"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.camera.reset()
+        }
+
+        // Tools menu notifications
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("StartMeasurement"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let type = notification.object as? MeasurementType {
+                self?.measurementSystem.startMeasurement(type: type)
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ClearMeasurements"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.measurementSystem.clearAll()
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CycleMaterial"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if let self = self, var modelInfo = self.modelInfo {
+                modelInfo.cycleMaterial()
+                self.modelInfo = modelInfo
+            }
+        }
+    }
 
     /// Cycle to the next grid mode
     func cycleGridMode() {

@@ -1,13 +1,18 @@
 import SwiftUI
 import Metal
+import AppKit
 
 struct ContentView: View {
     @State private var appState = AppState()
     @State private var errorAlert: ErrorAlert?
     @State private var showErrorOverlay = false
+    @State private var windowTitle: String = "GoSTL"
 
-    init() {
-        print("DEBUG: ContentView initializing...")
+    let fileURL: URL?
+
+    init(fileURL: URL? = nil) {
+        self.fileURL = fileURL
+        print("DEBUG: ContentView initializing with file: \(fileURL?.lastPathComponent ?? "none")...")
     }
 
     var body: some View {
@@ -57,8 +62,13 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 600)
+        .navigationTitle(windowTitle)
         .onAppear {
-            loadTestModel()
+            if let fileURL = fileURL {
+                loadFileOnStartup(fileURL)
+            } else {
+                loadTestModel()
+            }
             setupNotifications()
         }
         .onChange(of: appState.slicingState.bounds) { _, _ in
@@ -136,6 +146,37 @@ struct ContentView: View {
         }
     }
 
+    private func loadFileOnStartup(_ url: URL) {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            print("ERROR: Metal device not available")
+            return
+        }
+
+        Task { @MainActor in
+            do {
+                // Initialize rendering components
+                try appState.initializeGrid(device: device)
+                appState.initializeMeasurements(device: device)
+                appState.initializeOrientationCube(device: device)
+
+                // Load the file
+                try appState.loadFile(url, device: device)
+                windowTitle = url.lastPathComponent
+
+                // Add to recent documents
+                RecentDocuments.shared.addDocument(url)
+
+                // Set up file watching
+                try? appState.setupFileWatcher()
+            } catch {
+                print("ERROR: Failed to load file on startup: \(error)")
+                handleLoadError(error, isAutoReload: false)
+                // Fall back to test cube
+                loadTestModel()
+            }
+        }
+    }
+
     private func setupNotifications() {
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("LoadSTLFile"),
@@ -150,6 +191,13 @@ struct ContentView: View {
             Task { @MainActor in
                 do {
                     try appState.loadFile(url, device: device)
+                    self.windowTitle = url.lastPathComponent
+
+                    // Update window's representedURL
+                    if let window = NSApp.keyWindow {
+                        window.representedURL = url
+                    }
+
                     // Add to recent documents after successful load
                     RecentDocuments.shared.addDocument(url)
 

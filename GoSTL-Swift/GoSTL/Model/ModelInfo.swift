@@ -47,6 +47,14 @@ struct ModelInfo {
         material.weight(volume: volume)
     }
 
+    /// Cycle to the next material type
+    mutating func cycleMaterial() {
+        let allMaterials = Material.allCases
+        let currentIndex = allMaterials.firstIndex(of: material) ?? 0
+        let nextIndex = (currentIndex + 1) % allMaterials.count
+        material = allMaterials[nextIndex]
+    }
+
     /// Create model info from an STL model
     init(fileName: String, model: STLModel) {
         self.fileName = fileName
