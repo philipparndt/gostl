@@ -299,6 +299,8 @@ final class AppState: @unchecked Sendable {
         self.wireframeData = nil
         self.slicePlaneData = nil
         self.cutEdgeData = nil
+        self.gridData = nil
+        self.gridTextData = nil
         self.measurementSystem.clearAll()
     }
 
