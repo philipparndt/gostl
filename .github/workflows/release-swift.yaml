@@ -44,13 +44,22 @@ jobs:
             "${{ steps.version.outputs.date }}"
 
       - name: Build
-        run: swift build -c release --arch arm64
+        run: |
+          xcodebuild -workspace .swiftpm/xcode/package.xcworkspace \
+            -scheme GoSTL \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            build
 
       - name: Create release archive
         run: |
           mkdir -p dist
-          cp .build/arm64-apple-macosx/release/GoSTL dist/
-          cp -r .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle dist/
+          # Find the build products directory
+          BUILD_DIR=$(xcodebuild -workspace .swiftpm/xcode/package.xcworkspace -scheme GoSTL -showBuildSettings | grep -m 1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')
+          cp "$BUILD_DIR/GoSTL" dist/
+          cp -r "$BUILD_DIR/GoSTL_GoSTL.bundle" dist/
           chmod +x dist/GoSTL
           cd dist
           tar -czvf GoSTL_darwin_arm64.tar.gz GoSTL GoSTL_GoSTL.bundle

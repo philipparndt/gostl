@@ -26,10 +26,18 @@ jobs:
           xcode-version: latest-stable
 
       - name: Build
-        run: swift build -c release --arch arm64
+        run: |
+          xcodebuild -workspace .swiftpm/xcode/package.xcworkspace \
+            -scheme GoSTL \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            build
 
       - name: Verify binary
         run: |
-          file .build/arm64-apple-macosx/release/GoSTL
-          ls -la .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/
-          .build/arm64-apple-macosx/release/GoSTL --help || true
+          BUILD_DIR=$(xcodebuild -workspace .swiftpm/xcode/package.xcworkspace -scheme GoSTL -showBuildSettings | grep -m 1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')
+          file "$BUILD_DIR/GoSTL"
+          find "$BUILD_DIR/GoSTL_GoSTL.bundle" -type f
+          "$BUILD_DIR/GoSTL" --help || true
