@@ -27,17 +27,19 @@ jobs:
 
       - name: Build
         run: |
-          xcodebuild -workspace .swiftpm/xcode/package.xcworkspace \
-            -scheme GoSTL \
-            -configuration Release \
-            -destination 'platform=macOS' \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=NO \
-            build
+          # Use swift build which handles SPM packages directly
+          swift build -c release --arch arm64
+
+          # Compile Metal shaders into metallib
+          xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
+          xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
+
+          # Create proper bundle structure
+          mkdir -p .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources
+          cp .build/default.metallib .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources/
 
       - name: Verify binary
         run: |
-          BUILD_DIR=$(xcodebuild -workspace .swiftpm/xcode/package.xcworkspace -scheme GoSTL -showBuildSettings | grep -m 1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')
-          file "$BUILD_DIR/GoSTL"
-          find "$BUILD_DIR/GoSTL_GoSTL.bundle" -type f
-          "$BUILD_DIR/GoSTL" --help || true
+          file .build/arm64-apple-macosx/release/GoSTL
+          find .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle -type f
+          .build/arm64-apple-macosx/release/GoSTL --help || true

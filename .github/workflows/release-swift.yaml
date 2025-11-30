@@ -45,21 +45,40 @@ jobs:
 
       - name: Build
         run: |
-          xcodebuild -workspace .swiftpm/xcode/package.xcworkspace \
-            -scheme GoSTL \
-            -configuration Release \
-            -destination 'platform=macOS' \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=NO \
-            build
+          # Use swift build which handles SPM packages directly
+          swift build -c release --arch arm64
+
+          # Compile Metal shaders into metallib
+          xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
+          xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
+
+          # Create proper bundle structure
+          mkdir -p .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources
+          cp .build/default.metallib .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources/
+
+          # Create Info.plist for the bundle
+          cat > .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleIdentifier</key>
+            <string>GoSTL.GoSTL.resources</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>GoSTL_GoSTL</string>
+            <key>CFBundlePackageType</key>
+            <string>BNDL</string>
+          </dict>
+          </plist>
+          EOF
 
       - name: Create release archive
         run: |
           mkdir -p dist
-          # Find the build products directory
-          BUILD_DIR=$(xcodebuild -workspace .swiftpm/xcode/package.xcworkspace -scheme GoSTL -showBuildSettings | grep -m 1 'BUILT_PRODUCTS_DIR' | awk '{print $3}')
-          cp "$BUILD_DIR/GoSTL" dist/
-          cp -r "$BUILD_DIR/GoSTL_GoSTL.bundle" dist/
+          cp .build/arm64-apple-macosx/release/GoSTL dist/
+          cp -r .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle dist/
           chmod +x dist/GoSTL
           cd dist
           tar -czvf GoSTL_darwin_arm64.tar.gz GoSTL GoSTL_GoSTL.bundle
