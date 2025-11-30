@@ -448,11 +448,12 @@ struct CameraPresetButton: View {
                 Text(label)
                     .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.8))
+                Spacer()
                 KeyHint(key: key)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
-            .padding(.horizontal, 2)
+            .padding(.horizontal, 4)
             .background(
                 RoundedRectangle(cornerRadius: 3)
                     .fill(Color.white.opacity(0.1))
