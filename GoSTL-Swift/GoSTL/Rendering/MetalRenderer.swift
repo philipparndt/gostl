@@ -14,6 +14,7 @@ final class MetalRenderer {
     let texturedPipelineState: MTLRenderPipelineState
     let depthStencilState: MTLDepthStencilState
     let transparentDepthStencilState: MTLDepthStencilState
+    let orientationCubeDepthStencilState: MTLDepthStencilState
     let samplerState: MTLSamplerState
 
     init(device: MTLDevice) throws {
@@ -37,6 +38,7 @@ final class MetalRenderer {
         // Create depth stencil states
         self.depthStencilState = Self.createDepthStencilState(device: device)
         self.transparentDepthStencilState = Self.createTransparentDepthStencilState(device: device)
+        self.orientationCubeDepthStencilState = Self.createOrientationCubeDepthStencilState(device: device)
 
         // Create sampler state for texture sampling
         self.samplerState = Self.createSamplerState(device: device)
@@ -243,6 +245,13 @@ final class MetalRenderer {
         let depthDescriptor = MTLDepthStencilDescriptor()
         depthDescriptor.depthCompareFunction = .less
         depthDescriptor.isDepthWriteEnabled = false // Don't write depth for transparent objects
+        return device.makeDepthStencilState(descriptor: depthDescriptor)!
+    }
+
+    private static func createOrientationCubeDepthStencilState(device: MTLDevice) -> MTLDepthStencilState {
+        let depthDescriptor = MTLDepthStencilDescriptor()
+        depthDescriptor.depthCompareFunction = .lessEqual // Use normal depth test
+        depthDescriptor.isDepthWriteEnabled = true // Write depth so cube faces occlude each other
         return device.makeDepthStencilState(descriptor: depthDescriptor)!
     }
 
@@ -554,12 +563,12 @@ final class MetalRenderer {
             width: cubeSize,
             height: cubeSize,
             znear: 0.0,
-            zfar: 1.0
+            zfar: 0.01  // Very shallow depth range ensures cube is always in front
         )
 
         encoder.setViewport(viewport)
         encoder.setRenderPipelineState(meshPipelineState)
-        encoder.setDepthStencilState(depthStencilState)
+        encoder.setDepthStencilState(orientationCubeDepthStencilState) // Always render on top
 
         // Create a camera that only rotates (doesn't translate) to show orientation
         let cubeCamera = Camera()
