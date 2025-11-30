@@ -119,6 +119,7 @@ jobs:
           class Gostl < Formula
             desc "3D STL viewer and OpenSCAD renderer"
             homepage "https://github.com/philipparndt/gostl"
+            version "VERSION_PLACEHOLDER"
             license "Apache-2.0"
 
             depends_on arch: :arm64
