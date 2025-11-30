@@ -61,6 +61,11 @@ struct ContentView: View {
                         .transition(.opacity)
                 }
 
+                // Empty file indicator (shown when OpenSCAD file has no geometry)
+                if appState.isEmptyFile {
+                    EmptyFileOverlay(fileName: appState.modelInfo?.fileName ?? "")
+                }
+
                 // Error overlay (shown for auto-reload errors)
                 if showErrorOverlay, let error = appState.loadError as? OpenSCADError {
                     ErrorOverlay(error: error) {
@@ -252,6 +257,9 @@ struct ContentView: View {
                         title: "OpenSCAD Render Failed",
                         message: message
                     )
+                case .emptyFile:
+                    // Empty files are handled gracefully - no error dialog needed
+                    break
                 }
             }
         } else {
@@ -385,6 +393,32 @@ struct LoadingOverlay: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.black.opacity(0.7))
                 .shadow(color: .black.opacity(0.5), radius: 20, x: 0, y: 10)
+        )
+    }
+}
+
+/// Overlay shown when an OpenSCAD file produces no geometry
+struct EmptyFileOverlay: View {
+    let fileName: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "cube.transparent")
+                .font(.system(size: 40))
+                .foregroundColor(.white.opacity(0.6))
+
+            Text("Empty Model")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white)
+
+            Text("The file produces no geometry")
+                .font(.system(size: 13))
+                .foregroundColor(.white.opacity(0.7))
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.black.opacity(0.6))
         )
     }
 }

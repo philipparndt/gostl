@@ -85,6 +85,9 @@ final class AppState: @unchecked Sendable {
     var loadError: Error?
     var loadErrorID: UUID?
 
+    /// Whether the current file is empty (produces no geometry)
+    var isEmptyFile: Bool = false
+
     init() {
         setupNotifications()
     }
@@ -289,6 +292,16 @@ final class AppState: @unchecked Sendable {
         }
     }
 
+    /// Clear the current model (for empty files)
+    func clearModel() {
+        self.model = nil
+        self.meshData = nil
+        self.wireframeData = nil
+        self.slicePlaneData = nil
+        self.cutEdgeData = nil
+        self.measurementSystem.clearAll()
+    }
+
     /// Load an STL model and create mesh data for rendering
     func loadModel(_ model: STLModel, device: MTLDevice) throws {
         self.model = model
@@ -343,21 +356,35 @@ final class AppState: @unchecked Sendable {
             let tempURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("gostl_temp_\(Int(Date().timeIntervalSince1970)).stl")
 
-            // Render OpenSCAD to STL
-            try renderer.renderToSTL(scadFile: url, outputFile: tempURL)
-            print("Rendered to: \(tempURL.path)")
+            do {
+                // Render OpenSCAD to STL
+                try renderer.renderToSTL(scadFile: url, outputFile: tempURL)
+                print("Rendered to: \(tempURL.path)")
 
-            // Parse the generated STL
-            let model = try STLParser.parse(url: tempURL)
-            try loadModel(model, device: device)
+                // Parse the generated STL
+                let model = try STLParser.parse(url: tempURL)
+                try loadModel(model, device: device)
 
-            // Update file watching state
-            self.sourceFileURL = url
-            self.tempSTLFileURL = tempURL
-            self.isOpenSCAD = true
-            self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
+                // Update file watching state
+                self.sourceFileURL = url
+                self.tempSTLFileURL = tempURL
+                self.isOpenSCAD = true
+                self.isEmptyFile = false
+                self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
-            print("Successfully loaded: \(model.triangleCount) triangles")
+                print("Successfully loaded: \(model.triangleCount) triangles")
+            } catch OpenSCADError.emptyFile {
+                // Empty file - show blank view with info
+                print("OpenSCAD file is empty: \(url.lastPathComponent)")
+                clearModel()
+                self.sourceFileURL = url
+                self.tempSTLFileURL = nil
+                self.isOpenSCAD = true
+                self.isEmptyFile = true
+                self.modelInfo = ModelInfo(fileName: url.lastPathComponent, triangleCount: 0, volume: 0, boundingBox: BoundingBox())
+                self.isLoading = false
+                return
+            }
 
         } else if fileExtension == "stl" {
             // Regular STL file
@@ -466,6 +493,7 @@ final class AppState: @unchecked Sendable {
                         // Load the new model
                         try self.loadModel(model, device: device)
                         self.modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent, model: model)
+                        self.isEmptyFile = false
 
                         print("Model reloaded successfully!")
                         self.isLoading = false
@@ -479,6 +507,17 @@ final class AppState: @unchecked Sendable {
                         self.loadError = error
                         self.loadErrorID = UUID()
                     }
+                }
+            } catch OpenSCADError.emptyFile {
+                await MainActor.run {
+                    print("OpenSCAD file is empty: \(sourceURL.lastPathComponent)")
+                    self.clearModel()
+                    self.isEmptyFile = true
+                    self.modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent)
+                    self.isLoading = false
+                    self.needsReload = false
+                    self.loadError = nil
+                    self.loadErrorID = nil
                 }
             } catch {
                 await MainActor.run {

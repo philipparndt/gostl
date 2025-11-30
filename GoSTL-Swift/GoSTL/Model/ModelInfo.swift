@@ -64,6 +64,15 @@ struct ModelInfo {
         self.surfaceArea = model.surfaceArea()
     }
 
+    /// Create model info for an empty file (no geometry)
+    init(fileName: String, triangleCount: Int = 0, volume: Double = 0, boundingBox: BoundingBox = BoundingBox()) {
+        self.fileName = fileName
+        self.triangleCount = triangleCount
+        self.boundingBox = boundingBox
+        self.volume = volume
+        self.surfaceArea = 0
+    }
+
     /// Format a dimension value for display (with appropriate precision)
     static func formatDimension(_ value: Double) -> String {
         if value < 1.0 {

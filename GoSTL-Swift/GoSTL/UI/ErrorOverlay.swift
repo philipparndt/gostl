@@ -82,6 +82,14 @@ struct ErrorOverlay: View {
                                 .font(.system(.body, design: .monospaced))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                        case .emptyFile:
+                            Text("Empty File")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+
+                            Text("The OpenSCAD file produces no geometry.")
+                                .font(.body)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -85,11 +85,19 @@ class OpenSCADRenderer {
             let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
             let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
 
+            let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+            let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+
+            // Check if the file is empty (produces no geometry)
+            if stderr.contains("Current top level object is empty") {
+                throw OpenSCADError.emptyFile
+            }
+
             var errorMsg = "Failed to render \(scadFile.lastPathComponent)\n"
-            if let stderr = String(data: stderrData, encoding: .utf8), !stderr.isEmpty {
+            if !stderr.isEmpty {
                 errorMsg += "stderr: \(stderr)\n"
             }
-            if let stdout = String(data: stdoutData, encoding: .utf8), !stdout.isEmpty {
+            if !stdout.isEmpty {
                 errorMsg += "stdout: \(stdout)\n"
             }
 
@@ -203,6 +211,7 @@ class OpenSCADRenderer {
 enum OpenSCADError: LocalizedError {
     case openSCADNotFound
     case renderFailed(String)
+    case emptyFile
 
     var errorDescription: String? {
         switch self {
@@ -210,6 +219,8 @@ enum OpenSCADError: LocalizedError {
             return "OpenSCAD not found in PATH. Please install OpenSCAD from https://openscad.org/"
         case .renderFailed(let message):
             return message
+        case .emptyFile:
+            return "The OpenSCAD file produced no geometry"
         }
     }
 }
