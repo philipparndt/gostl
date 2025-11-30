@@ -70,6 +70,29 @@ enum CubeFace: Int, CaseIterable {
     }
 }
 
+/// Axis enumeration for the orientation cube
+enum Axis: Int, CaseIterable {
+    case x = 0
+    case y = 1
+    case z = 2
+
+    var label: String {
+        switch self {
+        case .x: return "X"
+        case .y: return "Y"
+        case .z: return "Z"
+        }
+    }
+
+    var color: SIMD4<Float> {
+        switch self {
+        case .x: return SIMD4(1.0, 0.0, 0.0, 1.0)  // Red
+        case .y: return SIMD4(0.0, 1.0, 0.0, 1.0)  // Green
+        case .z: return SIMD4(0.0, 0.5, 1.0, 1.0)  // Blue
+        }
+    }
+}
+
 /// GPU data for rendering the orientation cube
 final class OrientationCubeData {
     let device: MTLDevice
@@ -79,6 +102,21 @@ final class OrientationCubeData {
     // Text rendering data
     let textVertexBuffer: MTLBuffer?
     let textTextures: [(texture: MTLTexture, vertexOffset: Int)]
+
+    // Axis lines rendering data (using cylinders for thickness)
+    let axisVertexBuffer: MTLBuffer?
+    let axisIndexBuffer: MTLBuffer?
+    let axisVertexCount: Int
+    let axisIndexCount: Int
+
+    // Axis labels rendering data (camera-facing billboards)
+    struct AxisLabelInfo {
+        let axis: Axis
+        let position: SIMD3<Float>
+        let texture: MTLTexture
+        let size: Float
+    }
+    let axisLabels: [AxisLabelInfo]
 
     // Face information for hit testing
     struct FaceInfo {
@@ -118,6 +156,16 @@ final class OrientationCubeData {
         let textData = try Self.generateOrientedTextQuads(device: device, size: size)
         self.textVertexBuffer = textData.vertexBuffer
         self.textTextures = textData.textureData
+
+        // Generate axis lines using cylinders for thickness
+        let axisData = Self.generateAxisCylinders(device: device, size: size)
+        self.axisVertexBuffer = axisData.vertexBuffer
+        self.axisIndexBuffer = axisData.indexBuffer
+        self.axisVertexCount = axisData.vertexCount
+        self.axisIndexCount = axisData.indexCount
+
+        // Generate axis label info (textures and positions)
+        self.axisLabels = try Self.generateAxisLabelInfo(device: device, size: size)
     }
 
     /// Generate cube vertices with per-face colors
@@ -326,6 +374,220 @@ final class OrientationCubeData {
         let centerOffset = (CGFloat(textureSize) - bounds.height) / 2.0 - bounds.origin.y
         let additionalUpwardOffset: CGFloat = 10  // Move up by additional pixels (reduced from 20)
         let yOffset = centerOffset + additionalUpwardOffset
+        context.textPosition = CGPoint(x: xOffset, y: yOffset)
+        CTLineDraw(line, context)
+
+        guard let data = context.data else {
+            return nil
+        }
+
+        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm,
+            width: textureSize,
+            height: textureSize,
+            mipmapped: false
+        )
+        textureDescriptor.usage = [.shaderRead]
+
+        guard let texture = device.makeTexture(descriptor: textureDescriptor) else {
+            return nil
+        }
+
+        texture.replace(
+            region: MTLRegionMake2D(0, 0, textureSize, textureSize),
+            mipmapLevel: 0,
+            withBytes: data,
+            bytesPerRow: textureSize * 4
+        )
+
+        return texture
+    }
+
+    /// Generate axis lines as cylinders for thickness (non-instanced)
+    private static func generateAxisCylinders(device: MTLDevice, size: Float) -> (
+        vertexBuffer: MTLBuffer?,
+        indexBuffer: MTLBuffer?,
+        vertexCount: Int,
+        indexCount: Int
+    ) {
+        let s = size * 0.5  // Half size
+        let thickness: Float = 0.02  // 50% reduction
+        let segments = 8
+
+        // Define axis endpoints - X and Y at front, Z going back
+        let origin = SIMD3<Float>(-s, -s, s)  // Front-left-bottom corner
+        struct AxisLine {
+            let start: SIMD3<Float>
+            let end: SIMD3<Float>
+            let color: SIMD4<Float>
+        }
+
+        let axisLines = [
+            // X axis: horizontal line at bottom of front face (Red)
+            AxisLine(start: origin, end: SIMD3(s, -s, s), color: Axis.x.color),
+            // Y axis: vertical line at front-left corner (Green)
+            AxisLine(start: origin, end: SIMD3(-s, s, s), color: Axis.y.color),
+            // Z axis: line from front to back at bottom-left (Blue)
+            AxisLine(start: origin, end: SIMD3(-s, -s, -s), color: Axis.z.color)
+        ]
+
+        var allVertices: [VertexIn] = []
+        var allIndices: [UInt16] = []
+
+        // Generate cylinder geometry for each axis
+        for line in axisLines {
+            let direction = line.end - line.start
+            let length = simd_length(direction)
+            let axis = direction / length
+
+            // Create rotation to align Y-axis with direction
+            let arbitrary = abs(axis.y) < 0.9 ? SIMD3<Float>(0, 1, 0) : SIMD3<Float>(1, 0, 0)
+            let right = simd_normalize(simd_cross(arbitrary, axis))
+            let forward = simd_cross(axis, right)
+
+            let baseIndex = UInt16(allVertices.count)
+
+            // Generate cylinder vertices
+            for i in 0...segments {
+                let theta = Float(i) * 2.0 * .pi / Float(segments)
+                let x = thickness * cos(theta)
+                let z = thickness * sin(theta)
+
+                // Local normal for cylinder
+                let localNormal = simd_normalize(SIMD3<Float>(x, 0, z))
+                // Transform normal to world space
+                let worldNormal = simd_normalize(right * localNormal.x + forward * localNormal.z)
+
+                // Transform vertex position to world space
+                let localBottom = SIMD3<Float>(x, 0, z)
+                let localTop = SIMD3<Float>(x, length, z)
+                let worldBottom = line.start + right * localBottom.x + axis * localBottom.y + forward * localBottom.z
+                let worldTop = line.start + right * localTop.x + axis * localTop.y + forward * localTop.z
+
+                // Bottom vertex
+                allVertices.append(VertexIn(position: worldBottom, normal: worldNormal, color: line.color))
+                // Top vertex
+                allVertices.append(VertexIn(position: worldTop, normal: worldNormal, color: line.color))
+            }
+
+            // Generate indices for this cylinder
+            for i in 0..<segments {
+                let base = baseIndex + UInt16(i * 2)
+                allIndices.append(base)
+                allIndices.append(base + 2)
+                allIndices.append(base + 1)
+                allIndices.append(base + 1)
+                allIndices.append(base + 2)
+                allIndices.append(base + 3)
+            }
+        }
+
+        // Create vertex buffer
+        guard let vertexBuffer = device.makeBuffer(
+            bytes: allVertices,
+            length: allVertices.count * MemoryLayout<VertexIn>.stride,
+            options: []
+        ) else {
+            return (nil, nil, 0, 0)
+        }
+
+        // Create index buffer
+        guard let indexBuffer = device.makeBuffer(
+            bytes: allIndices,
+            length: allIndices.count * MemoryLayout<UInt16>.stride,
+            options: []
+        ) else {
+            return (nil, nil, 0, 0)
+        }
+
+        return (vertexBuffer, indexBuffer, allVertices.count, allIndices.count)
+    }
+
+    /// Generate axis label information (textures and positions)
+    private static func generateAxisLabelInfo(device: MTLDevice, size: Float) throws -> [AxisLabelInfo] {
+        let s = size * 0.5
+        let labelSize = size * 0.2
+        let labelOffset = size * 0.18  // Increased distance from axis end to avoid intersection
+
+        var labels: [AxisLabelInfo] = []
+
+        for axis in Axis.allCases {
+            // Create text texture for this axis
+            guard let texture = Self.createAxisLabelTexture(device: device, text: axis.label, color: axis.color) else {
+                continue
+            }
+
+            // Position label at end of axis line (axes meet at front-left-bottom corner)
+            let position: SIMD3<Float> = {
+                switch axis {
+                case .x:
+                    // At right end of X axis (front-bottom edge)
+                    return SIMD3(s + labelOffset, -s, s)
+                case .y:
+                    // At top end of Y axis (front-left edge)
+                    return SIMD3(-s, s + labelOffset, s)
+                case .z:
+                    // At back end of Z axis (back-left-bottom corner)
+                    return SIMD3(-s, -s, -s - labelOffset)
+                }
+            }()
+
+            labels.append(AxisLabelInfo(
+                axis: axis,
+                position: position,
+                texture: texture,
+                size: labelSize
+            ))
+        }
+
+        return labels
+    }
+
+    /// Create text texture for an axis label
+    private static func createAxisLabelTexture(device: MTLDevice, text: String, color: SIMD4<Float>) -> MTLTexture? {
+        let textureSize = 128
+        let fontSize: CGFloat = 90  // Bigger font
+
+        let nsColor = NSColor(
+            red: CGFloat(color.x),
+            green: CGFloat(color.y),
+            blue: CGFloat(color.z),
+            alpha: CGFloat(color.w)
+        )
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
+            .foregroundColor: nsColor
+        ]
+
+        let attributedString = NSAttributedString(string: text, attributes: attributes)
+        let textSize = attributedString.size()
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: textureSize,
+            height: textureSize,
+            bitsPerComponent: 8,
+            bytesPerRow: textureSize * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+
+        context.clear(CGRect(x: 0, y: 0, width: textureSize, height: textureSize))
+        context.textMatrix = .identity
+        context.translateBy(x: 0, y: CGFloat(textureSize))
+        context.scaleBy(x: 1.0, y: -1.0)
+
+        let line = CTLineCreateWithAttributedString(attributedString)
+        let bounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
+
+        let xOffset = (CGFloat(textureSize) - textSize.width) / 2.0
+        let centerOffset = (CGFloat(textureSize) - bounds.height) / 2.0 - bounds.origin.y
+        let yOffset = centerOffset
+
         context.textPosition = CGPoint(x: xOffset, y: yOffset)
         CTLineDraw(line, context)
 

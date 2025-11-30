@@ -26,3 +26,4 @@ struct VertexIn {
         self.texCoord = texCoord
     }
 }
+

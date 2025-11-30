@@ -600,6 +600,42 @@ final class MetalRenderer {
             }
         }
 
+        // Render axis lines (thick cylinders)
+        if let axisVertexBuffer = cubeData.axisVertexBuffer,
+           let axisIndexBuffer = cubeData.axisIndexBuffer,
+           cubeData.axisIndexCount > 0 {
+            encoder.setRenderPipelineState(meshPipelineState)
+            encoder.setVertexBuffer(axisVertexBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: cubeData.axisIndexCount,
+                indexType: .uint16,
+                indexBuffer: axisIndexBuffer,
+                indexBufferOffset: 0
+            )
+        }
+
+        // Render axis labels as camera-facing billboards
+        if !cubeData.axisLabels.isEmpty {
+            encoder.setRenderPipelineState(texturedPipelineState)
+            encoder.setFragmentSamplerState(samplerState, index: 0)
+
+            // Generate billboard quads for each label based on current camera orientation
+            for label in cubeData.axisLabels {
+                let billboardVertices = createBillboardQuad(
+                    position: label.position,
+                    size: label.size,
+                    camera: cubeCamera
+                )
+                encoder.setVertexBytes(billboardVertices, length: billboardVertices.count * MemoryLayout<VertexIn>.stride, index: 0)
+                encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+                encoder.setFragmentTexture(label.texture, index: 0)
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            }
+        }
+
         // Reset viewport to full screen
         encoder.setViewport(MTLViewport(
             originX: 0,
@@ -609,6 +645,39 @@ final class MetalRenderer {
             znear: 0.0,
             zfar: 1.0
         ))
+    }
+
+    /// Create a camera-facing billboard quad
+    private func createBillboardQuad(position: SIMD3<Float>, size: Float, camera: Camera) -> [VertexIn] {
+        // Calculate camera's right and up vectors in world space
+        let viewMatrix = camera.viewMatrix()
+
+        // Extract right and up vectors from view matrix (inverse of view transform)
+        // The view matrix transforms from world to view space, so we need the inverse
+        // Right vector is the first column, up is the second column
+        let right = simd_normalize(SIMD3<Float>(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]))
+        let up = simd_normalize(SIMD3<Float>(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]))
+
+        let halfSize = size / 2.0
+        let color = SIMD4<Float>(1, 1, 1, 1)
+        let normal = simd_normalize(camera.position - position)  // Face towards camera
+
+        // Create quad vertices - bottom-left, bottom-right, top-right, top-left
+        let v0 = position - right * halfSize - up * halfSize
+        let v1 = position + right * halfSize - up * halfSize
+        let v2 = position + right * halfSize + up * halfSize
+        let v3 = position - right * halfSize + up * halfSize
+
+        return [
+            // Triangle 1
+            VertexIn(position: v0, normal: normal, color: color, texCoord: SIMD2(0, 0)),
+            VertexIn(position: v1, normal: normal, color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: v2, normal: normal, color: color, texCoord: SIMD2(1, 1)),
+            // Triangle 2
+            VertexIn(position: v0, normal: normal, color: color, texCoord: SIMD2(0, 0)),
+            VertexIn(position: v2, normal: normal, color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: v3, normal: normal, color: color, texCoord: SIMD2(0, 1))
+        ]
     }
 
     /// Create cube vertices with hover effect for a specific face
