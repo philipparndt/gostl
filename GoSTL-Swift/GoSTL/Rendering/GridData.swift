@@ -333,45 +333,23 @@ final class GridData {
         bottomY: Float
     ) -> [VertexIn] {
         var vertices: [VertexIn] = []
-        let dimColor = SIMD4<Float>(255.0/255.0, 200.0/255.0, 100.0/255.0, 1.0) // Yellow
-        let offset: Float = 5.0
+        let dimColor = SIMD4<Float>(255.0/255.0, 200.0/255.0, 100.0/255.0, 1.0) // Orange
         let markerSize: Float = 3.0
 
-        // X dimension (width) - bottom front
-        let x1Start = SIMD3(bboxMin.x, bottomY - offset, bboxMin.z - offset)
-        let x1End = SIMD3(bboxMax.x, bottomY - offset, bboxMin.z - offset)
-        vertices.append(VertexIn(position: x1Start, normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: x1End, normal: SIMD3(0, 1, 0), color: dimColor))
+        // X axis indicator - simple marker at max X
+        let xPos = SIMD3(bboxMax.x, bottomY, bboxMax.z + 2)
+        vertices.append(VertexIn(position: SIMD3(xPos.x, xPos.y - markerSize, xPos.z), normal: SIMD3(0, 1, 0), color: dimColor))
+        vertices.append(VertexIn(position: SIMD3(xPos.x, xPos.y + markerSize, xPos.z), normal: SIMD3(0, 1, 0), color: dimColor))
 
-        // X dimension markers
-        vertices.append(VertexIn(position: SIMD3(bboxMin.x, bottomY - offset - markerSize, bboxMin.z - offset), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(bboxMin.x, bottomY - offset + markerSize, bboxMin.z - offset), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(bboxMax.x, bottomY - offset - markerSize, bboxMin.z - offset), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(bboxMax.x, bottomY - offset + markerSize, bboxMin.z - offset), normal: SIMD3(0, 1, 0), color: dimColor))
+        // Z axis indicator - simple marker at max Z
+        let zPos = SIMD3(bboxMin.x - 2, bottomY, bboxMax.z)
+        vertices.append(VertexIn(position: SIMD3(zPos.x, zPos.y - markerSize, zPos.z), normal: SIMD3(0, 1, 0), color: dimColor))
+        vertices.append(VertexIn(position: SIMD3(zPos.x, zPos.y + markerSize, zPos.z), normal: SIMD3(0, 1, 0), color: dimColor))
 
-        // Z dimension (depth) - bottom left
-        let z1Start = SIMD3(bboxMin.x - offset, bottomY - offset, bboxMin.z)
-        let z1End = SIMD3(bboxMin.x - offset, bottomY - offset, bboxMax.z)
-        vertices.append(VertexIn(position: z1Start, normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: z1End, normal: SIMD3(0, 1, 0), color: dimColor))
-
-        // Z dimension markers
-        vertices.append(VertexIn(position: SIMD3(bboxMin.x - offset, bottomY - offset - markerSize, bboxMin.z), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(bboxMin.x - offset, bottomY - offset + markerSize, bboxMin.z), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(bboxMin.x - offset, bottomY - offset - markerSize, bboxMax.z), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(bboxMin.x - offset, bottomY - offset + markerSize, bboxMax.z), normal: SIMD3(0, 1, 0), color: dimColor))
-
-        // Y dimension (height) - right front
-        let y1Start = SIMD3(bboxMax.x + offset, bboxMin.y, bboxMin.z - offset)
-        let y1End = SIMD3(bboxMax.x + offset, bboxMax.y, bboxMin.z - offset)
-        vertices.append(VertexIn(position: y1Start, normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: y1End, normal: SIMD3(0, 1, 0), color: dimColor))
-
-        // Y dimension markers
-        vertices.append(VertexIn(position: SIMD3(bboxMax.x + offset - markerSize, bboxMin.y, bboxMin.z - offset), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(bboxMax.x + offset + markerSize, bboxMin.y, bboxMin.z - offset), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(bboxMax.x + offset - markerSize, bboxMax.y, bboxMin.z - offset), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(bboxMax.x + offset + markerSize, bboxMax.y, bboxMin.z - offset), normal: SIMD3(0, 1, 0), color: dimColor))
+        // Y axis indicator - simple marker at max Y
+        let yPos = SIMD3(bboxMin.x - 2, bboxMax.y, bboxMin.z - 2)
+        vertices.append(VertexIn(position: SIMD3(yPos.x - markerSize, yPos.y, yPos.z), normal: SIMD3(0, 0, 1), color: dimColor))
+        vertices.append(VertexIn(position: SIMD3(yPos.x + markerSize, yPos.y, yPos.z), normal: SIMD3(0, 0, 1), color: dimColor))
 
         return vertices
     }
@@ -424,28 +402,24 @@ final class GridData {
     /// Generate dimension label data for text rendering
     func generateDimensionLabels() -> [(text: String, position: SIMD3<Float>, color: SIMD4<Float>, size: Float, orientation: TextOrientation)] {
         var labels: [(String, SIMD3<Float>, SIMD4<Float>, Float, TextOrientation)] = []
-        let dimColor = SIMD4<Float>(255.0/255.0, 200.0/255.0, 100.0/255.0, 1.0) // Yellow
-        let labelSize: Float = 2.5
-        let offset: Float = 5.0
+        let dimColor = SIMD4<Float>(255.0/255.0, 200.0/255.0, 100.0/255.0, 1.0) // Orange
+        let labelSize: Float = 1.75
 
         let sizeX = bounds.bboxMaxX - bounds.bboxMinX
         let sizeY = bounds.bboxMaxY - bounds.bboxMinY
         let sizeZ = bounds.bboxMaxZ - bounds.bboxMinZ
 
-        // X dimension label
-        let xMid = (bounds.bboxMinX + bounds.bboxMaxX) / 2
+        // X dimension label - positioned near the X marker
         let xText = String(format: "X: %.1f mm", sizeX)
-        labels.append((xText, SIMD3(xMid, bounds.bottomY - offset - 3, bounds.bboxMinZ - offset), dimColor, labelSize, .horizontal))
+        labels.append((xText, SIMD3(bounds.bboxMaxX, bounds.bottomY, bounds.bboxMaxZ + 2), dimColor, labelSize, .horizontal))
 
-        // Z dimension label
-        let zMid = (bounds.bboxMinZ + bounds.bboxMaxZ) / 2
+        // Z dimension label - positioned near the Z marker
         let zText = String(format: "Z: %.1f mm", sizeZ)
-        labels.append((zText, SIMD3(bounds.bboxMinX - offset, bounds.bottomY - offset - 3, zMid), dimColor, labelSize, .horizontal))
+        labels.append((zText, SIMD3(bounds.bboxMinX - 2, bounds.bottomY, bounds.bboxMaxZ), dimColor, labelSize, .horizontal))
 
-        // Y dimension label
-        let yMid = (bounds.bboxMinY + bounds.bboxMaxY) / 2
+        // Y dimension label - positioned near the Y marker, offset up by label height
         let yText = String(format: "Y: %.1f mm", sizeY)
-        labels.append((yText, SIMD3(bounds.bboxMaxX + offset + 3, yMid, bounds.bboxMinZ - offset), dimColor, labelSize, .verticalXY))
+        labels.append((yText, SIMD3(bounds.bboxMinX - 2, bounds.bboxMaxY + labelSize * 0.6, bounds.bboxMinZ - 2), dimColor, labelSize, .verticalXY))
 
         return labels
     }

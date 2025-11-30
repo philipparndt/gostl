@@ -241,7 +241,7 @@ struct ContentView: View {
     // Create a simple test cube (10x10x10 centered at origin)
     private func createTestCube() -> STLModel {
         var triangles: [Triangle] = []
-        let size: Double = 10.0
+        let size: Double = 50.0
         let half = size / 2.0
 
         // Bottom face (z = -half)

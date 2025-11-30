@@ -46,8 +46,15 @@ final class TextBillboardData {
                 orientation: label.orientation
             ))
 
+            // Calculate aspect ratio from texture dimensions
+            let textureWidth = Float(texture.width)
+            let textureHeight = Float(texture.height)
+            let aspectRatio = textureWidth / textureHeight
+
             // Create flat quad vertices oriented according to the grid plane
-            let halfSize = label.size / 2.0
+            // Use aspect ratio to prevent text compression
+            let halfHeight = label.size / 2.0
+            let halfWidth = halfHeight * aspectRatio
             let pos = label.position
             let color = SIMD4<Float>(1, 1, 1, 1) // White, texture will provide color
 
@@ -55,13 +62,13 @@ final class TextBillboardData {
             switch label.orientation {
             case .horizontal:
                 // Flat on XZ plane (Y is up)
-                vertices.append(contentsOf: TextBillboardData.createHorizontalQuad(pos: pos, halfSize: halfSize, color: color))
+                vertices.append(contentsOf: TextBillboardData.createHorizontalQuad(pos: pos, halfWidth: halfWidth, halfHeight: halfHeight, color: color))
             case .verticalXY:
                 // Flat on XY plane (Z is normal)
-                vertices.append(contentsOf: TextBillboardData.createVerticalXYQuad(pos: pos, halfSize: halfSize, color: color))
+                vertices.append(contentsOf: TextBillboardData.createVerticalXYQuad(pos: pos, halfWidth: halfWidth, halfHeight: halfHeight, color: color))
             case .verticalYZ:
                 // Flat on YZ plane (X is normal)
-                vertices.append(contentsOf: TextBillboardData.createVerticalYZQuad(pos: pos, halfSize: halfSize, color: color))
+                vertices.append(contentsOf: TextBillboardData.createVerticalYZQuad(pos: pos, halfWidth: halfWidth, halfHeight: halfHeight, color: color))
             }
         }
 
@@ -82,45 +89,48 @@ final class TextBillboardData {
 
     // MARK: - Quad Generation
 
-    private static func createHorizontalQuad(pos: SIMD3<Float>, halfSize: Float, color: SIMD4<Float>) -> [VertexIn] {
+    private static func createHorizontalQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, color: SIMD4<Float>) -> [VertexIn] {
         // Flat on XZ plane (laying on the ground)
+        // X direction = width, Z direction = height (depth on ground)
         [
             // Triangle 1
-            VertexIn(position: SIMD3(pos.x - halfSize, pos.y, pos.z - halfSize), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x + halfSize, pos.y, pos.z - halfSize), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(1, 1)),
-            VertexIn(position: SIMD3(pos.x + halfSize, pos.y, pos.z + halfSize), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y, pos.z - halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(0, 1)),
+            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y, pos.z - halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y, pos.z + halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(1, 0)),
             // Triangle 2
-            VertexIn(position: SIMD3(pos.x - halfSize, pos.y, pos.z - halfSize), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x + halfSize, pos.y, pos.z + halfSize), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(1, 0)),
-            VertexIn(position: SIMD3(pos.x - halfSize, pos.y, pos.z + halfSize), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(0, 0))
+            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y, pos.z - halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(0, 1)),
+            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y, pos.z + halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y, pos.z + halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(0, 0))
         ]
     }
 
-    private static func createVerticalXYQuad(pos: SIMD3<Float>, halfSize: Float, color: SIMD4<Float>) -> [VertexIn] {
+    private static func createVerticalXYQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, color: SIMD4<Float>) -> [VertexIn] {
         // Flat on XY plane (on the back wall) - facing toward positive Z
+        // X direction = width, Y direction = height
         [
             // Triangle 1
-            VertexIn(position: SIMD3(pos.x - halfSize, pos.y - halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 0)),
-            VertexIn(position: SIMD3(pos.x + halfSize, pos.y - halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 0)),
-            VertexIn(position: SIMD3(pos.x + halfSize, pos.y + halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y - halfHeight, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 0)),
+            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y - halfHeight, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y + halfHeight, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 1)),
             // Triangle 2
-            VertexIn(position: SIMD3(pos.x - halfSize, pos.y - halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 0)),
-            VertexIn(position: SIMD3(pos.x + halfSize, pos.y + halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 1)),
-            VertexIn(position: SIMD3(pos.x - halfSize, pos.y + halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 1))
+            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y - halfHeight, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 0)),
+            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y + halfHeight, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y + halfHeight, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 1))
         ]
     }
 
-    private static func createVerticalYZQuad(pos: SIMD3<Float>, halfSize: Float, color: SIMD4<Float>) -> [VertexIn] {
+    private static func createVerticalYZQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, color: SIMD4<Float>) -> [VertexIn] {
         // Flat on YZ plane (on the left wall)
+        // Z direction = width, Y direction = height
         [
             // Triangle 1
-            VertexIn(position: SIMD3(pos.x, pos.y - halfSize, pos.z - halfSize), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x, pos.y - halfSize, pos.z + halfSize), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 1)),
-            VertexIn(position: SIMD3(pos.x, pos.y + halfSize, pos.z + halfSize), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x, pos.y - halfHeight, pos.z - halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 1)),
+            VertexIn(position: SIMD3(pos.x, pos.y - halfHeight, pos.z + halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: SIMD3(pos.x, pos.y + halfHeight, pos.z + halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 0)),
             // Triangle 2
-            VertexIn(position: SIMD3(pos.x, pos.y - halfSize, pos.z - halfSize), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x, pos.y + halfSize, pos.z + halfSize), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 0)),
-            VertexIn(position: SIMD3(pos.x, pos.y + halfSize, pos.z - halfSize), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 0))
+            VertexIn(position: SIMD3(pos.x, pos.y - halfHeight, pos.z - halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 1)),
+            VertexIn(position: SIMD3(pos.x, pos.y + halfHeight, pos.z + halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x, pos.y + halfHeight, pos.z - halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 0))
         ]
     }
 
@@ -165,7 +175,13 @@ final class TextBillboardData {
         }
 
         // Clear background (fully transparent)
-        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(red: 0, green: 0, blue: 0, alpha: 0)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+        // Configure rendering for clean transparency
+        context.setBlendMode(.normal)
+        context.setShouldAntialias(true)
+        context.setShouldSmoothFonts(false) // Disable subpixel antialiasing for transparent backgrounds
 
         // Draw text
         context.textMatrix = .identity

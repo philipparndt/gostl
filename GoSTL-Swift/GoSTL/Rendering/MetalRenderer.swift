@@ -13,6 +13,7 @@ final class MetalRenderer {
     let cutEdgePipelineState: MTLRenderPipelineState
     let texturedPipelineState: MTLRenderPipelineState
     let depthStencilState: MTLDepthStencilState
+    let transparentDepthStencilState: MTLDepthStencilState
     let samplerState: MTLSamplerState
 
     init(device: MTLDevice) throws {
@@ -33,8 +34,9 @@ final class MetalRenderer {
         self.cutEdgePipelineState = try Self.createCutEdgePipeline(device: device)
         self.texturedPipelineState = try Self.createTexturedPipeline(device: device)
 
-        // Create depth stencil state
+        // Create depth stencil states
         self.depthStencilState = Self.createDepthStencilState(device: device)
+        self.transparentDepthStencilState = Self.createTransparentDepthStencilState(device: device)
 
         // Create sampler state for texture sampling
         self.samplerState = Self.createSamplerState(device: device)
@@ -234,6 +236,13 @@ final class MetalRenderer {
         let depthDescriptor = MTLDepthStencilDescriptor()
         depthDescriptor.depthCompareFunction = .less
         depthDescriptor.isDepthWriteEnabled = true
+        return device.makeDepthStencilState(descriptor: depthDescriptor)!
+    }
+
+    private static func createTransparentDepthStencilState(device: MTLDevice) -> MTLDepthStencilState {
+        let depthDescriptor = MTLDepthStencilDescriptor()
+        depthDescriptor.depthCompareFunction = .less
+        depthDescriptor.isDepthWriteEnabled = false // Don't write depth for transparent objects
         return device.makeDepthStencilState(descriptor: depthDescriptor)!
     }
 
@@ -508,7 +517,7 @@ final class MetalRenderer {
 
     private func renderTextBillboards(encoder: MTLRenderCommandEncoder, textData: TextBillboardData, appState: AppState, viewSize: CGSize) {
         encoder.setRenderPipelineState(texturedPipelineState)
-        encoder.setDepthStencilState(depthStencilState)
+        encoder.setDepthStencilState(transparentDepthStencilState) // Use transparent depth state to allow overlapping labels
 
         // Set vertex buffer
         encoder.setVertexBuffer(textData.vertexBuffer, offset: 0, index: 0)
