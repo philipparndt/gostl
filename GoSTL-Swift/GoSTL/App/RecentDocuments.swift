@@ -8,19 +8,23 @@ final class RecentDocuments: @unchecked Sendable {
     private let maxRecentItems = 10
     private let configDir: URL
     private let configFile: URL
+    private let openWindowsFile: URL
 
     var recentURLs: [URL] = []
+    var openWindows: [URL] = []
 
     private init() {
         // Set up config directory: ~/.config/gostl
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         configDir = homeDir.appendingPathComponent(".config").appendingPathComponent("gostl")
         configFile = configDir.appendingPathComponent("recent.json")
+        openWindowsFile = configDir.appendingPathComponent("open_windows.json")
 
         // Create config directory if needed
         try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
 
         loadRecentDocuments()
+        loadOpenWindows()
     }
 
     /// Add a document to recent items
@@ -51,10 +55,26 @@ final class RecentDocuments: @unchecked Sendable {
         saveRecentDocuments()
     }
 
+    /// Save which windows are currently open
+    func saveOpenWindows(_ urls: [URL]) {
+        openWindows = urls
+        saveOpenWindowsState()
+    }
+
+    /// Clear open windows list (called when all windows are closed)
+    func clearOpenWindows() {
+        openWindows = []
+        saveOpenWindowsState()
+    }
+
     // MARK: - Persistence
 
     private struct RecentDocumentsConfig: Codable {
         let recentFiles: [String]
+    }
+
+    private struct OpenWindowsConfig: Codable {
+        let openFiles: [String]
     }
 
     private func saveRecentDocuments() {
@@ -91,6 +111,38 @@ final class RecentDocuments: @unchecked Sendable {
             }
         } catch {
             print("ERROR: Failed to load recent documents: \(error)")
+        }
+    }
+
+    private func saveOpenWindowsState() {
+        let config = OpenWindowsConfig(openFiles: openWindows.map { $0.path })
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(config)
+            try data.write(to: openWindowsFile)
+        } catch {
+            print("ERROR: Failed to save open windows: \(error)")
+        }
+    }
+
+    private func loadOpenWindows() {
+        guard FileManager.default.fileExists(atPath: openWindowsFile.path) else {
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: openWindowsFile)
+            let decoder = JSONDecoder()
+            let config = try decoder.decode(OpenWindowsConfig.self, from: data)
+
+            // Convert paths to URLs and filter out non-existent files
+            openWindows = config.openFiles
+                .map { URL(fileURLWithPath: $0) }
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
+        } catch {
+            print("ERROR: Failed to load open windows: \(error)")
         }
     }
 }

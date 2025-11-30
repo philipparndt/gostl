@@ -23,13 +23,15 @@ struct GoSTLApp: App {
                 }
             }
 
-            // Check for command-line file argument
+            // Check for command-line file argument, or load most recent file
             GoSTLApp.handleCommandLineArguments()
         }
     }
 
     private static func handleCommandLineArguments() {
         let args = CommandLine.arguments
+        var loadedFromCommandLine = false
+
         // Skip the first argument (executable path)
         for arg in args.dropFirst() {
             // Skip Xcode debug arguments
@@ -49,7 +51,35 @@ struct GoSTLApp: App {
                         object: url
                     )
                 }
+                loadedFromCommandLine = true
                 break // Only load the first file
+            }
+        }
+
+        // If no file from command line, restore previously open windows
+        if !loadedFromCommandLine {
+            restorePreviouslyOpenWindows()
+        }
+    }
+
+    private static func restorePreviouslyOpenWindows() {
+        let openWindows = RecentDocuments.shared.openWindows
+
+        // If no windows were open when app quit, don't open any
+        guard !openWindows.isEmpty else {
+            print("No windows to restore")
+            return
+        }
+
+        print("Restoring \(openWindows.count) previously open window(s)")
+
+        // Restore each window after a short delay to ensure UI is ready
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            for url in openWindows {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("LoadSTLFile"),
+                    object: url
+                )
             }
         }
     }
@@ -60,9 +90,15 @@ struct GoSTLApp: App {
                 .onAppear {
                     print("DEBUG: ContentView appeared")
                     configureWindowForTabbing()
+                    saveCurrentWindowState()
                 }
         }
         .defaultSize(width: 1400, height: 900)
+        .defaultPosition(.center)
+        .onChange(of: NSApp.windows) { _, _ in
+            // Save window state whenever windows change
+            saveCurrentWindowState()
+        }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open...") {
@@ -289,6 +325,18 @@ struct GoSTLApp: App {
                 window.tabbingMode = .preferred
                 window.tabbingIdentifier = "GoSTLWindow"
             }
+        }
+    }
+
+    private func saveCurrentWindowState() {
+        DispatchQueue.main.async {
+            // Get all windows with represented files
+            let openFileURLs = NSApp.windows
+                .filter { $0.tabbingIdentifier == "GoSTLWindow" }
+                .compactMap { $0.representedURL }
+
+            // Save to RecentDocuments
+            RecentDocuments.shared.saveOpenWindows(openFileURLs)
         }
     }
 }
