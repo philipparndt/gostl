@@ -118,7 +118,17 @@ class InteractiveMTKView: MTKView {
         let location = convert(event.locationInWindow, from: nil)
         mouseDownLocation = location
         didDrag = false
-        coordinator.inputHandler.handleMouseDown(at: location, modifierFlags: event.modifierFlags, appState: coordinator.appState)
+
+        // Scale location to drawable size for selection
+        let scale = drawableSize.width / bounds.size.width
+        let scaledLocation = CGPoint(x: location.x * scale, y: location.y * scale)
+
+        coordinator.inputHandler.handleMouseDown(
+            at: scaledLocation,
+            modifierFlags: event.modifierFlags,
+            appState: coordinator.appState,
+            viewSize: drawableSize
+        )
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -135,16 +145,21 @@ class InteractiveMTKView: MTKView {
             }
         }
 
+        // Scale location to drawable size
+        let scale = drawableSize.width / bounds.size.width
+        let scaledLocation = CGPoint(x: location.x * scale, y: location.y * scale)
+
         coordinator.inputHandler.handleMouseDragged(
-            to: location,
+            to: scaledLocation,
             camera: coordinator.appState.camera,
-            viewSize: drawableSize  // Use drawableSize (pixels) not bounds.size (points)
+            viewSize: drawableSize,  // Use drawableSize (pixels) not bounds.size (points)
+            appState: coordinator.appState
         )
     }
 
     override func mouseUp(with event: NSEvent) {
         guard let coordinator = coordinator else { return }
-        coordinator.inputHandler.handleMouseUp()
+        coordinator.inputHandler.handleMouseUp(appState: coordinator.appState)
 
         // If it was a click (not a drag), handle measurement point picking
         if !didDrag, let location = mouseDownLocation {
@@ -212,12 +227,14 @@ class InteractiveMTKView: MTKView {
         coordinator.inputHandler.handleMouseDragged(
             to: location,
             camera: coordinator.appState.camera,
-            viewSize: drawableSize  // Use drawableSize (pixels) not bounds.size (points)
+            viewSize: drawableSize,  // Use drawableSize (pixels) not bounds.size (points)
+            appState: coordinator.appState
         )
     }
 
     override func otherMouseUp(with event: NSEvent) {
-        coordinator?.inputHandler.handleMouseUp()
+        guard let coordinator = coordinator else { return }
+        coordinator.inputHandler.handleMouseUp(appState: coordinator.appState)
     }
 
     // MARK: - Keyboard Events

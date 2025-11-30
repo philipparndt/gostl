@@ -27,6 +27,8 @@ final class MeasurementRenderData {
     var lineInstanceCount: Int = 0
     var previewLineInstanceCount: Int = 0
     var constraintLineInstanceCount: Int = 0
+    var selectedLineInstanceBuffer: MTLBuffer?  // Blue lines for selected measurements
+    var selectedLineInstanceCount: Int = 0
     var pointCount: Int = 0
     var hoverVertexCount: Int = 0
     var constrainedPointVertexCount: Int = 0
@@ -40,6 +42,9 @@ final class MeasurementRenderData {
 
     // Constraint line cylinder geometry (red)
     let constraintCylinderVertexBuffer: MTLBuffer
+
+    // Selected line cylinder geometry (blue)
+    let selectedCylinderVertexBuffer: MTLBuffer
 
     init(device: MTLDevice, thickness: Float) throws {
         self.device = device
@@ -104,6 +109,18 @@ final class MeasurementRenderData {
             throw MetalError.bufferCreationFailed
         }
         self.constraintCylinderVertexBuffer = constraintVertexBuffer
+
+        // Create selected line cylinder with blue color (for selected measurements)
+        let selectedCylinderGeometry = Self.createCylinderGeometry(
+            radius: thickness * measurementThickness * 1.5,  // Slightly thicker for visibility
+            segments: 8,
+            color: SIMD4<Float>(0.3, 0.5, 1.0, 1.0) // Blue
+        )
+        let selectedVertexSize = selectedCylinderGeometry.vertices.count * MemoryLayout<VertexIn>.stride
+        guard let selectedVertexBuffer = device.makeBuffer(bytes: selectedCylinderGeometry.vertices, length: selectedVertexSize, options: []) else {
+            throw MetalError.bufferCreationFailed
+        }
+        self.selectedCylinderVertexBuffer = selectedVertexBuffer
     }
 
     /// Update buffers based on measurement system state
@@ -246,17 +263,26 @@ final class MeasurementRenderData {
         }
 
         // Lines for completed measurements (excluding radius measurements)
-        for measurement in measurementSystem.measurements {
+        // Separate selected and unselected measurements
+        var selectedEdges: [Edge] = []
+
+        for (index, measurement) in measurementSystem.measurements.enumerated() {
             // Skip radius measurements - they will be rendered as circles
             if measurement.type == .radius {
                 continue
             }
 
+            let isSelected = measurementSystem.selectedMeasurements.contains(index)
+
             if measurement.points.count >= 2 {
                 for i in 0..<(measurement.points.count - 1) {
                     let p1 = measurement.points[i].position
                     let p2 = measurement.points[i + 1].position
-                    lineEdges.append(Edge(p1, p2))
+                    if isSelected {
+                        selectedEdges.append(Edge(p1, p2))
+                    } else {
+                        lineEdges.append(Edge(p1, p2))
+                    }
                 }
             }
         }
@@ -276,7 +302,7 @@ final class MeasurementRenderData {
             }
         }
 
-        // Create instance buffers
+        // Create instance buffers for normal lines
         if !lineEdges.isEmpty {
             let instances = Self.createInstanceMatrices(edges: lineEdges)
             let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
@@ -285,6 +311,17 @@ final class MeasurementRenderData {
         } else {
             lineInstanceBuffer = nil
             lineInstanceCount = 0
+        }
+
+        // Create instance buffers for selected lines
+        if !selectedEdges.isEmpty {
+            let instances = Self.createInstanceMatrices(edges: selectedEdges)
+            let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
+            selectedLineInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
+            selectedLineInstanceCount = instances.count
+        } else {
+            selectedLineInstanceBuffer = nil
+            selectedLineInstanceCount = 0
         }
 
         if !previewEdges.isEmpty {

@@ -12,10 +12,18 @@ struct MeasurementLabelsOverlay: View {
                 // Show labels for completed measurements
                 ForEach(Array(measurementSystem.measurements.enumerated()), id: \.offset) { index, measurement in
                     if let screenPos = camera.project(worldPosition: measurement.labelPosition, viewSize: viewSize) {
+                        let isSelected = measurementSystem.selectedMeasurements.contains(index)
+                        let baseColor: Color = measurement.type == .radius ? Color(red: 1.0, green: 0.59, blue: 1.0) : .yellow
+                        let labelColor: Color = isSelected ? Color(red: 0.3, green: 0.5, blue: 1.0) : baseColor
+
                         MeasurementLabel(
                             text: measurement.formattedValue,
                             position: screenPos,
-                            color: measurement.type == .radius ? Color(red: 1.0, green: 0.59, blue: 1.0) : .yellow
+                            color: labelColor,
+                            isSelected: isSelected,
+                            onTap: {
+                                toggleSelection(index: index)
+                            }
                         )
                     }
                 }
@@ -41,7 +49,14 @@ struct MeasurementLabelsOverlay: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
-            .allowsHitTesting(false) // Allow mouse events to pass through labels
+        }
+    }
+
+    private func toggleSelection(index: Int) {
+        if measurementSystem.selectedMeasurements.contains(index) {
+            measurementSystem.selectedMeasurements.remove(index)
+        } else {
+            measurementSystem.selectedMeasurements.insert(index)
         }
     }
 
@@ -61,6 +76,8 @@ private struct MeasurementLabel: View {
     let text: String
     let position: CGPoint
     let color: Color
+    var isSelected: Bool = false
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
         Text(text)
@@ -73,6 +90,17 @@ private struct MeasurementLabel: View {
                     .fill(color.opacity(0.9))
                     .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
             )
+            .overlay(
+                // Add border for selected labels
+                isSelected ?
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.white, lineWidth: 2)
+                    : nil
+            )
+            .scaleEffect(isSelected ? 1.1 : 1.0)  // Slightly larger when selected
             .position(position)
+            .onTapGesture {
+                onTap?()
+            }
     }
 }

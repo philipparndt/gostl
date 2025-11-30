@@ -142,6 +142,12 @@ final class Camera {
 
     /// Project a 3D world position to 2D screen coordinates
     /// - Returns: CGPoint in screen coordinates, or nil if behind camera
+    func worldToScreen(point: Vector3, viewSize: CGSize) -> CGPoint? {
+        return project(worldPosition: point, viewSize: viewSize)
+    }
+
+    /// Project a 3D world position to 2D screen coordinates
+    /// - Returns: CGPoint in screen coordinates, or nil if behind camera
     func project(worldPosition: Vector3, viewSize: CGSize) -> CGPoint? {
         let aspect = Float(viewSize.width / viewSize.height)
         let projection = projectionMatrix(aspect: aspect)

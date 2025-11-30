@@ -33,6 +33,12 @@ final class MeasurementSystem: @unchecked Sendable {
     /// Currently hovered axis label on orientation cube (-1 = none, 0=X, 1=Y, 2=Z)
     var hoveredAxisLabel: Int = -1
 
+    /// Set of selected measurement indices
+    var selectedMeasurements: Set<Int> = []
+
+    /// Selection rectangle (in screen coordinates) - nil when not selecting
+    var selectionRect: (start: CGPoint, end: CGPoint)?
+
     /// Number of points required for current mode
     var pointsNeeded: Int {
         guard let mode else { return 0 }
@@ -351,6 +357,151 @@ final class MeasurementSystem: @unchecked Sendable {
         }
 
         constrainedEndpoint = calculateConstrainedEndpoint(snapPoint: hoverPoint.position)
+    }
+
+    // MARK: - Selection Methods
+
+    /// Start selection rectangle
+    func startSelection(at point: CGPoint) {
+        selectionRect = (start: point, end: point)
+        selectedMeasurements.removeAll()
+    }
+
+    /// Update selection rectangle end point
+    func updateSelection(to point: CGPoint) {
+        guard selectionRect != nil else { return }
+        selectionRect?.end = point
+    }
+
+    /// End selection and keep selected measurements
+    func endSelection() {
+        selectionRect = nil
+    }
+
+    /// Cancel selection
+    func cancelSelection() {
+        selectionRect = nil
+        selectedMeasurements.removeAll()
+    }
+
+    /// Check if a measurement line intersects with the selection rectangle
+    /// Uses screen-space coordinates
+    func updateSelectedMeasurements(camera: Camera, viewSize: CGSize) {
+        guard let rect = selectionRect else { return }
+
+        selectedMeasurements.removeAll()
+
+        // Normalize rectangle (handle drag in any direction)
+        let minX = min(rect.start.x, rect.end.x)
+        let maxX = max(rect.start.x, rect.end.x)
+        let minY = min(rect.start.y, rect.end.y)
+        let maxY = max(rect.start.y, rect.end.y)
+
+        let selectionBounds = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+
+        // Check each measurement
+        for (index, measurement) in measurements.enumerated() {
+            if measurement.type == .distance && measurement.points.count >= 2 {
+                // Project both endpoints to screen space
+                let p1 = measurement.points[0].position
+                let p2 = measurement.points[1].position
+
+                if let screen1 = camera.worldToScreen(point: p1, viewSize: viewSize),
+                   let screen2 = camera.worldToScreen(point: p2, viewSize: viewSize) {
+                    // Check if the line segment intersects the selection rectangle
+                    if lineIntersectsRect(
+                        lineStart: screen1,
+                        lineEnd: screen2,
+                        rect: selectionBounds
+                    ) {
+                        selectedMeasurements.insert(index)
+                    }
+                }
+            } else if measurement.type == .radius {
+                // For radius measurements, check if center point is in selection
+                if let circle = measurement.circle {
+                    if let screenCenter = camera.worldToScreen(point: circle.center, viewSize: viewSize) {
+                        if selectionBounds.contains(screenCenter) {
+                            selectedMeasurements.insert(index)
+                        }
+                    }
+                }
+            } else if measurement.type == .angle && measurement.points.count >= 3 {
+                // For angle measurements, check if middle point is in selection
+                let middlePoint = measurement.points[1].position
+                if let screenMiddle = camera.worldToScreen(point: middlePoint, viewSize: viewSize) {
+                    if selectionBounds.contains(screenMiddle) {
+                        selectedMeasurements.insert(index)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if a line segment intersects a rectangle
+    private func lineIntersectsRect(lineStart: CGPoint, lineEnd: CGPoint, rect: CGRect) -> Bool {
+        // Check if either endpoint is inside the rectangle
+        if rect.contains(lineStart) || rect.contains(lineEnd) {
+            return true
+        }
+
+        // Check if line intersects any edge of the rectangle
+        let topLeft = CGPoint(x: rect.minX, y: rect.minY)
+        let topRight = CGPoint(x: rect.maxX, y: rect.minY)
+        let bottomLeft = CGPoint(x: rect.minX, y: rect.maxY)
+        let bottomRight = CGPoint(x: rect.maxX, y: rect.maxY)
+
+        // Check intersection with each edge
+        if lineSegmentsIntersect(lineStart, lineEnd, topLeft, topRight) { return true }
+        if lineSegmentsIntersect(lineStart, lineEnd, topRight, bottomRight) { return true }
+        if lineSegmentsIntersect(lineStart, lineEnd, bottomRight, bottomLeft) { return true }
+        if lineSegmentsIntersect(lineStart, lineEnd, bottomLeft, topLeft) { return true }
+
+        return false
+    }
+
+    /// Check if two line segments intersect
+    private func lineSegmentsIntersect(_ p1: CGPoint, _ p2: CGPoint, _ p3: CGPoint, _ p4: CGPoint) -> Bool {
+        let d1 = direction(p3, p4, p1)
+        let d2 = direction(p3, p4, p2)
+        let d3 = direction(p1, p2, p3)
+        let d4 = direction(p1, p2, p4)
+
+        if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+           ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)) {
+            return true
+        }
+
+        if d1 == 0 && onSegment(p3, p4, p1) { return true }
+        if d2 == 0 && onSegment(p3, p4, p2) { return true }
+        if d3 == 0 && onSegment(p1, p2, p3) { return true }
+        if d4 == 0 && onSegment(p1, p2, p4) { return true }
+
+        return false
+    }
+
+    private func direction(_ p1: CGPoint, _ p2: CGPoint, _ p3: CGPoint) -> CGFloat {
+        return (p3.x - p1.x) * (p2.y - p1.y) - (p2.x - p1.x) * (p3.y - p1.y)
+    }
+
+    private func onSegment(_ p1: CGPoint, _ p2: CGPoint, _ p: CGPoint) -> Bool {
+        return min(p1.x, p2.x) <= p.x && p.x <= max(p1.x, p2.x) &&
+               min(p1.y, p2.y) <= p.y && p.y <= max(p1.y, p2.y)
+    }
+
+    /// Remove selected measurements
+    func removeSelectedMeasurements() {
+        guard !selectedMeasurements.isEmpty else { return }
+
+        // Remove in reverse order to preserve indices
+        let sortedIndices = selectedMeasurements.sorted(by: >)
+        for index in sortedIndices {
+            if index < measurements.count {
+                measurements.remove(at: index)
+            }
+        }
+        selectedMeasurements.removeAll()
+        print("Removed \(sortedIndices.count) measurement(s)")
     }
 
     /// Remove most recent measurement

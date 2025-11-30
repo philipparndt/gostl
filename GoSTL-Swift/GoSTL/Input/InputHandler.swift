@@ -7,12 +7,29 @@ final class InputHandler {
     private var lastMousePosition: CGPoint?
     private var isRotating = false
     private var isPanning = false
+    private var isSelecting = false  // Track selection rectangle mode
     private var optionWasPressed = false  // Track Option key state for constraint release
 
     // MARK: - Mouse Events
 
-    func handleMouseDown(at location: CGPoint, modifierFlags: NSEvent.ModifierFlags, appState: AppState) {
+    private var selectionViewSize: CGSize = .zero  // Store view size for coordinate conversion
+
+    func handleMouseDown(at location: CGPoint, modifierFlags: NSEvent.ModifierFlags, appState: AppState, viewSize: CGSize? = nil) {
         lastMousePosition = location
+
+        // Option+click starts selection rectangle (only when not measuring)
+        if modifierFlags.contains(.option) && !appState.measurementSystem.isCollecting {
+            isSelecting = true
+            if let viewSize = viewSize {
+                selectionViewSize = viewSize
+                // Convert from AppKit coordinates (Y=0 at bottom) to SwiftUI coordinates (Y=0 at top)
+                let flippedLocation = CGPoint(x: location.x, y: viewSize.height - location.y)
+                appState.measurementSystem.startSelection(at: flippedLocation)
+            } else {
+                appState.measurementSystem.startSelection(at: location)
+            }
+            return
+        }
 
         // Always allow camera controls (even in measurement mode)
         // Shift key for panning, otherwise rotate
@@ -28,8 +45,17 @@ final class InputHandler {
         isPanning = true
     }
 
-    func handleMouseDragged(to location: CGPoint, camera: Camera, viewSize: CGSize) {
+    func handleMouseDragged(to location: CGPoint, camera: Camera, viewSize: CGSize, appState: AppState) {
         guard let lastPos = lastMousePosition else { return }
+
+        // Handle selection rectangle drag
+        if isSelecting {
+            // Convert from AppKit coordinates (Y=0 at bottom) to SwiftUI coordinates (Y=0 at top)
+            let flippedLocation = CGPoint(x: location.x, y: viewSize.height - location.y)
+            appState.measurementSystem.updateSelection(to: flippedLocation)
+            appState.measurementSystem.updateSelectedMeasurements(camera: camera, viewSize: viewSize)
+            return
+        }
 
         let delta = CGPoint(
             x: location.x - lastPos.x,
@@ -55,7 +81,13 @@ final class InputHandler {
         lastMousePosition = location
     }
 
-    func handleMouseUp() {
+    func handleMouseUp(appState: AppState) {
+        // End selection if active
+        if isSelecting {
+            appState.measurementSystem.endSelection()
+            isSelecting = false
+        }
+
         isRotating = false
         isPanning = false
         lastMousePosition = nil
@@ -79,6 +111,25 @@ final class InputHandler {
             camera.setPreset(clickedFace.cameraPreset)
             print("Camera set to: \(clickedFace.label)")
             return
+        }
+
+        // If not measuring and have selections, check if clicked on empty area to deselect
+        if !appState.measurementSystem.isCollecting &&
+           !appState.measurementSystem.selectedMeasurements.isEmpty {
+            // Check if click is near any measurement label
+            let clickedOnLabel = isClickNearMeasurementLabel(
+                location: location,
+                camera: camera,
+                viewSize: viewSize,
+                measurementSystem: appState.measurementSystem
+            )
+
+            if !clickedOnLabel {
+                // Clicked on empty area - clear selection
+                appState.measurementSystem.selectedMeasurements.removeAll()
+                print("Selection cleared (clicked empty area)")
+                return
+            }
         }
 
         // Then check for measurement clicks
@@ -210,6 +261,39 @@ final class InputHandler {
     /// Legacy method for backward compatibility
     private func checkOrientationCubeFaceHover(at location: CGPoint, viewSize: CGSize, appState: AppState) -> CubeFace? {
         return checkOrientationCubeHover(at: location, viewSize: viewSize, appState: appState).face
+    }
+
+    /// Check if a click location is near any measurement label
+    private func isClickNearMeasurementLabel(
+        location: CGPoint,
+        camera: Camera,
+        viewSize: CGSize,
+        measurementSystem: MeasurementSystem
+    ) -> Bool {
+        // Convert click location from AppKit (Y=0 bottom) to SwiftUI (Y=0 top) for comparison
+        let swiftUILocation = CGPoint(x: location.x, y: viewSize.height - location.y)
+
+        // Check each measurement label
+        for measurement in measurementSystem.measurements {
+            if let screenPos = camera.project(worldPosition: measurement.labelPosition, viewSize: viewSize) {
+                // Check if click is within label bounds (approximate label size)
+                let labelWidth: CGFloat = 60  // Approximate label width
+                let labelHeight: CGFloat = 24  // Approximate label height
+
+                let labelBounds = CGRect(
+                    x: screenPos.x - labelWidth / 2,
+                    y: screenPos.y - labelHeight / 2,
+                    width: labelWidth,
+                    height: labelHeight
+                )
+
+                if labelBounds.contains(swiftUILocation) {
+                    return true
+                }
+            }
+        }
+
+        return false
     }
 
     func handleScroll(deltaY: CGFloat, camera: Camera) {
@@ -375,8 +459,14 @@ final class InputHandler {
             return false
 
         default:
-            // ESC key to cancel measurement or reset view
+            // ESC key to cancel measurement, clear selection, or reset view
             if event.keyCode == 53 {  // ESC key code
+                // First, clear any selection
+                if !appState.measurementSystem.selectedMeasurements.isEmpty {
+                    appState.measurementSystem.selectedMeasurements.removeAll()
+                    print("Selection cleared")
+                    return true
+                }
                 if appState.measurementSystem.isCollecting {
                     appState.measurementSystem.cancelMeasurement()
                     print("Measurement cancelled")
@@ -393,8 +483,14 @@ final class InputHandler {
                     return true
                 }
             }
-            // Backspace/Delete key to remove last point
-            if event.keyCode == 51 {  // Delete/Backspace key code
+            // Backspace/Delete key to remove last point or selected measurements
+            if event.keyCode == 51 || event.keyCode == 117 {  // 51 = Backspace, 117 = Forward Delete
+                // First check if there are selected measurements to delete
+                if !appState.measurementSystem.selectedMeasurements.isEmpty {
+                    appState.measurementSystem.removeSelectedMeasurements()
+                    return true
+                }
+                // Otherwise, remove last point in current measurement
                 if appState.measurementSystem.isCollecting {
                     appState.measurementSystem.removeLastPoint()
                     return true

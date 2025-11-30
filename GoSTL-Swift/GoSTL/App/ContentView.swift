@@ -29,6 +29,9 @@ struct ContentView: View {
                     viewSize: geometry.size
                 )
 
+                // Selection rectangle overlay
+                SelectionRectangleOverlay(measurementSystem: appState.measurementSystem)
+
                 // Main menu panel (top-left)
                 if appState.showModelInfo {
                     VStack {
