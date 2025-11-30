@@ -97,16 +97,16 @@ final class TextBillboardData {
     }
 
     private static func createVerticalXYQuad(pos: SIMD3<Float>, halfSize: Float, color: SIMD4<Float>) -> [VertexIn] {
-        // Flat on XY plane (on the back wall)
+        // Flat on XY plane (on the back wall) - facing toward positive Z
         [
             // Triangle 1
-            VertexIn(position: SIMD3(pos.x - halfSize, pos.y - halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x + halfSize, pos.y - halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 1)),
-            VertexIn(position: SIMD3(pos.x + halfSize, pos.y + halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x - halfSize, pos.y - halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 0)),
+            VertexIn(position: SIMD3(pos.x + halfSize, pos.y - halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x + halfSize, pos.y + halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 1)),
             // Triangle 2
-            VertexIn(position: SIMD3(pos.x - halfSize, pos.y - halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x + halfSize, pos.y + halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 0)),
-            VertexIn(position: SIMD3(pos.x - halfSize, pos.y + halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 0))
+            VertexIn(position: SIMD3(pos.x - halfSize, pos.y - halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 0)),
+            VertexIn(position: SIMD3(pos.x + halfSize, pos.y + halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: SIMD3(pos.x - halfSize, pos.y + halfSize, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 1))
         ]
     }
 
@@ -164,16 +164,8 @@ final class TextBillboardData {
             return nil
         }
 
-        // Clear background (transparent)
+        // Clear background (fully transparent)
         context.clear(CGRect(x: 0, y: 0, width: width, height: height))
-
-        // Draw semi-transparent background
-        context.setFillColor(red: 0, green: 0, blue: 0, alpha: 0.5)
-        let cornerRadius: CGFloat = 4
-        let backgroundRect = CGRect(x: 2, y: 2, width: CGFloat(width) - 4, height: CGFloat(height) - 4)
-        let path = CGPath(roundedRect: backgroundRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
-        context.addPath(path)
-        context.fillPath()
 
         // Draw text
         context.textMatrix = .identity

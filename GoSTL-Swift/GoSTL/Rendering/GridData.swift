@@ -191,6 +191,16 @@ final class GridData {
         return vertices
     }
 
+    private static func isSuperMajorLine(value: Float, spacing: Float, mode: GridMode) -> Bool {
+        if mode == .oneMM {
+            // In 1mm mode: every 10mm is super major
+            return abs(value.truncatingRemainder(dividingBy: 10.0)) < 0.001
+        } else {
+            // Other modes: every 10th line is super major
+            return abs(value.truncatingRemainder(dividingBy: spacing * 10.0)) < 0.001
+        }
+    }
+
     private static func getLineColor(value: Float, spacing: Float, mode: GridMode) -> SIMD4<Float> {
         let gridColor = SIMD4<Float>(100.0/255.0, 100.0/255.0, 100.0/255.0, 160.0/255.0)
         let majorColor = SIMD4<Float>(140.0/255.0, 140.0/255.0, 140.0/255.0, 200.0/255.0)
@@ -204,8 +214,10 @@ final class GridData {
                 return majorColor
             }
         } else {
-            // Other modes: every 5th line is major
-            if abs(value.truncatingRemainder(dividingBy: spacing * 5.0)) < 0.001 {
+            // Other modes: every 10th line is super major, every 5th line is major
+            if abs(value.truncatingRemainder(dividingBy: spacing * 10.0)) < 0.001 {
+                return superMajorColor
+            } else if abs(value.truncatingRemainder(dividingBy: spacing * 5.0)) < 0.001 {
                 return majorColor
             }
         }
@@ -370,14 +382,14 @@ final class GridData {
         let labelColor = SIMD4<Float>(200.0/255.0, 200.0/255.0, 200.0/255.0, 1.0) // White
         let labelSize: Float = 2.0
 
-        // Determine label spacing based on mode
-        let labelSpacing: Float = mode == .oneMM ? 10.0 : gridSpacing
+        // Always show labels at fixed 10-unit intervals
+        let labelSpacing: Float = 10.0
 
-        // X labels along bottom edge
+        // X labels along bottom edge (front)
         var x = ceil(bounds.minX / labelSpacing) * labelSpacing
         while x <= bounds.maxX {
             let text = String(format: "%.0f", x)
-            let pos = SIMD3(x, bounds.bottomY, bounds.minZ - 2)
+            let pos = SIMD3(x, bounds.bottomY, bounds.maxZ + 2)
             labels.append((text, pos, labelColor, labelSize, .horizontal))
             x += labelSpacing
         }
