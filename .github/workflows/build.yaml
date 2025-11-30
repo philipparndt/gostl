@@ -38,8 +38,11 @@ jobs:
           mkdir -p .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources
           cp .build/default.metallib .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources/
 
-      - name: Verify binary
+      - name: Verify build output
         run: |
           file .build/arm64-apple-macosx/release/GoSTL
+          echo "Bundle contents:"
           find .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle -type f
-          .build/arm64-apple-macosx/release/GoSTL --help || true
+          echo "Checking metallib exists..."
+          test -f .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources/default.metallib
+          echo "Build verified successfully"

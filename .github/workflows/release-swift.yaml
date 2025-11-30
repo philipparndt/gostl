@@ -131,10 +131,14 @@ jobs:
               bin.install "GoSTL" => "gostl"
               # Install resource bundle alongside the binary (required for Metal shaders)
               bin.install "GoSTL_GoSTL.bundle"
+              # Create symlink in HOMEBREW_PREFIX/bin so bundle is found when running via symlink
+              (HOMEBREW_PREFIX/"bin/GoSTL_GoSTL.bundle").make_relative_symlink(bin/"GoSTL_GoSTL.bundle")
             end
 
             test do
-              assert_match "GoSTL", shell_output("#{bin}/gostl --help 2>&1", 0)
+              # Just verify the binary and bundle exist (GUI app can't be tested in CI)
+              assert_predicate bin/"gostl", :exist?
+              assert_predicate bin/"GoSTL_GoSTL.bundle/Contents/Resources/default.metallib", :exist?
             end
           end
           FORMULA
