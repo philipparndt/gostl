@@ -150,6 +150,7 @@ jobs:
           FORMULA
 
           # Replace placeholders
+          sed -i '' "s/VERSION_PLACEHOLDER/${VERSION}/g" Formula/gostl.rb
           sed -i '' "s/TAG_PLACEHOLDER/${TAG}/g" Formula/gostl.rb
           sed -i '' "s/SHA_PLACEHOLDER/${SHA256}/g" Formula/gostl.rb
 
