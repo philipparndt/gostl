@@ -39,13 +39,17 @@ final class CutEdgeData {
         self.indexBuffer = iBuffer
 
         // Create instance data (one transform matrix per edge, with color)
-        var instances: [InstanceData] = []
-        for edge in cutEdges {
-            let instance = Self.createInstanceData(edge: edge)
-            instances.append(instance)
+        // Filter out degenerate (zero-length) edges
+        let instances: [InstanceData] = cutEdges.compactMap { edge in
+            Self.createInstanceData(edge: edge)
         }
 
         self.instanceCount = instances.count
+
+        // Handle case where all edges were degenerate
+        guard !instances.isEmpty else {
+            throw MetalError.bufferCreationFailed
+        }
 
         // Create instance buffer
         let instanceSize = instances.count * MemoryLayout<InstanceData>.stride
@@ -56,15 +60,16 @@ final class CutEdgeData {
     }
 
     /// Create instance data with color for a cut edge
-    private static func createInstanceData(edge: CutEdge) -> InstanceData {
+    /// Returns nil for degenerate (zero-length) edges
+    private static func createInstanceData(edge: CutEdge) -> InstanceData? {
         let start = edge.start.float3
         let end = edge.end.float3
         let direction = end - start
         let length = simd_length(direction)
 
-        // Avoid zero-length edges
+        // Skip zero-length edges (these would appear as dots)
         guard length > 0.0001 else {
-            return InstanceData(modelMatrix: matrix_identity_float4x4, color: axisColors[edge.axis])
+            return nil
         }
 
         let normalizedDir = direction / length
@@ -106,7 +111,9 @@ final class CutEdgeData {
         }
 
         let normalizedAxis = axis / axisLength
-        let angle = asin(axisLength)  // Angle between vectors
+        // Use atan2 for correct angle calculation in full range [0, π]
+        // asin only works correctly for angles 0-90°, but we need 0-180°
+        let angle = atan2(axisLength, simd_dot(from, to))
 
         return simd_float4x4(rotationAngle: angle, axis: normalizedAxis)
     }

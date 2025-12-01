@@ -170,6 +170,7 @@ struct ContentView: View {
             return
         }
 
+        appState.isLoading = true  // Show loading spinner
         Task { @MainActor in
             do {
                 // Initialize rendering components
@@ -206,6 +207,7 @@ struct ContentView: View {
                 return
             }
 
+            appState.isLoading = true  // Show loading spinner
             Task { @MainActor in
                 do {
                     try appState.loadFile(url, device: device)
@@ -228,6 +230,7 @@ struct ContentView: View {
                 } catch {
                     print("ERROR: Failed to load file: \(error)")
                     handleLoadError(error, isAutoReload: false)
+                    appState.isLoading = false
                 }
             }
         }
@@ -273,32 +276,8 @@ struct ContentView: View {
     }
 
     private func setupInitialState() {
-        // Initialize rendering components but don't load a model
-        // This shows a clean loading state until a file is opened
-        guard let device = MTLCreateSystemDefaultDevice() else {
-            print("ERROR: Metal device not available")
-            return
-        }
-
-        do {
-            // Initialize grid
-            try appState.initializeGrid(device: device)
-            print("Grid initialized")
-
-            // Initialize measurements
-            appState.initializeMeasurements(device: device)
-            print("Measurements initialized")
-
-            // Initialize orientation cube
-            appState.initializeOrientationCube(device: device)
-            print("Orientation cube initialized")
-
-            // Set loading state - will be cleared when file is loaded
-            appState.isLoading = true
-            print("Waiting for file to load...")
-        } catch {
-            print("ERROR: Failed to initialize scene: \(error)")
-        }
+        // No file provided - show the example test cube
+        loadTestModel()
     }
 
     private func loadTestModel() {
@@ -382,8 +361,8 @@ struct LoadingOverlay: View {
     var body: some View {
         VStack(spacing: 16) {
             ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                .scaleEffect(2.0)
+                .controlSize(.large)
+                .tint(.white)
 
             Text("Loading...")
                 .font(.system(size: 16, weight: .medium))

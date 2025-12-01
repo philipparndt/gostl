@@ -30,6 +30,19 @@ final class AppState: @unchecked Sendable {
     /// Currently loaded STL model
     var model: STLModel?
 
+    /// Cached edges for wireframe rendering (extracted once when model loads)
+    private var cachedEdges: [Edge]?
+
+    /// Unclipped wireframe for immediate display during slicing
+    private var unclippedWireframeData: WireframeData?
+
+    /// Task for background wireframe clipping (cancelled when new update comes in)
+    private var wireframeUpdateTask: Task<Void, Never>?
+
+    /// Throttle state for mesh updates during slider movement
+    private var lastMeshUpdateTime: CFAbsoluteTime = 0
+    private var pendingMeshUpdate: DispatchWorkItem?
+
     /// Information about the loaded model
     var modelInfo: ModelInfo?
 
@@ -238,14 +251,55 @@ final class AppState: @unchecked Sendable {
         }
     }
 
-    /// Update mesh data based on current slicing bounds
+    /// Update mesh data based on current slicing bounds (throttled during rapid updates)
+    /// When slicing is active, updates are throttled to ~30fps to keep UI responsive
     func updateMeshData(device: MTLDevice) throws {
+        guard model != nil else { return }
+
+        // Throttle updates during slicing to maintain responsive UI
+        // Target: max 30 updates/sec during slider movement
+        let throttleInterval: CFAbsoluteTime = 0.033 // ~30fps
+
+        let now = CFAbsoluteTimeGetCurrent()
+        let timeSinceLastUpdate = now - lastMeshUpdateTime
+
+        if slicingState.isVisible && timeSinceLastUpdate < throttleInterval {
+            // Schedule a trailing update to ensure final position is rendered
+            pendingMeshUpdate?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                try? self.updateMeshDataCore(device: device)
+            }
+            pendingMeshUpdate = workItem
+            let delay = throttleInterval - timeSinceLastUpdate
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+            return
+        }
+
+        // Cancel any pending update since we're doing one now
+        pendingMeshUpdate?.cancel()
+        pendingMeshUpdate = nil
+        lastMeshUpdateTime = now
+
+        try updateMeshDataCore(device: device)
+    }
+
+    /// Core mesh update logic (called by throttled wrapper)
+    private func updateMeshDataCore(device: MTLDevice) throws {
         guard let model else { return }
+
+        lastMeshUpdateTime = CFAbsoluteTimeGetCurrent()
 
         // Calculate wireframe thickness based on model size
         let bbox = model.boundingBox()
         let modelSize = bbox.diagonal
         let thickness = Float(modelSize) * 0.002
+
+        // Ensure we have cached edges
+        if cachedEdges == nil {
+            cachedEdges = model.extractEdges()
+        }
+        let edges = cachedEdges!
 
         // If slicing is active, use triangle slicer to clip geometry
         if slicingState.isVisible {
@@ -255,8 +309,21 @@ final class AppState: @unchecked Sendable {
             if !slicedResult.triangles.isEmpty {
                 let slicedModel = STLModel(triangles: slicedResult.triangles, name: model.name)
                 self.meshData = try MeshData(device: device, model: slicedModel)
-                // Create wireframe from ORIGINAL model edges, clipped to bounds (preserves edge directions)
-                self.wireframeData = try WireframeData(device: device, model: model, thickness: thickness, sliceBounds: slicingState.bounds)
+
+                // Immediately show unclipped wireframe (or keep current clipped one)
+                // Then schedule async clipped wireframe update
+                if unclippedWireframeData == nil {
+                    unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+                }
+
+                // Use unclipped wireframe immediately for responsive UI
+                if wireframeData == nil {
+                    wireframeData = unclippedWireframeData
+                }
+
+                // Schedule debounced async wireframe clipping
+                let bounds = slicingState.bounds
+                scheduleWireframeUpdate(device: device, edges: edges, thickness: thickness, bounds: bounds)
             } else {
                 // No triangles in bounds - don't render mesh or wireframe
                 self.meshData = nil
@@ -271,9 +338,8 @@ final class AppState: @unchecked Sendable {
             }
 
             // Create slice plane visualization
-            // Show planes ONLY if: toggle is on AND a slider is being actively dragged
             if slicingState.showPlanes && slicingState.activePlane != nil {
-                let planeSize = Float(bbox.diagonal * 1.5)  // Make planes larger than model
+                let planeSize = Float(bbox.diagonal * 1.5)
                 self.slicePlaneData = try SlicePlaneData(
                     device: device,
                     slicingState: slicingState,
@@ -284,17 +350,52 @@ final class AppState: @unchecked Sendable {
                 self.slicePlaneData = nil
             }
         } else {
-            // Show full model
+            // Show full model - no clipping needed, create wireframe directly
             self.meshData = try MeshData(device: device, model: model)
-            self.wireframeData = try WireframeData(device: device, model: model, thickness: thickness)
+
+            // Create unclipped wireframe if needed
+            if unclippedWireframeData == nil {
+                unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+            }
+            self.wireframeData = unclippedWireframeData
+
             self.slicePlaneData = nil
             self.cutEdgeData = nil
+        }
+    }
+
+    /// Schedule a debounced wireframe update (runs in background after brief delay)
+    private func scheduleWireframeUpdate(device: MTLDevice, edges: [Edge], thickness: Float, bounds: [[Double]]) {
+        // Cancel any existing background task
+        wireframeUpdateTask?.cancel()
+
+        // Start background task with debounce built-in
+        wireframeUpdateTask = Task { @MainActor [weak self] in
+            // Short delay to debounce rapid updates
+            try? await Task.sleep(for: .milliseconds(16))
+
+            // Check if cancelled during sleep
+            if Task.isCancelled { return }
+
+            // Create clipped wireframe (runs on main actor but WireframeData does its heavy lifting in parallel internally)
+            do {
+                let clippedWireframe = try WireframeData(device: device, edges: edges, thickness: thickness, sliceBounds: bounds)
+
+                // Check if cancelled
+                if Task.isCancelled { return }
+
+                // Update directly (we're already on main actor)
+                self?.wireframeData = clippedWireframe
+            } catch {
+                print("ERROR: Background wireframe update failed: \(error)")
+            }
         }
     }
 
     /// Clear the current model (for empty files)
     func clearModel() {
         self.model = nil
+        self.cachedEdges = nil
         self.meshData = nil
         self.wireframeData = nil
         self.slicePlaneData = nil
@@ -305,8 +406,14 @@ final class AppState: @unchecked Sendable {
     }
 
     /// Load an STL model and create mesh data for rendering
-    func loadModel(_ model: STLModel, device: MTLDevice) throws {
+    /// - Parameters:
+    ///   - model: The STL model to load
+    ///   - device: Metal device for GPU resources
+    ///   - preserveCamera: If true, preserve current camera position (for reloads)
+    func loadModel(_ model: STLModel, device: MTLDevice, preserveCamera: Bool = false) throws {
         self.model = model
+        self.cachedEdges = nil  // Clear edge cache for new model
+        self.unclippedWireframeData = nil  // Clear cached wireframe for new model
         try updateMeshData(device: device)
 
         // Calculate wireframe thickness based on model size
@@ -321,8 +428,10 @@ final class AppState: @unchecked Sendable {
         // Initialize grid based on model bounds
         try updateGrid(device: device)
 
-        // Frame the model in view
-        camera.frameBoundingBox(bbox)
+        // Frame the model in view (only for initial load, not reloads)
+        if !preserveCamera {
+            camera.frameBoundingBox(bbox)
+        }
 
         // Initialize slicing bounds
         slicingState.initializeBounds(from: bbox)
@@ -492,8 +601,8 @@ final class AppState: @unchecked Sendable {
                             self.tempSTLFileURL = tempURL
                         }
 
-                        // Load the new model
-                        try self.loadModel(model, device: device)
+                        // Load the new model, preserving camera position
+                        try self.loadModel(model, device: device, preserveCamera: true)
                         self.modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent, model: model)
                         self.isEmptyFile = false
 

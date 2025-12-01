@@ -9,18 +9,22 @@ final class WireframeData {
     let indexCount: Int
     let instanceCount: Int
 
-    init(device: MTLDevice, model: STLModel, thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
-        // Extract unique edges from model
-        var edges = model.extractEdges()
+    /// Initialize wireframe from a model (extracts edges internally)
+    convenience init(device: MTLDevice, model: STLModel, thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
+        try self.init(device: device, edges: model.extractEdges(), thickness: thickness, sliceBounds: sliceBounds)
+    }
 
-        // If slicing, clip edges to bounds (preserving original edge directions)
+    /// Initialize wireframe from pre-extracted edges (faster for repeated slicing)
+    init(device: MTLDevice, edges: [Edge], thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
+        // Clip edges to bounds (parallelized for large edge counts)
+        let clippedEdges: [Edge]
         if let bounds = sliceBounds {
-            edges = edges.compactMap { edge in
-                Self.clipEdgeToBounds(edge, bounds: bounds)
-            }
+            clippedEdges = Self.clipEdgesParallel(edges, bounds: bounds)
+        } else {
+            clippedEdges = edges
         }
 
-        self.instanceCount = edges.count
+        self.instanceCount = clippedEdges.count
 
         // Create unit cylinder geometry (along Y-axis, from 0 to 1)
         let cylinderGeometry = WireframeData.createCylinderGeometry(radius: thickness, segments: 8)
@@ -40,13 +44,91 @@ final class WireframeData {
         }
         self.cylinderIndexBuffer = indexBuffer
 
-        // Create instance buffer with transformation matrices for each edge
-        let instances = WireframeData.createInstanceMatrices(edges: edges)
+        // Create instance buffer with transformation matrices for each edge (parallelized)
+        let instances = Self.createInstanceMatricesParallel(edges: clippedEdges)
+
         let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
         guard let instanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: []) else {
             throw MetalError.bufferCreationFailed
         }
         self.instanceBuffer = instanceBuffer
+    }
+
+    // MARK: - Parallel Processing
+
+    /// Container for parallel edge clipping results
+    private final class EdgeChunkResult: @unchecked Sendable {
+        var edges: [Edge] = []
+    }
+
+    /// Clip edges in parallel for better performance on large edge counts
+    private static func clipEdgesParallel(_ edges: [Edge], bounds: [[Double]]) -> [Edge] {
+        let chunkSize = max(1000, edges.count / ProcessInfo.processInfo.activeProcessorCount)
+        let chunkCount = (edges.count + chunkSize - 1) / chunkSize
+
+        // Pre-allocate result containers
+        let chunkResults = (0..<chunkCount).map { _ in EdgeChunkResult() }
+
+        // Process chunks in parallel
+        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
+            let startIdx = chunkIndex * chunkSize
+            let endIdx = min(startIdx + chunkSize, edges.count)
+            let result = chunkResults[chunkIndex]
+
+            result.edges.reserveCapacity(endIdx - startIdx)
+
+            for i in startIdx..<endIdx {
+                if let clipped = clipEdgeToBounds(edges[i], bounds: bounds) {
+                    result.edges.append(clipped)
+                }
+            }
+        }
+
+        // Merge results
+        var finalResult: [Edge] = []
+        finalResult.reserveCapacity(edges.count)
+        for result in chunkResults {
+            finalResult.append(contentsOf: result.edges)
+        }
+
+        return finalResult
+    }
+
+    /// Container for parallel matrix results
+    private final class MatrixBuffer: @unchecked Sendable {
+        var matrices: [simd_float4x4]
+
+        init(count: Int) {
+            matrices = [simd_float4x4](repeating: matrix_identity_float4x4, count: count)
+        }
+    }
+
+    /// Create instance matrices in parallel
+    private static func createInstanceMatricesParallel(edges: [Edge]) -> [simd_float4x4] {
+        guard !edges.isEmpty else { return [] }
+
+        // For small counts, use serial
+        if edges.count < 1000 {
+            return createInstanceMatrices(edges: edges)
+        }
+
+        // Pre-allocate the result array in a Sendable container
+        let buffer = MatrixBuffer(count: edges.count)
+
+        // Process in parallel - each index is only written by one thread
+        let chunkSize = max(500, edges.count / ProcessInfo.processInfo.activeProcessorCount)
+        let chunkCount = (edges.count + chunkSize - 1) / chunkSize
+
+        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
+            let startIdx = chunkIndex * chunkSize
+            let endIdx = min(startIdx + chunkSize, edges.count)
+
+            for i in startIdx..<endIdx {
+                buffer.matrices[i] = createEdgeMatrix(start: edges[i].start.float3, end: edges[i].end.float3)
+            }
+        }
+
+        return buffer.matrices
     }
 
     // MARK: - Cylinder Geometry
@@ -132,79 +214,117 @@ final class WireframeData {
 
     /// Clip an edge to slice bounds, preserving original direction
     /// Returns nil if edge is completely outside bounds
+    @inline(__always)
     private static func clipEdgeToBounds(_ edge: Edge, bounds: [[Double]]) -> Edge? {
         let p1 = edge.start
         let p2 = edge.end
 
-        // Fast path: check if edge is fully inside or fully outside bounds
-        var p1Inside = true
-        var p2Inside = true
+        // Ultra-fast bounding box rejection test (unrolled for performance)
+        // X axis
+        let x1 = p1.x, x2 = p2.x
+        let xMin = bounds[0][0], xMax = bounds[0][1]
+        let edgeXMin = x1 < x2 ? x1 : x2
+        let edgeXMax = x1 > x2 ? x1 : x2
+        if edgeXMax < xMin || edgeXMin > xMax { return nil }
 
-        for axis in 0..<3 {
-            let minBound = bounds[axis][0]
-            let maxBound = bounds[axis][1]
-            let coord1 = p1.component(axis: axis)
-            let coord2 = p2.component(axis: axis)
+        // Y axis
+        let y1 = p1.y, y2 = p2.y
+        let yMin = bounds[1][0], yMax = bounds[1][1]
+        let edgeYMin = y1 < y2 ? y1 : y2
+        let edgeYMax = y1 > y2 ? y1 : y2
+        if edgeYMax < yMin || edgeYMin > yMax { return nil }
 
-            // Early rejection: both points outside on same side
-            if (coord1 < minBound && coord2 < minBound) || (coord1 > maxBound && coord2 > maxBound) {
-                return nil
-            }
-
-            // Check if points are inside
-            if coord1 < minBound || coord1 > maxBound { p1Inside = false }
-            if coord2 < minBound || coord2 > maxBound { p2Inside = false }
-        }
+        // Z axis
+        let z1 = p1.z, z2 = p2.z
+        let zMin = bounds[2][0], zMax = bounds[2][1]
+        let edgeZMin = z1 < z2 ? z1 : z2
+        let edgeZMax = z1 > z2 ? z1 : z2
+        if edgeZMax < zMin || edgeZMin > zMax { return nil }
 
         // Fast path: edge completely inside - no clipping needed
+        let p1Inside = x1 >= xMin && x1 <= xMax && y1 >= yMin && y1 <= yMax && z1 >= zMin && z1 <= zMax
+        let p2Inside = x2 >= xMin && x2 <= xMax && y2 >= yMin && y2 <= yMax && z2 >= zMin && z2 <= zMax
+
         if p1Inside && p2Inside {
             return edge
         }
 
-        // Slow path: need to clip
-        var clippedP1 = p1
-        var clippedP2 = p2
+        // Slow path: need to clip (unrolled and using pre-extracted bounds)
+        var cx1 = x1, cy1 = y1, cz1 = z1
+        var cx2 = x2, cy2 = y2, cz2 = z2
 
-        for axis in 0..<3 {
-            let minBound = bounds[axis][0]
-            let maxBound = bounds[axis][1]
-
-            var coord1 = clippedP1.component(axis: axis)
-            var coord2 = clippedP2.component(axis: axis)
-
-            // Clip against min plane
-            if coord1 < minBound {
-                let t = (minBound - coord1) / (coord2 - coord1)
-                clippedP1 = interpolate(clippedP1, clippedP2, t: t)
-                coord1 = minBound
-            } else if coord2 < minBound {
-                let t = (minBound - coord1) / (coord2 - coord1)
-                clippedP2 = interpolate(clippedP1, clippedP2, t: t)
-                coord2 = minBound
-            }
-
-            // Clip against max plane
-            coord1 = clippedP1.component(axis: axis)
-            coord2 = clippedP2.component(axis: axis)
-
-            if coord1 > maxBound {
-                let t = (maxBound - coord1) / (coord2 - coord1)
-                clippedP1 = interpolate(clippedP1, clippedP2, t: t)
-            } else if coord2 > maxBound {
-                let t = (maxBound - coord1) / (coord2 - coord1)
-                clippedP2 = interpolate(clippedP1, clippedP2, t: t)
-            }
+        // Clip X axis
+        if cx1 < xMin {
+            let t = (xMin - cx1) / (cx2 - cx1)
+            cx1 = xMin
+            cy1 = cy1 + t * (cy2 - cy1)
+            cz1 = cz1 + t * (cz2 - cz1)
+        } else if cx2 < xMin {
+            let t = (xMin - cx1) / (cx2 - cx1)
+            cx2 = xMin
+            cy2 = cy1 + t * (cy2 - cy1)
+            cz2 = cz1 + t * (cz2 - cz1)
+        }
+        if cx1 > xMax {
+            let t = (xMax - cx1) / (cx2 - cx1)
+            cx1 = xMax
+            cy1 = cy1 + t * (cy2 - cy1)
+            cz1 = cz1 + t * (cz2 - cz1)
+        } else if cx2 > xMax {
+            let t = (xMax - cx1) / (cx2 - cx1)
+            cx2 = xMax
+            cy2 = cy1 + t * (cy2 - cy1)
+            cz2 = cz1 + t * (cz2 - cz1)
         }
 
-        return Edge(clippedP1, clippedP2)
-    }
+        // Clip Y axis
+        if cy1 < yMin {
+            let t = (yMin - cy1) / (cy2 - cy1)
+            cy1 = yMin
+            cx1 = cx1 + t * (cx2 - cx1)
+            cz1 = cz1 + t * (cz2 - cz1)
+        } else if cy2 < yMin {
+            let t = (yMin - cy1) / (cy2 - cy1)
+            cy2 = yMin
+            cx2 = cx1 + t * (cx2 - cx1)
+            cz2 = cz1 + t * (cz2 - cz1)
+        }
+        if cy1 > yMax {
+            let t = (yMax - cy1) / (cy2 - cy1)
+            cy1 = yMax
+            cx1 = cx1 + t * (cx2 - cx1)
+            cz1 = cz1 + t * (cz2 - cz1)
+        } else if cy2 > yMax {
+            let t = (yMax - cy1) / (cy2 - cy1)
+            cy2 = yMax
+            cx2 = cx1 + t * (cx2 - cx1)
+            cz2 = cz1 + t * (cz2 - cz1)
+        }
 
-    /// Interpolate between two points
-    private static func interpolate(_ p1: Vector3, _ p2: Vector3, t: Double) -> Vector3 {
-        return Vector3(
-            p1.x + t * (p2.x - p1.x),
-            p1.y + t * (p2.y - p1.y),
-            p1.z + t * (p2.z - p1.z)
-        )
+        // Clip Z axis
+        if cz1 < zMin {
+            let t = (zMin - cz1) / (cz2 - cz1)
+            cz1 = zMin
+            cx1 = cx1 + t * (cx2 - cx1)
+            cy1 = cy1 + t * (cy2 - cy1)
+        } else if cz2 < zMin {
+            let t = (zMin - cz1) / (cz2 - cz1)
+            cz2 = zMin
+            cx2 = cx1 + t * (cx2 - cx1)
+            cy2 = cy1 + t * (cy2 - cy1)
+        }
+        if cz1 > zMax {
+            let t = (zMax - cz1) / (cz2 - cz1)
+            cz1 = zMax
+            cx1 = cx1 + t * (cx2 - cx1)
+            cy1 = cy1 + t * (cy2 - cy1)
+        } else if cz2 > zMax {
+            let t = (zMax - cz1) / (cz2 - cz1)
+            cz2 = zMax
+            cx2 = cx1 + t * (cx2 - cx1)
+            cy2 = cy1 + t * (cy2 - cy1)
+        }
+
+        return Edge(Vector3(cx1, cy1, cz1), Vector3(cx2, cy2, cz2))
     }
 }
