@@ -13,6 +13,7 @@ struct ContentView: View {
     init(fileURL: URL? = nil) {
         self.fileURL = fileURL
         print("DEBUG: ContentView initializing with file: \(fileURL?.lastPathComponent ?? "none")...")
+        // Note: Notifications are set up in onAppear since we need access to appState
     }
 
     var body: some View {

@@ -1,94 +1,45 @@
 import SwiftUI
 import AppKit
 
-@main
-struct GoSTLApp: App {
-    @State private var recentDocuments = RecentDocuments.shared
-    @State private var openWindows: [UUID: URL] = [:]
+/// Application delegate for handling command line arguments and app lifecycle
+@MainActor
+class AppDelegate: NSObject, NSApplicationDelegate {
+    static var commandLineFileURL: URL?
 
-    init() {
-        print("DEBUG: GoSTLApp initializing...")
-
-        // Ensure the app activates and comes to foreground
-        DispatchQueue.main.async {
-            NSApp.setActivationPolicy(.regular)
-            NSApp.activate(ignoringOtherApps: true)
-            print("DEBUG: App activated")
-
-            // Debug: Print all windows
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                print("DEBUG: Number of windows: \(NSApp.windows.count)")
-                for (index, window) in NSApp.windows.enumerated() {
-                    print("DEBUG: Window \(index): visible=\(window.isVisible), frame=\(window.frame)")
-                }
-            }
-
-            // Check for command-line file argument, or load most recent file
-            GoSTLApp.handleCommandLineArguments()
-        }
-    }
-
-    private static func handleCommandLineArguments() {
-        let args = CommandLine.arguments
-        var loadedFromCommandLine = false
-
-        // Skip the first argument (executable path)
-        for arg in args.dropFirst() {
-            // Skip Xcode debug arguments
-            if arg.hasPrefix("-") {
-                continue
-            }
-
-            // Check if it's an STL or OpenSCAD file
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Parse command line arguments before windows are created
+        for arg in CommandLine.arguments.dropFirst() {
+            if arg.hasPrefix("-") { continue }
             let url = URL(fileURLWithPath: arg)
             let ext = url.pathExtension.lowercased()
             if (ext == "stl" || ext == "scad") && FileManager.default.fileExists(atPath: url.path) {
-                print("Loading file from command line: \(url.path)")
-                // Post notification to load file after a short delay to ensure UI is ready
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("LoadSTLFile"),
-                        object: url
-                    )
-                }
-                loadedFromCommandLine = true
-                break // Only load the first file
+                AppDelegate.commandLineFileURL = url
+                break
             }
-        }
-
-        // If no file from command line, restore previously open windows
-        if !loadedFromCommandLine {
-            restorePreviouslyOpenWindows()
         }
     }
 
-    private static func restorePreviouslyOpenWindows() {
-        let openWindows = RecentDocuments.shared.openWindows
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Activate the app
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first?.makeKeyAndOrderFront(nil)
+    }
+}
 
-        // If no windows were open when app quit, don't open any
-        guard !openWindows.isEmpty else {
-            print("No windows to restore")
-            return
-        }
+@main
+struct GoSTLApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @State private var openWindows: [UUID: URL] = [:]
 
-        print("Restoring \(openWindows.count) previously open window(s)")
-
-        // Restore each window after a short delay to ensure UI is ready
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            for url in openWindows {
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("LoadSTLFile"),
-                    object: url
-                )
-            }
-        }
+    private var recentDocuments: RecentDocuments {
+        RecentDocuments.shared
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(fileURL: AppDelegate.commandLineFileURL)
                 .onAppear {
-                    print("DEBUG: ContentView appeared")
                     configureWindowForTabbing()
                     saveCurrentWindowState()
                 }
