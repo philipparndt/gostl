@@ -26,8 +26,8 @@ final class MeshData {
         vertices.reserveCapacity(model.triangleCount * 3)
 
         for triangle in model.triangles {
-            // Calculate lighting for this triangle
-            let color = calculateLighting(normal: triangle.normal)
+            // Use triangle's color if available, otherwise default to white
+            let color = triangle.color?.simd4 ?? SIMD4<Float>(1.0, 1.0, 1.0, 1.0)
 
             // Add three vertices (one per triangle vertex)
             vertices.append(VertexIn(

@@ -193,10 +193,17 @@ vertex VertexOut gridVertexShader(
 fragment float4 gridFragmentShader(
     VertexOut in [[stage_in]]
 ) {
-    // Fade grid lines with distance from camera
-    float distance = length(in.worldPosition);
-    float fade = smoothstep(500.0, 100.0, distance);
-    return float4(in.color.rgb, in.color.a * fade);
+    // Simple pass-through without distance fading
+    return in.color;
+}
+
+// MARK: - Build Plate Shader (no distance fade)
+
+fragment float4 buildPlateFragmentShader(
+    VertexOut in [[stage_in]]
+) {
+    // Simple pass-through without distance fading
+    return in.color;
 }
 
 // MARK: - Cut Edge Shaders (Phase 9 - Slicing)

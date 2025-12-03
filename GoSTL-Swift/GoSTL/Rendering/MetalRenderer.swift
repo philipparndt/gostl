@@ -9,6 +9,7 @@ final class MetalRenderer {
     let meshPipelineState: MTLRenderPipelineState
     let wireframePipelineState: MTLRenderPipelineState
     let gridPipelineState: MTLRenderPipelineState
+    let buildPlatePipelineState: MTLRenderPipelineState
     let measurementPipelineState: MTLRenderPipelineState
     let cutEdgePipelineState: MTLRenderPipelineState
     let texturedPipelineState: MTLRenderPipelineState
@@ -31,6 +32,7 @@ final class MetalRenderer {
         self.meshPipelineState = try Self.createMeshPipeline(device: device)
         self.wireframePipelineState = try Self.createWireframePipeline(device: device)
         self.gridPipelineState = try Self.createGridPipeline(device: device)
+        self.buildPlatePipelineState = try Self.createBuildPlatePipeline(device: device)
         self.measurementPipelineState = try Self.createMeshPipeline(device: device) // Reuse mesh pipeline for measurements
         self.cutEdgePipelineState = try Self.createCutEdgePipeline(device: device)
         self.texturedPipelineState = try Self.createTexturedPipeline(device: device)
@@ -131,6 +133,43 @@ final class MetalRenderer {
         pipelineDescriptor.colorAttachments[0].alphaBlendOperation = .add
 
         // Same vertex descriptor as mesh
+        let vertexDescriptor = MTLVertexDescriptor()
+        vertexDescriptor.attributes[0].format = .float3
+        vertexDescriptor.attributes[0].offset = 0
+        vertexDescriptor.attributes[0].bufferIndex = 0
+        vertexDescriptor.attributes[1].format = .float3
+        vertexDescriptor.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
+        vertexDescriptor.attributes[1].bufferIndex = 0
+        vertexDescriptor.attributes[2].format = .float4
+        vertexDescriptor.attributes[2].offset = MemoryLayout<SIMD3<Float>>.stride * 2
+        vertexDescriptor.attributes[2].bufferIndex = 0
+        vertexDescriptor.layouts[0].stride = MemoryLayout<VertexIn>.stride
+        vertexDescriptor.layouts[0].stepFunction = .perVertex
+
+        pipelineDescriptor.vertexDescriptor = vertexDescriptor
+
+        return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+    }
+
+    private static func createBuildPlatePipeline(device: MTLDevice) throws -> MTLRenderPipelineState {
+        let library = try loadShaderLibrary(device: device)
+
+        let pipelineDescriptor = MTLRenderPipelineDescriptor()
+        pipelineDescriptor.vertexFunction = library.makeFunction(name: "gridVertexShader")
+        pipelineDescriptor.fragmentFunction = library.makeFunction(name: "buildPlateFragmentShader")
+        pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+        pipelineDescriptor.rasterSampleCount = 4
+
+        // Enable alpha blending
+        pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+        pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+        pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        pipelineDescriptor.colorAttachments[0].rgbBlendOperation = .add
+        pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+        pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        pipelineDescriptor.colorAttachments[0].alphaBlendOperation = .add
+
         let vertexDescriptor = MTLVertexDescriptor()
         vertexDescriptor.attributes[0].format = .float3
         vertexDescriptor.attributes[0].offset = 0
@@ -301,7 +340,12 @@ final class MetalRenderer {
             return
         }
 
-        // Render grid first (background)
+        // Render build plate first (background)
+        if let buildPlateData = appState.buildPlateData {
+            renderBuildPlate(encoder: renderEncoder, buildPlateData: buildPlateData, appState: appState, viewSize: view.drawableSize)
+        }
+
+        // Render grid (background)
         if appState.gridMode != .off, let gridData = appState.gridData {
             renderGrid(encoder: renderEncoder, gridData: gridData, appState: appState, viewSize: view.drawableSize)
         }
@@ -401,6 +445,18 @@ final class MetalRenderer {
             encoder.setVertexBuffer(dimensionBuffer, offset: 0, index: 0)
             encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: gridData.dimensionLinesCount)
         }
+    }
+
+    private func renderBuildPlate(encoder: MTLRenderCommandEncoder, buildPlateData: BuildPlateData, appState: AppState, viewSize: CGSize) {
+        encoder.setRenderPipelineState(buildPlatePipelineState)
+        encoder.setDepthStencilState(transparentDepthStencilState)
+        encoder.setVertexBuffer(buildPlateData.vertexBuffer, offset: 0, index: 0)
+
+        let aspect = Float(viewSize.width / viewSize.height)
+        var uniforms = createUniforms(camera: appState.camera, aspect: aspect)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: buildPlateData.vertexCount)
     }
 
     private func renderSlicePlanes(encoder: MTLRenderCommandEncoder, slicePlaneData: SlicePlaneData, appState: AppState, viewSize: CGSize) {

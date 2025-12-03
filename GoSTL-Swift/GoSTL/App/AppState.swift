@@ -70,6 +70,15 @@ final class AppState: @unchecked Sendable {
     /// GPU orientation cube data for camera navigation
     var orientationCubeData: OrientationCubeData?
 
+    /// GPU build plate data for printer reference
+    var buildPlateData: BuildPlateData?
+
+    /// Currently selected build plate
+    var buildPlate: BuildPlate = .off
+
+    /// Build plate orientation (bottom or back)
+    var buildPlateOrientation: BuildPlateOrientation = .bottom
+
     /// Currently hovered face of the orientation cube (for hover effect)
     var hoveredCubeFace: CubeFace?
 
@@ -93,10 +102,12 @@ final class AppState: @unchecked Sendable {
     var sourceFileURL: URL?
     var tempSTLFileURL: URL?
     var isOpenSCAD: Bool = false
+    var isGo3mf: Bool = false
     var needsReload: Bool = false
     var isLoading: Bool = false
     var loadError: Error?
     var loadErrorID: UUID?
+    private var lastReloadTime: Date?
 
     /// Whether the current file is empty (produces no geometry)
     var isEmptyFile: Bool = false
@@ -197,6 +208,53 @@ final class AppState: @unchecked Sendable {
                 self.modelInfo = modelInfo
             }
         }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("OpenWithGo3mf"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            openWithGo3mf(sourceFileURL: self?.sourceFileURL)
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("SetBuildPlate"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let plate = notification.object as? BuildPlate, let self = self {
+                self.buildPlate = plate
+                if let device = MTLCreateSystemDefaultDevice() {
+                    self.updateBuildPlate(device: device)
+                }
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CycleBuildPlate"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if let self = self {
+                self.buildPlate = self.buildPlate.next()
+                if let device = MTLCreateSystemDefaultDevice() {
+                    self.updateBuildPlate(device: device)
+                }
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ToggleBuildPlateOrientation"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if let self = self {
+                self.buildPlateOrientation = self.buildPlateOrientation.next()
+                if let device = MTLCreateSystemDefaultDevice() {
+                    self.updateBuildPlate(device: device)
+                }
+            }
+        }
     }
 
     /// Cycle to the next grid mode
@@ -248,6 +306,26 @@ final class AppState: @unchecked Sendable {
             self.orientationCubeData = try OrientationCubeData(device: device, size: 1.0)
         } catch {
             print("ERROR: Failed to create orientation cube: \(error)")
+        }
+    }
+
+    /// Update build plate visualization
+    func updateBuildPlate(device: MTLDevice) {
+        if buildPlate == .off {
+            self.buildPlateData = nil
+        } else {
+            do {
+                let bbox = model?.boundingBox()
+                self.buildPlateData = try BuildPlateData(
+                    device: device,
+                    buildPlate: buildPlate,
+                    orientation: buildPlateOrientation,
+                    modelBoundingBox: bbox
+                )
+            } catch {
+                print("ERROR: Failed to create build plate data: \(error)")
+                self.buildPlateData = nil
+            }
         }
     }
 
@@ -428,6 +506,11 @@ final class AppState: @unchecked Sendable {
         // Initialize grid based on model bounds
         try updateGrid(device: device)
 
+        // Update build plate if one is selected
+        if buildPlate != .off {
+            updateBuildPlate(device: device)
+        }
+
         // Frame the model in view (only for initial load, not reloads)
         if !preserveCamera {
             camera.frameBoundingBox(bbox)
@@ -480,6 +563,7 @@ final class AppState: @unchecked Sendable {
                 self.sourceFileURL = url
                 self.tempSTLFileURL = tempURL
                 self.isOpenSCAD = true
+                self.isGo3mf = false
                 self.isEmptyFile = false
                 self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
@@ -491,6 +575,7 @@ final class AppState: @unchecked Sendable {
                 self.sourceFileURL = url
                 self.tempSTLFileURL = nil
                 self.isOpenSCAD = true
+                self.isGo3mf = false
                 self.isEmptyFile = true
                 self.modelInfo = ModelInfo(fileName: url.lastPathComponent, triangleCount: 0, volume: 0, boundingBox: BoundingBox())
                 self.isLoading = false
@@ -507,9 +592,42 @@ final class AppState: @unchecked Sendable {
             self.sourceFileURL = url
             self.tempSTLFileURL = nil
             self.isOpenSCAD = false
+            self.isGo3mf = false
             self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
             print("Successfully loaded: \(model.triangleCount) triangles")
+
+        } else if fileExtension == "3mf" {
+            // 3MF file (3D Manufacturing Format)
+            print("Loading 3MF file: \(url.lastPathComponent)")
+            let model = try ThreeMFParser.parse(url: url)
+            try loadModel(model, device: device)
+
+            // Update file watching state
+            self.sourceFileURL = url
+            self.tempSTLFileURL = nil
+            self.isOpenSCAD = false
+            self.isGo3mf = false
+            self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
+
+            print("Successfully loaded: \(model.triangleCount) triangles")
+
+        } else if fileExtension == "yaml" || fileExtension == "yml" {
+            // go3mf YAML configuration file
+            print("Loading go3mf config: \(url.lastPathComponent)")
+
+            let renderer = try Go3mfRenderer(configURL: url)
+            let model = try renderer.render()
+            try loadModel(model, device: device)
+
+            // Update file watching state
+            self.sourceFileURL = url
+            self.tempSTLFileURL = nil
+            self.isOpenSCAD = false
+            self.isGo3mf = true
+            self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
+
+            print("Successfully loaded go3mf config: \(model.triangleCount) triangles")
 
         } else {
             throw FileLoadError.unsupportedFileType(fileExtension)
@@ -523,10 +641,14 @@ final class AppState: @unchecked Sendable {
             return
         }
 
-        let watcher = FileWatcher(debounceInterval: 0.5)
+        let watcher = FileWatcher(debounceInterval: 1.0)
         var filesToWatch: [URL] = []
 
-        if isOpenSCAD {
+        if isGo3mf {
+            // For go3mf YAML files, watch the config and all referenced files
+            let renderer = try Go3mfRenderer(configURL: sourceURL)
+            filesToWatch = renderer.getDependencies()
+        } else if isOpenSCAD {
             // For OpenSCAD files, watch the source file and all dependencies
             let workDir = sourceURL.deletingLastPathComponent()
             let renderer = OpenSCADRenderer(workDir: workDir)
@@ -534,7 +656,7 @@ final class AppState: @unchecked Sendable {
             let deps = try renderer.resolveDependencies(scadFile: sourceURL)
             filesToWatch = deps
         } else {
-            // For STL files, just watch the source file
+            // For STL/3MF files, just watch the source file
             filesToWatch = [sourceURL]
         }
 
@@ -553,15 +675,27 @@ final class AppState: @unchecked Sendable {
     func reloadModel(device: MTLDevice) {
         guard let sourceURL = sourceFileURL else {
             print("No source file to reload")
+            needsReload = false
             return
         }
 
-        // If already loading, skip
+        // If already loading, skip (needsReload stays true so it will reload again when done)
         if isLoading {
             return
         }
 
+        // Cooldown period after last reload to prevent rapid re-triggers
+        if let lastReload = lastReloadTime, Date().timeIntervalSince(lastReload) < 1.5 {
+            print("Skipping reload - cooldown period")
+            needsReload = false
+            return
+        }
+
         isLoading = true
+        needsReload = false  // Reset immediately to prevent duplicate triggers
+
+        // Pause file watcher during reload to prevent re-triggers from generated files
+        fileWatcher?.isPaused = true
         print("Reloading model...")
 
         // Perform loading in background
@@ -572,7 +706,11 @@ final class AppState: @unchecked Sendable {
                 var model: STLModel
                 var tempURL: URL?
 
-                if self.isOpenSCAD {
+                if self.isGo3mf {
+                    // Render go3mf YAML config
+                    let renderer = try Go3mfRenderer(configURL: sourceURL)
+                    model = try renderer.render()
+                } else if self.isOpenSCAD {
                     // Render OpenSCAD to STL
                     let workDir = sourceURL.deletingLastPathComponent()
                     let renderer = OpenSCADRenderer(workDir: workDir)
@@ -584,8 +722,13 @@ final class AppState: @unchecked Sendable {
                     model = try STLParser.parse(url: newTempURL)
                     tempURL = newTempURL
                 } else {
-                    // Load STL directly
-                    model = try STLParser.parse(url: sourceURL)
+                    // Load STL/3MF directly
+                    let ext = sourceURL.pathExtension.lowercased()
+                    if ext == "3mf" {
+                        model = try ThreeMFParser.parse(url: sourceURL)
+                    } else {
+                        model = try STLParser.parse(url: sourceURL)
+                    }
                 }
 
                 // Apply loaded model on main thread
@@ -603,20 +746,30 @@ final class AppState: @unchecked Sendable {
 
                         // Load the new model, preserving camera position
                         try self.loadModel(model, device: device, preserveCamera: true)
-                        self.modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent, model: model)
+
+                        // Preserve the selected material from previous model info
+                        let previousMaterial = self.modelInfo?.material ?? .pla
+                        var newModelInfo = ModelInfo(fileName: sourceURL.lastPathComponent, model: model)
+                        newModelInfo.material = previousMaterial
+                        self.modelInfo = newModelInfo
                         self.isEmptyFile = false
 
                         print("Model reloaded successfully!")
                         self.isLoading = false
-                        self.needsReload = false
                         self.loadError = nil
                         self.loadErrorID = nil
+                        self.lastReloadTime = Date()
+
+                        // Resume file watcher
+                        self.fileWatcher?.isPaused = false
                     } catch {
                         print("ERROR: Failed to apply reloaded model: \(error)")
                         self.isLoading = false
-                        self.needsReload = false  // Reset so next change can trigger reload
                         self.loadError = error
                         self.loadErrorID = UUID()
+
+                        // Resume file watcher
+                        self.fileWatcher?.isPaused = false
                     }
                 }
             } catch OpenSCADError.emptyFile {
@@ -626,17 +779,21 @@ final class AppState: @unchecked Sendable {
                     self.isEmptyFile = true
                     self.modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent)
                     self.isLoading = false
-                    self.needsReload = false
                     self.loadError = nil
                     self.loadErrorID = nil
+
+                    // Resume file watcher
+                    self.fileWatcher?.isPaused = false
                 }
             } catch {
                 await MainActor.run {
                     print("ERROR: Failed to reload model: \(error)")
                     self.isLoading = false
-                    self.needsReload = false  // Reset so next change can trigger reload
                     self.loadError = error
                     self.loadErrorID = UUID()
+
+                    // Resume file watcher
+                    self.fileWatcher?.isPaused = false
                 }
             }
         }
@@ -659,7 +816,7 @@ enum FileLoadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupportedFileType(let ext):
-            return "Unsupported file type: .\(ext) (expected .stl or .scad)"
+            return "Unsupported file type: .\(ext) (expected .stl, .3mf, .scad, or .yaml)"
         }
     }
 }

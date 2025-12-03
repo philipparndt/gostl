@@ -9,6 +9,9 @@ class FileWatcher {
     private var debounceTimers: [String: DispatchWorkItem] = [:]
     private var callback: ((URL) -> Void)?
 
+    /// Whether the watcher is paused (ignores events)
+    var isPaused: Bool = false
+
     /// Initialize a file watcher with debounce interval
     /// - Parameter debounceInterval: Time to wait before triggering callback (in seconds)
     init(debounceInterval: TimeInterval = 0.5) {
@@ -65,6 +68,11 @@ class FileWatcher {
 
     /// Handle file change event with debouncing
     private func handleFileChange(fileURL: URL) {
+        // Ignore events while paused
+        if isPaused {
+            return
+        }
+
         let path = fileURL.path
 
         // Cancel existing timer for this file if any
@@ -72,7 +80,7 @@ class FileWatcher {
 
         // Create new debounced callback
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, !self.isPaused else { return }
             print("File changed: \(fileURL.lastPathComponent)")
             self.callback?(fileURL)
         }

@@ -108,6 +108,65 @@ struct GoSTLApp: App {
 
                 Divider()
 
+                Menu("Build Plate") {
+                    Button("Off") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.off)
+                    }
+
+                    Divider()
+
+                    Text("Bambu Lab")
+                    Button("X1C (256³)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.bambuLabX1C)
+                    }
+                    Button("P1S (256³)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.bambuLabP1S)
+                    }
+                    Button("A1 (256³)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.bambuLabA1)
+                    }
+                    Button("A1 mini (180³)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.bambuLabA1Mini)
+                    }
+                    Button("H2D (450³)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.bambuLabH2D)
+                    }
+
+                    Divider()
+
+                    Text("Prusa")
+                    Button("MK4 (250x210x220)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.prusa_mk4)
+                    }
+                    Button("Mini (180³)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.prusa_mini)
+                    }
+
+                    Divider()
+
+                    Text("Voron")
+                    Button("V0 (120³)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.voron_v0)
+                    }
+                    Button("2.4 (350³)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.voron_24)
+                    }
+
+                    Divider()
+
+                    Text("Creality")
+                    Button("Ender 3 (220x220x250)") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetBuildPlate"), object: BuildPlate.ender3)
+                    }
+                }
+
+                Button("Cycle Build Plate") {
+                    NotificationCenter.default.post(name: NSNotification.Name("CycleBuildPlate"), object: nil)
+                }
+                .keyboardShortcut("b", modifiers: .command)
+
+                Divider()
+
                 Button("Toggle Slicing") {
                     NotificationCenter.default.post(name: NSNotification.Name("ToggleSlicing"), object: nil)
                 }
@@ -185,6 +244,13 @@ struct GoSTLApp: App {
                     NotificationCenter.default.post(name: NSNotification.Name("CycleMaterial"), object: nil)
                 }
                 .keyboardShortcut("m", modifiers: .command)
+
+                Divider()
+
+                Button("Open with go3mf") {
+                    NotificationCenter.default.post(name: NSNotification.Name("OpenWithGo3mf"), object: nil)
+                }
+                .keyboardShortcut("o", modifiers: [])
             }
 
             // Help menu with About
@@ -217,12 +283,15 @@ struct GoSTLApp: App {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [
             .init(filenameExtension: "stl")!,
-            .init(filenameExtension: "scad")!
+            .init(filenameExtension: "3mf")!,
+            .init(filenameExtension: "scad")!,
+            .init(filenameExtension: "yaml")!,
+            .init(filenameExtension: "yml")!
         ]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.message = "Select an STL or OpenSCAD file to open"
+        panel.message = "Select an STL, 3MF, OpenSCAD, or go3mf YAML file to open"
 
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }

@@ -1,20 +1,43 @@
 import Foundation
 import simd
 
+/// RGBA color for triangles
+struct TriangleColor: Codable, Equatable {
+    var r: Float
+    var g: Float
+    var b: Float
+    var a: Float
+
+    init(_ r: Float, _ g: Float, _ b: Float, _ a: Float = 1.0) {
+        self.r = r
+        self.g = g
+        self.b = b
+        self.a = a
+    }
+
+    var simd4: SIMD4<Float> {
+        SIMD4<Float>(r, g, b, a)
+    }
+
+    static let white = TriangleColor(1, 1, 1, 1)
+}
+
 /// A triangle defined by three vertices
 struct Triangle {
     var v1: Vector3
     var v2: Vector3
     var v3: Vector3
     var normal: Vector3
+    var color: TriangleColor?
 
     // MARK: - Initializers
 
-    init(v1: Vector3, v2: Vector3, v3: Vector3, normal: Vector3? = nil) {
+    init(v1: Vector3, v2: Vector3, v3: Vector3, normal: Vector3? = nil, color: TriangleColor? = nil) {
         self.v1 = v1
         self.v2 = v2
         self.v3 = v3
         self.normal = normal ?? Self.calculateNormal(v1: v1, v2: v2, v3: v3)
+        self.color = color
     }
 
     // MARK: - Computed Properties
@@ -160,7 +183,7 @@ extension Triangle: Equatable {
 
 extension Triangle: Codable {
     enum CodingKeys: String, CodingKey {
-        case v1, v2, v3, normal
+        case v1, v2, v3, normal, color
     }
 }
 

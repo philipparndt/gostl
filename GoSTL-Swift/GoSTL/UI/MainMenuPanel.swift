@@ -25,7 +25,7 @@ struct MainMenuPanel: View {
 
             // Tools Section
             MenuSection(title: "Tools", icon: "ruler") {
-                ToolsSectionContent(measurementSystem: appState.measurementSystem)
+                ToolsSectionContent(measurementSystem: appState.measurementSystem, appState: appState)
             }
 
             // Toggle hint
@@ -231,6 +231,27 @@ struct ViewSectionContent: View {
                 KeyHint(key: "⇧S")
             }
 
+            // Build plate selector
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text("Build Plate:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.8))
+                    BuildPlatePicker(currentPlate: appState.buildPlate, appState: appState)
+                    KeyHint(key: "⌘B")
+                }
+
+                // Orientation toggle (only show when build plate is active)
+                if appState.buildPlate != .off {
+                    HStack(spacing: 4) {
+                        Text("Orientation:")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.8))
+                        BuildPlateOrientationToggle(orientation: appState.buildPlateOrientation, appState: appState)
+                    }
+                }
+            }
+
             Divider()
                 .background(Color.white.opacity(0.2))
                 .padding(.vertical, 2)
@@ -275,6 +296,7 @@ struct ViewSectionContent: View {
 
 struct ToolsSectionContent: View {
     let measurementSystem: MeasurementSystem
+    var appState: AppState?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -416,6 +438,36 @@ struct ToolsSectionContent: View {
                     .background(
                         RoundedRectangle(cornerRadius: 3)
                             .fill(Color.red.opacity(0.15))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Open with go3mf button
+            if appState?.sourceFileURL != nil {
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                    .padding(.vertical, 2)
+
+                Button(action: {
+                    openWithGo3mf(sourceFileURL: appState?.sourceFileURL)
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "cube.transparent")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.7))
+                            .frame(width: 16)
+                        Text("Open with go3mf")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.8))
+                        Spacer()
+                        KeyHint(key: "o")
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.white.opacity(0.1))
                     )
                 }
                 .buttonStyle(.plain)
@@ -606,6 +658,106 @@ struct KeyHint: View {
             )
     }
 }
+
+/// Build plate picker with dropdown menu
+struct BuildPlatePicker: View {
+    let currentPlate: BuildPlate
+    let appState: AppState
+
+    var body: some View {
+        Menu {
+            Button("Off") {
+                setBuildPlate(.off)
+            }
+
+            Divider()
+
+            // Bambu Lab
+            Menu("Bambu Lab") {
+                Button("X1C (256³)") { setBuildPlate(.bambuLabX1C) }
+                Button("P1S (256³)") { setBuildPlate(.bambuLabP1S) }
+                Button("A1 (256³)") { setBuildPlate(.bambuLabA1) }
+                Button("A1 mini (180³)") { setBuildPlate(.bambuLabA1Mini) }
+                Button("H2D (450³)") { setBuildPlate(.bambuLabH2D) }
+            }
+
+            // Prusa
+            Menu("Prusa") {
+                Button("MK4 (250x210x220)") { setBuildPlate(.prusa_mk4) }
+                Button("Mini (180³)") { setBuildPlate(.prusa_mini) }
+            }
+
+            // Voron
+            Menu("Voron") {
+                Button("V0 (120³)") { setBuildPlate(.voron_v0) }
+                Button("2.4 (350³)") { setBuildPlate(.voron_24) }
+            }
+
+            // Creality
+            Menu("Creality") {
+                Button("Ender 3 (220x220x250)") { setBuildPlate(.ender3) }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(currentPlate == .off ? "Off" : currentPlate.displayName)
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.9))
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(currentPlate != .off ? Color.blue.opacity(0.2) : Color.white.opacity(0.1))
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func setBuildPlate(_ plate: BuildPlate) {
+        appState.buildPlate = plate
+        if let device = MTLCreateSystemDefaultDevice() {
+            appState.updateBuildPlate(device: device)
+        }
+    }
+}
+
+/// Toggle for build plate orientation (Bottom/Back)
+struct BuildPlateOrientationToggle: View {
+    let orientation: BuildPlateOrientation
+    let appState: AppState
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(BuildPlateOrientation.allCases, id: \.self) { opt in
+                Button(action: { setOrientation(opt) }) {
+                    Text(opt.displayName)
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(orientation == opt ? 1.0 : 0.6))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(orientation == opt ? Color.blue.opacity(0.3) : Color.white.opacity(0.1))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func setOrientation(_ newOrientation: BuildPlateOrientation) {
+        appState.buildPlateOrientation = newOrientation
+        if let device = MTLCreateSystemDefaultDevice() {
+            appState.updateBuildPlate(device: device)
+        }
+    }
+}
+
 
 #Preview {
     let appState = AppState()

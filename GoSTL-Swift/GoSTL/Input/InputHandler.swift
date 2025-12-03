@@ -458,6 +458,11 @@ final class InputHandler {
             }
             return false
 
+        case "o":
+            // Open current file with go3mf
+            openWithGo3mf(sourceFileURL: appState.sourceFileURL)
+            return true
+
         default:
             // ESC key to cancel measurement, clear selection, or reset view
             if event.keyCode == 53 {  // ESC key code
