@@ -80,6 +80,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 800, minHeight: 600)
         .navigationTitle(windowTitle)
+        .focusedSceneValue(\.appState, appState)
         .onAppear {
             if let fileURL = fileURL {
                 loadFileOnStartup(fileURL)

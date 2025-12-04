@@ -2,6 +2,19 @@ import SwiftUI
 import Observation
 import Metal
 
+// MARK: - Focused Value for Menu Access
+
+struct AppStateFocusedValueKey: FocusedValueKey {
+    typealias Value = AppState
+}
+
+extension FocusedValues {
+    var appState: AppState? {
+        get { self[AppStateFocusedValueKey.self] }
+        set { self[AppStateFocusedValueKey.self] = newValue }
+    }
+}
+
 /// Grid display modes
 enum GridMode: Int, CaseIterable {
     case off = 0
@@ -125,6 +138,14 @@ final class AppState: @unchecked Sendable {
             queue: .main
         ) { [weak self] _ in
             self?.showWireframe.toggle()
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ToggleInfoPanel"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showModelInfo.toggle()
         }
 
         NotificationCenter.default.addObserver(

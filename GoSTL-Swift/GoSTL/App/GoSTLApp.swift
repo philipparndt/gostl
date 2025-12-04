@@ -31,6 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct GoSTLApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var openWindows: [UUID: URL] = [:]
+    @FocusedValue(\.appState) private var appState
 
     private var recentDocuments: RecentDocuments {
         RecentDocuments.shared
@@ -77,11 +78,18 @@ struct GoSTLApp: App {
                 .disabled(recentDocuments.recentURLs.isEmpty)
             }
 
-            // View menu
-            CommandMenu("View") {
-                Button("Toggle Wireframe") {
-                    NotificationCenter.default.post(name: NSNotification.Name("ToggleWireframe"), object: nil)
-                }
+            // Add items to the system View menu
+            CommandGroup(before: .toolbar) {
+                Toggle("Info Panel", isOn: Binding(
+                    get: { appState?.showModelInfo ?? true },
+                    set: { appState?.showModelInfo = $0 }
+                ))
+                .keyboardShortcut("i", modifiers: .command)
+
+                Toggle("Wireframe", isOn: Binding(
+                    get: { appState?.showWireframe ?? false },
+                    set: { appState?.showWireframe = $0 }
+                ))
                 .keyboardShortcut("w", modifiers: .command)
 
                 Divider()
@@ -167,9 +175,10 @@ struct GoSTLApp: App {
 
                 Divider()
 
-                Button("Toggle Slicing") {
-                    NotificationCenter.default.post(name: NSNotification.Name("ToggleSlicing"), object: nil)
-                }
+                Toggle("Slicing", isOn: Binding(
+                    get: { appState?.slicingState.isVisible ?? false },
+                    set: { _ in appState?.slicingState.toggleVisibility() }
+                ))
                 .keyboardShortcut("s", modifiers: [.command, .shift])
 
                 Divider()
