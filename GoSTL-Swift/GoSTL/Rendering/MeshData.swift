@@ -11,6 +11,11 @@ final class MeshData {
         let vertices = MeshData.createVertices(from: model)
         self.vertexCount = vertices.count
 
+        // Guard against empty models (zero-length buffers are invalid in Metal)
+        guard !vertices.isEmpty else {
+            throw MetalError.bufferCreationFailed
+        }
+
         // Create GPU buffer
         let bufferSize = vertices.count * MemoryLayout<VertexIn>.stride
         guard let buffer = device.makeBuffer(bytes: vertices, length: bufferSize, options: []) else {

@@ -125,6 +125,20 @@ final class AppState: @unchecked Sendable {
     /// Whether the current file is empty (produces no geometry)
     var isEmptyFile: Bool = false
 
+    /// 3MF plate support
+    var threeMFParseResult: ThreeMFParseResult?
+    var selectedPlateId: Int?
+
+    /// Available plates for the current 3MF file
+    var availablePlates: [ThreeMFPlate] {
+        threeMFParseResult?.plates ?? []
+    }
+
+    /// Whether the current file has multiple plates to choose from
+    var hasMultiplePlates: Bool {
+        availablePlates.count > 1
+    }
+
     init() {
         setupNotifications()
     }
@@ -586,6 +600,8 @@ final class AppState: @unchecked Sendable {
                 self.isOpenSCAD = true
                 self.isGo3mf = false
                 self.isEmptyFile = false
+                self.threeMFParseResult = nil
+                self.selectedPlateId = nil
                 self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
                 print("Successfully loaded: \(model.triangleCount) triangles")
@@ -598,6 +614,8 @@ final class AppState: @unchecked Sendable {
                 self.isOpenSCAD = true
                 self.isGo3mf = false
                 self.isEmptyFile = true
+                self.threeMFParseResult = nil
+                self.selectedPlateId = nil
                 self.modelInfo = ModelInfo(fileName: url.lastPathComponent, triangleCount: 0, volume: 0, boundingBox: BoundingBox())
                 self.isLoading = false
                 return
@@ -614,6 +632,8 @@ final class AppState: @unchecked Sendable {
             self.tempSTLFileURL = nil
             self.isOpenSCAD = false
             self.isGo3mf = false
+            self.threeMFParseResult = nil
+            self.selectedPlateId = nil
             self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
             print("Successfully loaded: \(model.triangleCount) triangles")
@@ -621,7 +641,21 @@ final class AppState: @unchecked Sendable {
         } else if fileExtension == "3mf" {
             // 3MF file (3D Manufacturing Format)
             print("Loading 3MF file: \(url.lastPathComponent)")
-            let model = try ThreeMFParser.parse(url: url)
+            let parseResult = try ThreeMFParser.parseWithPlates(url: url)
+            self.threeMFParseResult = parseResult
+
+            // Select first plate by default, or show all if only one plate
+            let initialPlateId = parseResult.plates.first?.id
+            self.selectedPlateId = initialPlateId
+
+            let model: STLModel
+            if let plateId = initialPlateId, parseResult.plates.count > 1 {
+                model = parseResult.model(forPlate: plateId)
+                print("Loaded plate \(plateId): \(parseResult.plates.first { $0.id == plateId }?.name ?? "Unknown")")
+            } else {
+                model = parseResult.modelWithAllPlates()
+            }
+
             try loadModel(model, device: device)
 
             // Update file watching state
@@ -631,7 +665,7 @@ final class AppState: @unchecked Sendable {
             self.isGo3mf = false
             self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
-            print("Successfully loaded: \(model.triangleCount) triangles")
+            print("Successfully loaded: \(model.triangleCount) triangles (\(parseResult.plates.count) plates)")
 
         } else if fileExtension == "yaml" || fileExtension == "yml" {
             // go3mf YAML configuration file
@@ -646,6 +680,8 @@ final class AppState: @unchecked Sendable {
             self.tempSTLFileURL = nil
             self.isOpenSCAD = false
             self.isGo3mf = true
+            self.threeMFParseResult = nil
+            self.selectedPlateId = nil
             self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
             print("Successfully loaded go3mf config: \(model.triangleCount) triangles")
@@ -653,6 +689,39 @@ final class AppState: @unchecked Sendable {
         } else {
             throw FileLoadError.unsupportedFileType(fileExtension)
         }
+    }
+
+    /// Select a different plate from a 3MF file
+    func selectPlate(_ plateId: Int, device: MTLDevice) throws {
+        guard let parseResult = threeMFParseResult else {
+            print("No 3MF parse result available")
+            return
+        }
+
+        guard parseResult.plates.contains(where: { $0.id == plateId }) else {
+            print("Invalid plate ID: \(plateId)")
+            return
+        }
+
+        self.selectedPlateId = plateId
+        let model = parseResult.model(forPlate: plateId)
+
+        // Clear cached data for the new model
+        cachedEdges = nil
+        unclippedWireframeData = nil
+        wireframeData = nil
+        gridData = nil
+        gridTextData = nil
+
+        try loadModel(model, device: device, preserveCamera: false)
+
+        // Update model info
+        if let sourceURL = sourceFileURL {
+            self.modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent, model: model)
+        }
+
+        let plateName = parseResult.plates.first { $0.id == plateId }?.name ?? "Unknown"
+        print("Switched to plate \(plateId): \(plateName) (\(model.triangleCount) triangles)")
     }
 
     /// Set up file watching for the currently loaded file

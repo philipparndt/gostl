@@ -1,6 +1,79 @@
 import Foundation
 import Compression
 
+/// Build plate information from a 3MF file
+struct ThreeMFPlate: Identifiable {
+    let id: Int
+    let name: String
+    let objectIds: [Int]
+    let thumbnailPath: String?
+}
+
+/// Result of parsing a 3MF file with plate support
+struct ThreeMFParseResult {
+    let plates: [ThreeMFPlate]
+    let trianglesByPlate: [Int: [Triangle]]  // Plate ID -> triangles
+    let allTriangles: [Triangle]
+    let name: String?
+
+    /// Get triangles for a specific plate
+    func triangles(forPlate plateId: Int) -> [Triangle] {
+        return trianglesByPlate[plateId] ?? []
+    }
+
+    /// Create an STLModel for a specific plate, centered at the origin
+    func model(forPlate plateId: Int) -> STLModel {
+        let tris = triangles(forPlate: plateId)
+        let plateName = plates.first { $0.id == plateId }?.name
+        let modelName = plateName.map { "\(name ?? "Model") - \($0)" } ?? name
+
+        // Center the model at the origin (each plate may have different world-space positions)
+        let centeredTris = centerTriangles(tris)
+        return STLModel(triangles: centeredTris, name: modelName)
+    }
+
+    /// Center triangles around the origin based on their bounding box center
+    private func centerTriangles(_ triangles: [Triangle]) -> [Triangle] {
+        guard !triangles.isEmpty else { return triangles }
+
+        // Calculate bounding box
+        var minX = Double.infinity, minY = Double.infinity, minZ = Double.infinity
+        var maxX = -Double.infinity, maxY = -Double.infinity, maxZ = -Double.infinity
+
+        for tri in triangles {
+            for v in [tri.v1, tri.v2, tri.v3] {
+                minX = min(minX, v.x)
+                minY = min(minY, v.y)
+                minZ = min(minZ, v.z)
+                maxX = max(maxX, v.x)
+                maxY = max(maxY, v.y)
+                maxZ = max(maxZ, v.z)
+            }
+        }
+
+        // Calculate center offset (only X and Y, keep Z base at 0)
+        let centerX = (minX + maxX) / 2
+        let centerY = (minY + maxY) / 2
+        let baseZ = minZ  // Move to Z=0 base
+
+        // Translate all triangles
+        return triangles.map { tri in
+            Triangle(
+                v1: Vector3(tri.v1.x - centerX, tri.v1.y - centerY, tri.v1.z - baseZ),
+                v2: Vector3(tri.v2.x - centerX, tri.v2.y - centerY, tri.v2.z - baseZ),
+                v3: Vector3(tri.v3.x - centerX, tri.v3.y - centerY, tri.v3.z - baseZ),
+                normal: tri.normal,
+                color: tri.color
+            )
+        }
+    }
+
+    /// Create an STLModel with all triangles
+    func modelWithAllPlates() -> STLModel {
+        return STLModel(triangles: allTriangles, name: name)
+    }
+}
+
 /// Parser for 3MF files (3D Manufacturing Format)
 /// 3MF files are ZIP archives containing XML model data
 enum ThreeMFParser {
@@ -9,33 +82,103 @@ enum ThreeMFParser {
 
     /// Parse a 3MF file from a URL
     static func parse(url: URL) throws -> STLModel {
+        let result = try parseWithPlates(url: url)
+        // If there's only one plate, return it; otherwise return all triangles
+        if result.plates.count == 1, let plate = result.plates.first {
+            return result.model(forPlate: plate.id)
+        }
+        return result.modelWithAllPlates()
+    }
+
+    /// Parse a 3MF file with plate support
+    static func parseWithPlates(url: URL) throws -> ThreeMFParseResult {
         let data = try Data(contentsOf: url)
         let name = url.deletingPathExtension().lastPathComponent
-        return try parse(data: data, name: name)
+        return try parseWithPlates(data: data, name: name)
     }
 
     /// Parse 3MF data
     static func parse(data: Data, name: String? = nil) throws -> STLModel {
+        let result = try parseWithPlates(data: data, name: name)
+        if result.plates.count == 1, let plate = result.plates.first {
+            return result.model(forPlate: plate.id)
+        }
+        return result.modelWithAllPlates()
+    }
+
+    /// Parse 3MF data with plate support
+    static func parseWithPlates(data: Data, name: String? = nil) throws -> ThreeMFParseResult {
         // 3MF is a ZIP archive - extract and parse
-        let archive = try ZipArchive(data: data)
+        var archive = try ZipArchive(data: data)
 
         // Find the 3D model file (usually 3D/3dmodel.model)
         guard let modelData = try archive.findModelFile() else {
             throw ThreeMFError.modelFileNotFound
         }
 
-        // Parse the XML model
-        let triangles = try parseModelXML(data: modelData)
+        // First, parse plate and color info from model_settings.config
+        let (plates, partExtruders) = parsePlateAndColorInfo(archive: archive)
+        print("Found \(plates.count) plates in 3MF file")
+        for plate in plates {
+            print("  Plate \(plate.id): \(plate.name) with objects: \(plate.objectIds)")
+        }
+        print("Found \(partExtruders.count) part extruder assignments")
+        for (objId, parts) in partExtruders {
+            print("  Object \(objId): \(parts)")
+        }
 
-        return STLModel(triangles: triangles, name: name)
+        // Parse the XML model (pass archive and part extruders for color resolution)
+        let parser = ThreeMFXMLParser(data: modelData, archive: archive, partExtruders: partExtruders)
+        let (allTriangles, trianglesByObjectId) = try parser.parseWithObjectMapping()
+        archive = parser.archive
+
+        // Use the parsed triangles with colors already applied
+        let coloredTrianglesByObjectId = trianglesByObjectId
+
+        // Build triangles by plate
+        var trianglesByPlate: [Int: [Triangle]] = [:]
+        for plate in plates {
+            var plateTriangles: [Triangle] = []
+            for objectId in plate.objectIds {
+                if let tris = coloredTrianglesByObjectId[objectId] {
+                    plateTriangles.append(contentsOf: tris)
+                }
+            }
+            trianglesByPlate[plate.id] = plateTriangles
+        }
+
+        // If no plates found, create a single "All Objects" plate
+        let finalPlates: [ThreeMFPlate]
+        if plates.isEmpty {
+            finalPlates = [ThreeMFPlate(id: 1, name: "All Objects", objectIds: [], thumbnailPath: nil)]
+            trianglesByPlate[1] = allTriangles
+        } else {
+            finalPlates = plates
+        }
+
+        return ThreeMFParseResult(
+            plates: finalPlates,
+            trianglesByPlate: trianglesByPlate,
+            allTriangles: allTriangles,
+            name: name
+        )
     }
 
-    // MARK: - XML Parsing
+    // MARK: - Plate and Color Parsing
 
-    private static func parseModelXML(data: Data) throws -> [Triangle] {
-        let parser = ThreeMFXMLParser(data: data)
-        return try parser.parse()
+    /// Part extruder assignment: maps (objectId, partId) -> extruder number
+    typealias PartExtruderMap = [Int: [Int: Int]]  // objectId -> (partId -> extruder)
+
+    private static func parsePlateAndColorInfo(archive: ZipArchive) -> (plates: [ThreeMFPlate], partExtruders: PartExtruderMap) {
+        // Try to extract model_settings.config
+        guard let configData = try? archive.extractFile(path: "Metadata/model_settings.config") else {
+            return ([], [:])
+        }
+
+        let parser = PlateConfigParser(data: configData)
+        return (try? parser.parseWithColors()) ?? ([], [:])
     }
+
 }
 
 // MARK: - 3x4 Transform Matrix (row-major: m00 m01 m02 m03 m10 m11 m12 m13 m20 m21 m22 m23)
@@ -113,7 +256,7 @@ private struct ThreeMFObject {
     let id: Int
     var pid: Int?  // Property ID (extruder/material)
     var triangles: [Triangle] = []
-    var components: [(objectId: Int, transform: Transform3D)] = []
+    var components: [(objectId: Int, path: String?, transform: Transform3D)] = []
 }
 
 // MARK: - Build Item
@@ -127,11 +270,19 @@ private struct BuildItem {
 
 private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
     private let data: Data
+    private(set) var archive: ZipArchive
     private var parseError: Error?
 
-    // Objects by ID
+    // Part extruder assignments from model_settings.config
+    private let partExtruders: [Int: [Int: Int]]
+
+    // Objects by ID (includes both local and external objects)
     private var objects: [Int: ThreeMFObject] = [:]
+    // Objects loaded from external files, keyed by (path, objectId)
+    private var externalObjects: [String: [Int: ThreeMFObject]] = [:]
     private var buildItems: [BuildItem] = []
+    // External paths to load after main parsing completes (to avoid reentrant parsing)
+    private var pendingExternalPaths: Set<String> = []
 
     // Current parsing state
     private var currentObjectId: Int?
@@ -142,11 +293,19 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
     private var inComponents = false
     private var inBuild = false
 
-    init(data: Data) {
+    init(data: Data, archive: ZipArchive, partExtruders: [Int: [Int: Int]] = [:]) {
         self.data = data
+        self.archive = archive
+        self.partExtruders = partExtruders
     }
 
     func parse() throws -> [Triangle] {
+        let (triangles, _) = try parseWithObjectMapping()
+        return triangles
+    }
+
+    /// Parse and return both all triangles and a mapping of objectId -> triangles
+    func parseWithObjectMapping() throws -> (allTriangles: [Triangle], trianglesByObjectId: [Int: [Triangle]]) {
         let parser = XMLParser(data: data)
         parser.delegate = self
         parser.shouldProcessNamespaces = true
@@ -158,18 +317,52 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
             throw ThreeMFError.xmlParsingFailed
         }
 
+        // Load external models that were referenced during parsing
+        // (deferred to avoid reentrant XML parsing)
+        loadPendingExternalModels()
+
         // Build final triangles by processing build items
-        return buildFinalMesh()
+        return buildFinalMeshWithObjectMapping()
     }
 
     /// Recursively collect triangles from an object, applying transforms
-    private func collectTriangles(objectId: Int, transform: Transform3D, inheritedPid: Int? = nil) -> [Triangle] {
-        guard let obj = objects[objectId] else { return [] }
+    /// - parentObjectId: The top-level object ID from the main model (used for extruder lookup)
+    /// - objectId: The current object ID being processed
+    /// - path: Path to external model file if this is an external component
+    /// - transform: Accumulated transformation matrix
+    /// - inheritedPid: Inherited property ID from parent
+    private func collectTriangles(parentObjectId: Int? = nil, objectId: Int, path: String? = nil, transform: Transform3D, inheritedPid: Int? = nil) -> [Triangle] {
+        // Look up object from external file or local objects
+        let obj: ThreeMFObject?
+        if let path = path, let externalObjs = externalObjects[path] {
+            obj = externalObjs[objectId]
+        } else {
+            obj = objects[objectId]
+        }
+
+        guard let obj = obj else { return [] }
 
         var result: [Triangle] = []
 
-        // Use object's pid if available, otherwise use inherited pid
-        let effectivePid = obj.pid ?? inheritedPid
+        // Determine the effective extruder/color:
+        // 1. Check if there's a part-specific extruder in model_settings.config
+        // 2. Fall back to object's pid
+        // 3. Fall back to inherited pid
+        let lookupObjectId = parentObjectId ?? objectId
+        var effectivePid = obj.pid ?? inheritedPid
+
+        // Check for part-specific extruder from model_settings.config
+        if let objectExtruders = partExtruders[lookupObjectId] {
+            // First check if this specific part (objectId) has an extruder assigned
+            if let partExtruder = objectExtruders[objectId] {
+                effectivePid = partExtruder
+            }
+            // Also check the parent object's default extruder
+            else if effectivePid == nil, let defaultExtruder = objectExtruders[lookupObjectId] {
+                effectivePid = defaultExtruder
+            }
+        }
+
         let color = effectivePid.flatMap { extruderColors[$0] }
 
         // Add this object's triangles with transform and color applied
@@ -182,10 +375,12 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
             result.append(Triangle(v1: v1, v2: v2, v3: v3, normal: nil, color: triangleColor))
         }
 
-        // Recursively process components, passing down the pid
+        // Recursively process components, passing down the parent object ID and pid
         for component in obj.components {
             let combinedTransform = transform.multiply(component.transform)
-            result.append(contentsOf: collectTriangles(objectId: component.objectId, transform: combinedTransform, inheritedPid: effectivePid))
+            // Keep track of the top-level parent for extruder lookup
+            let effectiveParent = parentObjectId ?? objectId
+            result.append(contentsOf: collectTriangles(parentObjectId: effectiveParent, objectId: component.objectId, path: component.path, transform: combinedTransform, inheritedPid: effectivePid))
         }
 
         return result
@@ -193,23 +388,33 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
 
     /// Build the final mesh from build items
     private func buildFinalMesh() -> [Triangle] {
+        let (triangles, _) = buildFinalMeshWithObjectMapping()
+        return triangles
+    }
+
+    /// Build the final mesh and return a mapping of objectId -> triangles
+    private func buildFinalMeshWithObjectMapping() -> (allTriangles: [Triangle], trianglesByObjectId: [Int: [Triangle]]) {
         var allTriangles: [Triangle] = []
+        var trianglesByObjectId: [Int: [Triangle]] = [:]
 
         if buildItems.isEmpty {
             // No build section - just collect all object triangles directly
-            for (_, obj) in objects {
+            for (id, obj) in objects {
                 if !obj.triangles.isEmpty {
                     allTriangles.append(contentsOf: obj.triangles)
+                    trianglesByObjectId[id] = obj.triangles
                 }
             }
         } else {
             // Process build items with transforms
             for item in buildItems {
-                allTriangles.append(contentsOf: collectTriangles(objectId: item.objectId, transform: item.transform))
+                let itemTriangles = collectTriangles(objectId: item.objectId, transform: item.transform)
+                allTriangles.append(contentsOf: itemTriangles)
+                trianglesByObjectId[item.objectId] = itemTriangles
             }
         }
 
-        return allTriangles
+        return (allTriangles, trianglesByObjectId)
     }
 
     // MARK: - XMLParserDelegate
@@ -344,7 +549,47 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
             transform = .identity
         }
 
-        objects[parentObjectId]?.components.append((objectId: objectId, transform: transform))
+        // Check for external path (p:path attribute)
+        // Try both with and without namespace prefix
+        let path = attributes["p:path"] ?? attributes["path"]
+
+        // Record the path for later loading (can't load during XML parsing due to reentrant parsing restriction)
+        if let path = path {
+            pendingExternalPaths.insert(path)
+        }
+
+        objects[parentObjectId]?.components.append((objectId: objectId, path: path, transform: transform))
+    }
+
+    /// Load all pending external model files from the archive (called after main parsing completes)
+    private func loadPendingExternalModels() {
+        for path in pendingExternalPaths {
+            loadExternalModel(path: path)
+        }
+        pendingExternalPaths.removeAll()
+    }
+
+    /// Load an external model file from the archive
+    private func loadExternalModel(path: String) {
+        // Skip if already loaded
+        if externalObjects[path] != nil {
+            return
+        }
+
+        // Normalize path (remove leading slash if present)
+        let normalizedPath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+
+        // Try to extract the file from the archive
+        guard let modelData = try? archive.extractFile(path: normalizedPath) else {
+            print("Warning: Could not load external model: \(path)")
+            return
+        }
+
+        // Parse the external model file
+        let parser = ExternalModelParser(data: modelData)
+        if let objects = try? parser.parse() {
+            externalObjects[path] = objects
+        }
     }
 
     private func parseBuildItem(attributes: [String: String]) {
@@ -360,6 +605,329 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
         }
 
         buildItems.append(BuildItem(objectId: objectId, transform: transform))
+    }
+}
+
+// MARK: - Plate Config Parser (for model_settings.config)
+
+private class PlateConfigParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    private var parseError: Error?
+
+    // Parsed plates
+    private var plates: [ThreeMFPlate] = []
+
+    // Part extruder assignments: objectId -> (partId -> extruder)
+    private var partExtruders: [Int: [Int: Int]] = [:]
+
+    // Current parsing state
+    private var inPlate = false
+    private var inModelInstance = false
+    private var inObject = false
+    private var inPart = false
+    private var currentPlateId: Int?
+    private var currentPlateName: String?
+    private var currentThumbnailPath: String?
+    private var currentObjectIds: [Int] = []
+
+    // Object/part tracking for extruder assignments
+    private var currentObjectId: Int?
+    private var currentObjectExtruder: Int?
+    private var currentPartId: Int?
+    private var currentPartExtruder: Int?
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    func parse() throws -> [ThreeMFPlate] {
+        let (plates, _) = try parseWithColors()
+        return plates
+    }
+
+    func parseWithColors() throws -> (plates: [ThreeMFPlate], partExtruders: [Int: [Int: Int]]) {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        parser.shouldProcessNamespaces = false
+
+        guard parser.parse() else {
+            if let error = parseError {
+                throw error
+            }
+            throw ThreeMFError.xmlParsingFailed
+        }
+
+        return (plates, partExtruders)
+    }
+
+    // MARK: - XMLParserDelegate
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?,
+                attributes attributeDict: [String: String]) {
+        switch elementName.lowercased() {
+        case "plate":
+            inPlate = true
+            currentPlateId = nil
+            currentPlateName = nil
+            currentThumbnailPath = nil
+            currentObjectIds = []
+
+        case "model_instance":
+            if inPlate {
+                inModelInstance = true
+            }
+
+        case "object":
+            // Object definition (outside plate)
+            if !inPlate {
+                inObject = true
+                if let idStr = attributeDict["id"], let id = Int(idStr) {
+                    currentObjectId = id
+                    currentObjectExtruder = nil
+                }
+            }
+
+        case "part":
+            // Part definition inside object
+            if inObject {
+                inPart = true
+                if let idStr = attributeDict["id"], let id = Int(idStr) {
+                    currentPartId = id
+                    currentPartExtruder = nil
+                }
+            }
+
+        case "metadata":
+            let key = attributeDict["key"]
+            let value = attributeDict["value"]
+
+            if inPlate {
+                if inModelInstance {
+                    // Inside model_instance, look for object_id
+                    if key == "object_id", let value = value, let objId = Int(value) {
+                        currentObjectIds.append(objId)
+                    }
+                } else {
+                    // Plate-level metadata
+                    switch key {
+                    case "plater_id":
+                        if let value = value {
+                            currentPlateId = Int(value)
+                        }
+                    case "plater_name":
+                        currentPlateName = value
+                    case "thumbnail_file":
+                        currentThumbnailPath = value
+                    default:
+                        break
+                    }
+                }
+            } else if inObject {
+                // Object or part extruder assignment
+                if key == "extruder", let value = value, let extruder = Int(value) {
+                    if inPart {
+                        currentPartExtruder = extruder
+                    } else {
+                        currentObjectExtruder = extruder
+                    }
+                }
+            }
+
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?) {
+        switch elementName.lowercased() {
+        case "plate":
+            // Save the plate if we have valid data
+            if let plateId = currentPlateId, let plateName = currentPlateName {
+                let plate = ThreeMFPlate(
+                    id: plateId,
+                    name: plateName,
+                    objectIds: currentObjectIds,
+                    thumbnailPath: currentThumbnailPath
+                )
+                plates.append(plate)
+            }
+            inPlate = false
+
+        case "model_instance":
+            inModelInstance = false
+
+        case "object":
+            // Save object extruder assignment
+            if let objectId = currentObjectId {
+                if partExtruders[objectId] == nil {
+                    partExtruders[objectId] = [:]
+                }
+                // Store object-level extruder as self-reference
+                if let extruder = currentObjectExtruder {
+                    partExtruders[objectId]![objectId] = extruder
+                }
+            }
+            inObject = false
+            currentObjectId = nil
+            currentObjectExtruder = nil
+
+        case "part":
+            // Save part extruder assignment
+            if let objectId = currentObjectId, let partId = currentPartId, let extruder = currentPartExtruder {
+                if partExtruders[objectId] == nil {
+                    partExtruders[objectId] = [:]
+                }
+                partExtruders[objectId]![partId] = extruder
+            }
+            inPart = false
+            currentPartId = nil
+            currentPartExtruder = nil
+
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {
+        self.parseError = parseError
+    }
+}
+
+// MARK: - External Model Parser (for loading referenced model files)
+
+private class ExternalModelParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    private var parseError: Error?
+
+    // Objects parsed from this file
+    private var objects: [Int: ThreeMFObject] = [:]
+
+    // Current parsing state
+    private var currentObjectId: Int?
+    private var vertices: [Vector3] = []
+    private var inMesh = false
+    private var inVertices = false
+    private var inTriangles = false
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    func parse() throws -> [Int: ThreeMFObject] {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        parser.shouldProcessNamespaces = true
+
+        guard parser.parse() else {
+            if let error = parseError {
+                throw error
+            }
+            throw ThreeMFError.xmlParsingFailed
+        }
+
+        return objects
+    }
+
+    // MARK: - XMLParserDelegate
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?,
+                attributes attributeDict: [String: String]) {
+        let localName = elementName.components(separatedBy: ":").last ?? elementName
+
+        switch localName.lowercased() {
+        case "object":
+            if let idStr = attributeDict["id"], let id = Int(idStr) {
+                currentObjectId = id
+                let pid = attributeDict["pid"].flatMap { Int($0) }
+                objects[id] = ThreeMFObject(id: id, pid: pid)
+            }
+
+        case "mesh":
+            inMesh = true
+            vertices.removeAll()
+
+        case "vertices":
+            if inMesh {
+                inVertices = true
+            }
+
+        case "vertex":
+            if inVertices {
+                parseVertex(attributes: attributeDict)
+            }
+
+        case "triangles":
+            if inMesh {
+                inTriangles = true
+            }
+
+        case "triangle":
+            if inTriangles, let objectId = currentObjectId {
+                parseTriangle(attributes: attributeDict, objectId: objectId)
+            }
+
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?) {
+        let localName = elementName.components(separatedBy: ":").last ?? elementName
+
+        switch localName.lowercased() {
+        case "object":
+            currentObjectId = nil
+        case "mesh":
+            inMesh = false
+        case "vertices":
+            inVertices = false
+        case "triangles":
+            inTriangles = false
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {
+        self.parseError = parseError
+    }
+
+    // MARK: - Element Parsing
+
+    private func parseVertex(attributes: [String: String]) {
+        guard let xStr = attributes["x"], let x = Double(xStr),
+              let yStr = attributes["y"], let y = Double(yStr),
+              let zStr = attributes["z"], let z = Double(zStr) else {
+            return
+        }
+        vertices.append(Vector3(x, y, z))
+    }
+
+    private func parseTriangle(attributes: [String: String], objectId: Int) {
+        guard let v1Str = attributes["v1"], let v1Idx = Int(v1Str),
+              let v2Str = attributes["v2"], let v2Idx = Int(v2Str),
+              let v3Str = attributes["v3"], let v3Idx = Int(v3Str) else {
+            return
+        }
+
+        guard v1Idx >= 0 && v1Idx < vertices.count,
+              v2Idx >= 0 && v2Idx < vertices.count,
+              v3Idx >= 0 && v3Idx < vertices.count else {
+            return
+        }
+
+        let triangle = Triangle(
+            v1: vertices[v1Idx],
+            v2: vertices[v2Idx],
+            v3: vertices[v3Idx],
+            normal: nil
+        )
+
+        objects[objectId]?.triangles.append(triangle)
     }
 }
 
@@ -464,6 +1032,19 @@ private struct ZipArchive {
             return try extractEntry(entry)
         }
 
+        return nil
+    }
+
+    /// Extract a file by path from the archive
+    func extractFile(path: String) throws -> Data? {
+        // Try exact match first
+        if let entry = entries.first(where: { $0.filename == path }) {
+            return try extractEntry(entry)
+        }
+        // Try case-insensitive match
+        if let entry = entries.first(where: { $0.filename.lowercased() == path.lowercased() }) {
+            return try extractEntry(entry)
+        }
         return nil
     }
 

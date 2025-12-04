@@ -47,6 +47,11 @@ final class WireframeData {
         // Create instance buffer with transformation matrices for each edge (parallelized)
         let instances = Self.createInstanceMatricesParallel(edges: clippedEdges)
 
+        // Guard against empty instances (zero-length buffers are invalid in Metal)
+        guard !instances.isEmpty else {
+            throw MetalError.bufferCreationFailed
+        }
+
         let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
         guard let instanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: []) else {
             throw MetalError.bufferCreationFailed

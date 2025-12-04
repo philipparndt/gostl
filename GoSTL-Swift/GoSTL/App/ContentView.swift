@@ -56,6 +56,15 @@ struct ContentView: View {
                     }
                 }
 
+                // Plate selector (bottom-center) - only shown for 3MF files with multiple plates
+                if appState.hasMultiplePlates {
+                    VStack {
+                        Spacer()
+                        PlateSelector(appState: appState)
+                            .padding(.bottom, 16)
+                    }
+                }
+
                 // Loading overlay (shown while waiting for file to load)
                 if appState.isLoading {
                     LoadingOverlay()

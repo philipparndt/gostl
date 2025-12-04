@@ -758,7 +758,6 @@ struct BuildPlateOrientationToggle: View {
     }
 }
 
-
 #Preview {
     let appState = AppState()
     let model = STLModel(
