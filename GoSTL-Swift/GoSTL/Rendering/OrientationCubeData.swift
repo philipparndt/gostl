@@ -429,7 +429,7 @@ final class OrientationCubeData {
         return texture
     }
 
-    /// Generate axis lines as cylinders for thickness (non-instanced)
+    /// Generate axis lines as cylinders with arrow tips for thickness (non-instanced)
     private static func generateAxisCylinders(device: MTLDevice, size: Float) -> (
         vertexBuffer: MTLBuffer?,
         indexBuffer: MTLBuffer?,
@@ -437,10 +437,14 @@ final class OrientationCubeData {
         indexCount: Int
     ) {
         let s = size * 0.5  // Half size
-        let thickness: Float = 0.02  // 50% reduction
+        let thickness: Float = 0.02  // Cylinder thickness
+        let arrowLength: Float = 0.08  // Length of the arrow tip cone
+        let arrowRadius: Float = 0.05  // Radius of the arrow tip cone base
+        let axisExtension: Float = 0.08  // How far axes extend beyond the cube
         let segments = 8
 
         // Define axis endpoints - X and Y at front, Z going back
+        // Axes now extend beyond the cube edges
         let origin = SIMD3<Float>(-s, -s, s)  // Front-left-bottom corner
         struct AxisLine {
             let start: SIMD3<Float>
@@ -449,31 +453,34 @@ final class OrientationCubeData {
         }
 
         let axisLines = [
-            // X axis: horizontal line at bottom of front face (Red)
-            AxisLine(start: origin, end: SIMD3(s, -s, s), color: Axis.x.color),
-            // Y axis: vertical line at front-left corner (Green)
-            AxisLine(start: origin, end: SIMD3(-s, s, s), color: Axis.y.color),
-            // Z axis: line from front to back at bottom-left (Blue)
-            AxisLine(start: origin, end: SIMD3(-s, -s, -s), color: Axis.z.color)
+            // X axis: horizontal line at bottom of front face (Red) - extends beyond cube
+            AxisLine(start: origin, end: SIMD3(s + axisExtension, -s, s), color: Axis.x.color),
+            // Y axis: vertical line at front-left corner (Green) - extends beyond cube
+            AxisLine(start: origin, end: SIMD3(-s, s + axisExtension, s), color: Axis.y.color),
+            // Z axis: line from front to back at bottom-left (Blue) - extends beyond cube
+            AxisLine(start: origin, end: SIMD3(-s, -s, -s - axisExtension), color: Axis.z.color)
         ]
 
         var allVertices: [VertexIn] = []
         var allIndices: [UInt16] = []
 
-        // Generate cylinder geometry for each axis
+        // Generate cylinder and arrow tip geometry for each axis
         for line in axisLines {
             let direction = line.end - line.start
-            let length = simd_length(direction)
-            let axis = direction / length
+            let fullLength = simd_length(direction)
+            let axis = direction / fullLength
+
+            // Cylinder length is reduced to make room for arrow tip
+            let cylinderLength = fullLength - arrowLength
 
             // Create rotation to align Y-axis with direction
             let arbitrary = abs(axis.y) < 0.9 ? SIMD3<Float>(0, 1, 0) : SIMD3<Float>(1, 0, 0)
             let right = simd_normalize(simd_cross(arbitrary, axis))
             let forward = simd_cross(axis, right)
 
-            let baseIndex = UInt16(allVertices.count)
+            // === Generate cylinder vertices ===
+            let cylinderBaseIndex = UInt16(allVertices.count)
 
-            // Generate cylinder vertices
             for i in 0...segments {
                 let theta = Float(i) * 2.0 * .pi / Float(segments)
                 let x = thickness * cos(theta)
@@ -486,7 +493,7 @@ final class OrientationCubeData {
 
                 // Transform vertex position to world space
                 let localBottom = SIMD3<Float>(x, 0, z)
-                let localTop = SIMD3<Float>(x, length, z)
+                let localTop = SIMD3<Float>(x, cylinderLength, z)
                 let worldBottom = line.start + right * localBottom.x + axis * localBottom.y + forward * localBottom.z
                 let worldTop = line.start + right * localTop.x + axis * localTop.y + forward * localTop.z
 
@@ -496,15 +503,66 @@ final class OrientationCubeData {
                 allVertices.append(VertexIn(position: worldTop, normal: worldNormal, color: line.color))
             }
 
-            // Generate indices for this cylinder
+            // Generate indices for cylinder
             for i in 0..<segments {
-                let base = baseIndex + UInt16(i * 2)
+                let base = cylinderBaseIndex + UInt16(i * 2)
                 allIndices.append(base)
                 allIndices.append(base + 2)
                 allIndices.append(base + 1)
                 allIndices.append(base + 1)
                 allIndices.append(base + 2)
                 allIndices.append(base + 3)
+            }
+
+            // === Generate arrow tip (cone) vertices ===
+            let arrowBaseCenter = line.start + axis * cylinderLength
+            let arrowTip = line.end
+
+            // Cone base vertices (ring around the base)
+            let coneBaseIndex = UInt16(allVertices.count)
+
+            // Add center vertex for base cap
+            allVertices.append(VertexIn(position: arrowBaseCenter, normal: -axis, color: line.color))
+
+            for i in 0...segments {
+                let theta = Float(i) * 2.0 * .pi / Float(segments)
+                let x = arrowRadius * cos(theta)
+                let z = arrowRadius * sin(theta)
+
+                // Position on cone base
+                let basePos = arrowBaseCenter + right * x + forward * z
+
+                // Normal for cone surface (points outward and slightly up)
+                // The cone surface normal is perpendicular to the cone surface
+                let radialDir = simd_normalize(right * x + forward * z)
+                let coneNormal = simd_normalize(radialDir * arrowLength + axis * arrowRadius)
+
+                // Base vertex (for cone surface)
+                allVertices.append(VertexIn(position: basePos, normal: coneNormal, color: line.color))
+            }
+
+            // Add tip vertex
+            let tipIndex = UInt16(allVertices.count)
+            allVertices.append(VertexIn(position: arrowTip, normal: axis, color: line.color))
+
+            // Generate indices for cone base cap (fan from center)
+            let baseCenterIndex = coneBaseIndex
+            for i in 0..<segments {
+                let curr = coneBaseIndex + 1 + UInt16(i)
+                let next = coneBaseIndex + 1 + UInt16((i + 1) % segments)
+                // Wind counter-clockwise when viewed from outside (back face)
+                allIndices.append(baseCenterIndex)
+                allIndices.append(next)
+                allIndices.append(curr)
+            }
+
+            // Generate indices for cone surface (triangles from base to tip)
+            for i in 0..<segments {
+                let curr = coneBaseIndex + 1 + UInt16(i)
+                let next = coneBaseIndex + 1 + UInt16((i + 1) % segments)
+                allIndices.append(curr)
+                allIndices.append(next)
+                allIndices.append(tipIndex)
             }
         }
 
@@ -533,7 +591,8 @@ final class OrientationCubeData {
     private static func generateAxisLabelInfo(device: MTLDevice, size: Float) throws -> [AxisLabelInfo] {
         let s = size * 0.5
         let labelSize = size * 0.2
-        let labelOffset = size * 0.18  // Increased distance from axis end to avoid intersection
+        let axisExtension: Float = 0.08  // Must match the extension in generateAxisCylinders
+        let labelOffset = size * 0.18 + axisExtension  // Distance from cube edge plus axis extension
 
         var labels: [AxisLabelInfo] = []
 
