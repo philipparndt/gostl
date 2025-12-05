@@ -361,7 +361,7 @@ final class MetalRenderer {
         }
 
         // Render wireframe if enabled and available
-        if appState.showWireframe, let wireframeData = appState.wireframeData {
+        if appState.wireframeMode != .off, let wireframeData = appState.wireframeData {
             renderWireframe(encoder: renderEncoder, wireframeData: wireframeData, appState: appState, viewSize: view.drawableSize)
         }
 

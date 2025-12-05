@@ -32,6 +32,21 @@ enum GridMode: Int, CaseIterable {
     }
 }
 
+/// Wireframe display modes
+enum WireframeMode: Int, CaseIterable {
+    case off = 0
+    case all = 1
+    case edge = 2
+
+    var description: String {
+        switch self {
+        case .off: return "Wireframe: Off"
+        case .all: return "Wireframe: All"
+        case .edge: return "Wireframe: Edge"
+        }
+    }
+}
+
 @Observable
 final class AppState: @unchecked Sendable {
     /// Clear color for the background (dark blue matching Go version: RGB 15, 18, 25)
@@ -45,6 +60,9 @@ final class AppState: @unchecked Sendable {
 
     /// Cached edges for wireframe rendering (extracted once when model loads)
     private var cachedEdges: [Edge]?
+
+    /// Cached feature edges for wireframe rendering (extracted once when model loads)
+    private var cachedFeatureEdges: [Edge]?
 
     /// Unclipped wireframe for immediate display during slicing
     private var unclippedWireframeData: WireframeData?
@@ -95,8 +113,12 @@ final class AppState: @unchecked Sendable {
     /// Currently hovered face of the orientation cube (for hover effect)
     var hoveredCubeFace: CubeFace?
 
-    /// Whether to show wireframe overlay
-    var showWireframe: Bool = true
+    /// Wireframe display mode
+    var wireframeMode: WireframeMode = .edge
+
+    /// Edge angle threshold in degrees (for edge wireframe mode)
+    /// Edges where adjacent faces differ by more than this angle are shown
+    var edgeAngleThreshold: Double = 30.0
 
     /// Grid display mode
     var gridMode: GridMode = .bottom
@@ -147,11 +169,29 @@ final class AppState: @unchecked Sendable {
     private func setupNotifications() {
         // View menu notifications
         NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("ToggleWireframe"),
+            forName: NSNotification.Name("CycleWireframeMode"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.showWireframe.toggle()
+            if let self = self {
+                self.cycleWireframeMode()
+                if let device = MTLCreateSystemDefaultDevice() {
+                    try? self.updateWireframe(device: device)
+                }
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("SetWireframeMode"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let mode = notification.object as? WireframeMode, let self = self {
+                self.wireframeMode = mode
+                if let device = MTLCreateSystemDefaultDevice() {
+                    try? self.updateWireframe(device: device)
+                }
+            }
         }
 
         NotificationCenter.default.addObserver(
@@ -301,6 +341,56 @@ final class AppState: @unchecked Sendable {
         print(gridMode.description)
     }
 
+    /// Cycle to the next wireframe mode
+    func cycleWireframeMode() {
+        let allModes = WireframeMode.allCases
+        let currentIndex = allModes.firstIndex(of: wireframeMode) ?? 0
+        let nextIndex = (currentIndex + 1) % allModes.count
+        wireframeMode = allModes[nextIndex]
+        print(wireframeMode.description)
+    }
+
+    /// Update wireframe based on current mode
+    func updateWireframe(device: MTLDevice) throws {
+        guard let model = model else {
+            wireframeData = nil
+            return
+        }
+
+        if wireframeMode == .off {
+            wireframeData = nil
+            unclippedWireframeData = nil
+            return
+        }
+
+        // Calculate wireframe thickness based on model size
+        let bbox = model.boundingBox()
+        let modelSize = bbox.diagonal
+        let thickness = Float(modelSize) * 0.002
+
+        // Get appropriate edges based on mode
+        let edges: [Edge]
+        if wireframeMode == .edge {
+            // Always regenerate feature edges when threshold might have changed
+            cachedFeatureEdges = model.extractFeatureEdges(angleThreshold: edgeAngleThreshold)
+            edges = cachedFeatureEdges!
+        } else {
+            if cachedEdges == nil {
+                cachedEdges = model.extractEdges()
+            }
+            edges = cachedEdges!
+        }
+
+        // Create wireframe data
+        if slicingState.isVisible {
+            // With slicing, clip to bounds
+            wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness, sliceBounds: slicingState.bounds)
+        } else {
+            wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+        }
+        unclippedWireframeData = wireframeData
+    }
+
     /// Initialize grid
     func initializeGrid(device: MTLDevice) throws {
         self.gridData = try GridData(device: device, size: 100.0, spacing: 10.0)
@@ -408,11 +498,21 @@ final class AppState: @unchecked Sendable {
         let modelSize = bbox.diagonal
         let thickness = Float(modelSize) * 0.002
 
-        // Ensure we have cached edges
-        if cachedEdges == nil {
-            cachedEdges = model.extractEdges()
+        // Get appropriate edges based on wireframe mode
+        let edges: [Edge]
+        if wireframeMode == .off {
+            edges = []
+        } else if wireframeMode == .edge {
+            if cachedFeatureEdges == nil {
+                cachedFeatureEdges = model.extractFeatureEdges(angleThreshold: edgeAngleThreshold)
+            }
+            edges = cachedFeatureEdges!
+        } else {
+            if cachedEdges == nil {
+                cachedEdges = model.extractEdges()
+            }
+            edges = cachedEdges!
         }
-        let edges = cachedEdges!
 
         // If slicing is active, use triangle slicer to clip geometry
         if slicingState.isVisible {
@@ -423,20 +523,26 @@ final class AppState: @unchecked Sendable {
                 let slicedModel = STLModel(triangles: slicedResult.triangles, name: model.name)
                 self.meshData = try MeshData(device: device, model: slicedModel)
 
-                // Immediately show unclipped wireframe (or keep current clipped one)
-                // Then schedule async clipped wireframe update
-                if unclippedWireframeData == nil {
-                    unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
-                }
+                // Handle wireframe based on mode
+                if wireframeMode != .off && !edges.isEmpty {
+                    // Immediately show unclipped wireframe (or keep current clipped one)
+                    // Then schedule async clipped wireframe update
+                    if unclippedWireframeData == nil {
+                        unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+                    }
 
-                // Use unclipped wireframe immediately for responsive UI
-                if wireframeData == nil {
-                    wireframeData = unclippedWireframeData
-                }
+                    // Use unclipped wireframe immediately for responsive UI
+                    if wireframeData == nil {
+                        wireframeData = unclippedWireframeData
+                    }
 
-                // Schedule debounced async wireframe clipping
-                let bounds = slicingState.bounds
-                scheduleWireframeUpdate(device: device, edges: edges, thickness: thickness, bounds: bounds)
+                    // Schedule debounced async wireframe clipping
+                    let bounds = slicingState.bounds
+                    scheduleWireframeUpdate(device: device, edges: edges, thickness: thickness, bounds: bounds)
+                } else {
+                    self.wireframeData = nil
+                    self.unclippedWireframeData = nil
+                }
             } else {
                 // No triangles in bounds - don't render mesh or wireframe
                 self.meshData = nil
@@ -466,11 +572,17 @@ final class AppState: @unchecked Sendable {
             // Show full model - no clipping needed, create wireframe directly
             self.meshData = try MeshData(device: device, model: model)
 
-            // Create unclipped wireframe if needed
-            if unclippedWireframeData == nil {
-                unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+            // Handle wireframe based on mode
+            if wireframeMode != .off && !edges.isEmpty {
+                // Create unclipped wireframe if needed
+                if unclippedWireframeData == nil {
+                    unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+                }
+                self.wireframeData = unclippedWireframeData
+            } else {
+                self.wireframeData = nil
+                self.unclippedWireframeData = nil
             }
-            self.wireframeData = unclippedWireframeData
 
             self.slicePlaneData = nil
             self.cutEdgeData = nil
@@ -509,6 +621,7 @@ final class AppState: @unchecked Sendable {
     func clearModel() {
         self.model = nil
         self.cachedEdges = nil
+        self.cachedFeatureEdges = nil
         self.meshData = nil
         self.wireframeData = nil
         self.slicePlaneData = nil
@@ -526,14 +639,15 @@ final class AppState: @unchecked Sendable {
     func loadModel(_ model: STLModel, device: MTLDevice, preserveCamera: Bool = false) throws {
         self.model = model
         self.cachedEdges = nil  // Clear edge cache for new model
+        self.cachedFeatureEdges = nil  // Clear feature edge cache for new model
         self.unclippedWireframeData = nil  // Clear cached wireframe for new model
         try updateMeshData(device: device)
 
-        // Calculate wireframe thickness based on model size
+        // Calculate wireframe based on current mode
         let bbox = model.boundingBox()
         let modelSize = bbox.diagonal
         let thickness = Float(modelSize) * 0.002 // 0.2% of model size
-        self.wireframeData = try WireframeData(device: device, model: model, thickness: thickness)
+        try updateWireframe(device: device)
 
         // Reinitialize measurement data with appropriate thickness for this model
         initializeMeasurements(device: device, thickness: thickness)
@@ -708,6 +822,7 @@ final class AppState: @unchecked Sendable {
 
         // Clear cached data for the new model
         cachedEdges = nil
+        cachedFeatureEdges = nil
         unclippedWireframeData = nil
         wireframeData = nil
         gridData = nil

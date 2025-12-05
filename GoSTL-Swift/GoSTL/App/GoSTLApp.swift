@@ -86,10 +86,21 @@ struct GoSTLApp: App {
                 ))
                 .keyboardShortcut("i", modifiers: .command)
 
-                Toggle("Wireframe", isOn: Binding(
-                    get: { appState?.showWireframe ?? false },
-                    set: { appState?.showWireframe = $0 }
-                ))
+                Menu("Wireframe") {
+                    Button("Off") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetWireframeMode"), object: WireframeMode.off)
+                    }
+                    Button("All") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetWireframeMode"), object: WireframeMode.all)
+                    }
+                    Button("Edge") {
+                        NotificationCenter.default.post(name: NSNotification.Name("SetWireframeMode"), object: WireframeMode.edge)
+                    }
+                }
+
+                Button("Cycle Wireframe Mode") {
+                    NotificationCenter.default.post(name: NSNotification.Name("CycleWireframeMode"), object: nil)
+                }
                 .keyboardShortcut("w", modifiers: .command)
 
                 Divider()

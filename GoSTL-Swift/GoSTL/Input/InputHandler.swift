@@ -379,7 +379,10 @@ final class InputHandler {
 
         // Toggle features
         case "w":
-            appState.showWireframe.toggle()
+            appState.cycleWireframeMode()
+            if let device = device {
+                try? appState.updateWireframe(device: device)
+            }
             return true
         case "g":
             appState.cycleGridMode()

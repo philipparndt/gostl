@@ -113,6 +113,57 @@ struct STLModel {
         return Array(edgeSet)
     }
 
+    /// Extract feature edges only (edges where adjacent faces have significantly different normals)
+    /// - Parameter angleThreshold: Minimum angle in degrees between face normals to consider an edge a "feature edge"
+    /// - Returns: Array of feature edges (sharp edges, creases, and boundary edges)
+    func extractFeatureEdges(angleThreshold: Double = 30.0) -> [Edge] {
+        // Build edge-to-triangles adjacency map
+        var edgeTriangles: [Edge: [Triangle]] = [:]
+        edgeTriangles.reserveCapacity(triangles.count * 3)
+
+        for triangle in triangles {
+            let edges = [
+                Edge(triangle.v1, triangle.v2),
+                Edge(triangle.v2, triangle.v3),
+                Edge(triangle.v3, triangle.v1)
+            ]
+            for edge in edges {
+                edgeTriangles[edge, default: []].append(triangle)
+            }
+        }
+
+        // Convert threshold to cosine (for faster comparison)
+        let thresholdRadians = angleThreshold * .pi / 180.0
+        let cosThreshold = cos(thresholdRadians)
+
+        var featureEdges: [Edge] = []
+        featureEdges.reserveCapacity(edgeTriangles.count / 4) // Rough estimate
+
+        for (edge, adjacentTriangles) in edgeTriangles {
+            // Boundary edge (only one adjacent triangle) - always include
+            if adjacentTriangles.count == 1 {
+                featureEdges.append(edge)
+                continue
+            }
+
+            // Check if any pair of adjacent faces has angle exceeding threshold
+            if adjacentTriangles.count >= 2 {
+                let n1 = adjacentTriangles[0].normal
+                let n2 = adjacentTriangles[1].normal
+
+                // Dot product of normals gives cos(angle between them)
+                let dot = n1.dot(n2)
+
+                // If angle > threshold (i.e., cos(angle) < cos(threshold)), it's a feature edge
+                if dot < cosThreshold {
+                    featureEdges.append(edge)
+                }
+            }
+        }
+
+        return featureEdges
+    }
+
     /// Calculate average vertex spacing (for adaptive selection threshold)
     func averageVertexSpacing(sampleSize: Int = 1000) -> Double {
         let samplesToCheck = min(sampleSize, triangles.count)

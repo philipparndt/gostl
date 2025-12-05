@@ -182,20 +182,25 @@ struct ViewSectionContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Wireframe toggle
-            HStack(spacing: 4) {
-                Button(action: { appState.showWireframe.toggle() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: appState.showWireframe ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 10))
-                            .foregroundColor(appState.showWireframe ? .blue : .white.opacity(0.5))
-                        Text("Wireframe")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.8))
-                    }
+            // Wireframe mode
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text("Wireframe:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.8))
+                    KeyHint(key: "w")
                 }
-                .buttonStyle(.plain)
-                KeyHint(key: "w")
+
+                HStack(spacing: 3) {
+                    WireframeModeRadio(mode: .off, label: "Off", currentMode: appState.wireframeMode, appState: appState)
+                    WireframeModeRadio(mode: .all, label: "All", currentMode: appState.wireframeMode, appState: appState)
+                    WireframeModeRadio(mode: .edge, label: "Edge", currentMode: appState.wireframeMode, appState: appState)
+                }
+
+                // Edge angle threshold slider (only show when edge mode is selected)
+                if appState.wireframeMode == .edge {
+                    EdgeAngleSlider(appState: appState)
+                }
             }
 
             // Grid mode
@@ -561,6 +566,81 @@ struct GridModeRadio: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct WireframeModeRadio: View {
+    let mode: WireframeMode
+    let label: String
+    let currentMode: WireframeMode
+    let appState: AppState
+
+    var body: some View {
+        Button(action: {
+            appState.wireframeMode = mode
+            if let device = MTLCreateSystemDefaultDevice() {
+                try? appState.updateWireframe(device: device)
+            }
+        }) {
+            HStack(spacing: 2) {
+                Image(systemName: currentMode == mode ? "circle.fill" : "circle")
+                    .font(.system(size: 8))
+                    .foregroundColor(currentMode == mode ? .blue : .white.opacity(0.5))
+                Text(label)
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(currentMode == mode ? Color.blue.opacity(0.2) : Color.white.opacity(0.1))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct EdgeAngleSlider: View {
+    let appState: AppState
+    @State private var sliderValue: Double = 30.0
+    @State private var debounceTask: Task<Void, Never>?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text("Angle:")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.6))
+                Spacer()
+                Text("\(Int(sliderValue))°")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .frame(width: 30, alignment: .trailing)
+            }
+
+            Slider(value: $sliderValue, in: 1...90, step: 1)
+                .controlSize(.mini)
+                .onChange(of: sliderValue) { _, newValue in
+                    // Debounce the update to avoid regenerating edges on every slider tick
+                    debounceTask?.cancel()
+                    debounceTask = Task {
+                        try? await Task.sleep(for: .milliseconds(150))
+                        if !Task.isCancelled {
+                            await MainActor.run {
+                                appState.edgeAngleThreshold = newValue
+                                if let device = MTLCreateSystemDefaultDevice() {
+                                    try? appState.updateWireframe(device: device)
+                                }
+                            }
+                        }
+                    }
+                }
+        }
+        .padding(.top, 2)
+        .onAppear {
+            sliderValue = appState.edgeAngleThreshold
+        }
     }
 }
 
