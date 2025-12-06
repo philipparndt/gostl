@@ -71,7 +71,9 @@ final class InputHandler {
             )
         } else if isPanning {
             // Pan camera (inverted so drag direction matches view movement)
-            let sensitivity = Float(camera.distance) * 0.001
+            // Scale sensitivity with distance, but ensure minimum responsiveness when zoomed in
+            let baseSensitivity: Float = 0.002
+            let sensitivity = max(Float(camera.distance) * baseSensitivity, 0.01)
             camera.pan(delta: SIMD2(
                 -Float(delta.x) * sensitivity,
                 -Float(delta.y) * sensitivity
