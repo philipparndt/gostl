@@ -64,6 +64,9 @@ final class AppState: @unchecked Sendable {
     /// Cached feature edges for wireframe rendering (extracted once when model loads)
     private var cachedFeatureEdges: [Edge]?
 
+    /// Cached styled edges for edge mode (all edges with styling based on angle)
+    private var cachedStyledEdges: [StyledEdge]?
+
     /// Unclipped wireframe for immediate display during slicing
     private var unclippedWireframeData: WireframeData?
 
@@ -368,25 +371,31 @@ final class AppState: @unchecked Sendable {
         let modelSize = bbox.diagonal
         let thickness = Float(modelSize) * 0.002
 
-        // Get appropriate edges based on mode
-        let edges: [Edge]
+        // Create wireframe data based on mode
         if wireframeMode == .edge {
-            // Always regenerate feature edges when threshold might have changed
-            cachedFeatureEdges = model.extractFeatureEdges(angleThreshold: edgeAngleThreshold)
-            edges = cachedFeatureEdges!
+            // Edge mode: show all edges with styling (feature edges full, soft edges thin/transparent)
+            if cachedStyledEdges == nil {
+                cachedStyledEdges = model.extractStyledEdges(angleThreshold: edgeAngleThreshold)
+            }
+            let styledEdges = cachedStyledEdges!
+
+            if slicingState.isVisible {
+                wireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness, sliceBounds: slicingState.bounds)
+            } else {
+                wireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness)
+            }
         } else {
+            // All mode: show all edges with full width/opacity
             if cachedEdges == nil {
                 cachedEdges = model.extractEdges()
             }
-            edges = cachedEdges!
-        }
+            let edges = cachedEdges!
 
-        // Create wireframe data
-        if slicingState.isVisible {
-            // With slicing, clip to bounds
-            wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness, sliceBounds: slicingState.bounds)
-        } else {
-            wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+            if slicingState.isVisible {
+                wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness, sliceBounds: slicingState.bounds)
+            } else {
+                wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+            }
         }
         unclippedWireframeData = wireframeData
     }
@@ -498,22 +507,6 @@ final class AppState: @unchecked Sendable {
         let modelSize = bbox.diagonal
         let thickness = Float(modelSize) * 0.002
 
-        // Get appropriate edges based on wireframe mode
-        let edges: [Edge]
-        if wireframeMode == .off {
-            edges = []
-        } else if wireframeMode == .edge {
-            if cachedFeatureEdges == nil {
-                cachedFeatureEdges = model.extractFeatureEdges(angleThreshold: edgeAngleThreshold)
-            }
-            edges = cachedFeatureEdges!
-        } else {
-            if cachedEdges == nil {
-                cachedEdges = model.extractEdges()
-            }
-            edges = cachedEdges!
-        }
-
         // If slicing is active, use triangle slicer to clip geometry
         if slicingState.isVisible {
             let slicedResult = TriangleSlicer.sliceTriangles(model.triangles, bounds: slicingState.bounds)
@@ -524,9 +517,34 @@ final class AppState: @unchecked Sendable {
                 self.meshData = try MeshData(device: device, model: slicedModel)
 
                 // Handle wireframe based on mode
-                if wireframeMode != .off && !edges.isEmpty {
+                if wireframeMode == .edge {
+                    // Edge mode with styled edges
+                    if cachedStyledEdges == nil {
+                        cachedStyledEdges = model.extractStyledEdges(angleThreshold: edgeAngleThreshold)
+                    }
+                    let styledEdges = cachedStyledEdges!
+
                     // Immediately show unclipped wireframe (or keep current clipped one)
-                    // Then schedule async clipped wireframe update
+                    if unclippedWireframeData == nil {
+                        unclippedWireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness)
+                    }
+
+                    // Use unclipped wireframe immediately for responsive UI
+                    if wireframeData == nil {
+                        wireframeData = unclippedWireframeData
+                    }
+
+                    // Schedule debounced async wireframe clipping
+                    let bounds = slicingState.bounds
+                    scheduleWireframeUpdate(device: device, styledEdges: styledEdges, thickness: thickness, bounds: bounds)
+                } else if wireframeMode == .all {
+                    // All mode with plain edges
+                    if cachedEdges == nil {
+                        cachedEdges = model.extractEdges()
+                    }
+                    let edges = cachedEdges!
+
+                    // Immediately show unclipped wireframe (or keep current clipped one)
                     if unclippedWireframeData == nil {
                         unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
                     }
@@ -573,8 +591,24 @@ final class AppState: @unchecked Sendable {
             self.meshData = try MeshData(device: device, model: model)
 
             // Handle wireframe based on mode
-            if wireframeMode != .off && !edges.isEmpty {
-                // Create unclipped wireframe if needed
+            if wireframeMode == .edge {
+                // Edge mode with styled edges
+                if cachedStyledEdges == nil {
+                    cachedStyledEdges = model.extractStyledEdges(angleThreshold: edgeAngleThreshold)
+                }
+                let styledEdges = cachedStyledEdges!
+
+                if unclippedWireframeData == nil {
+                    unclippedWireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness)
+                }
+                self.wireframeData = unclippedWireframeData
+            } else if wireframeMode == .all {
+                // All mode with plain edges
+                if cachedEdges == nil {
+                    cachedEdges = model.extractEdges()
+                }
+                let edges = cachedEdges!
+
                 if unclippedWireframeData == nil {
                     unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
                 }
@@ -617,11 +651,40 @@ final class AppState: @unchecked Sendable {
         }
     }
 
+    /// Schedule a debounced wireframe update for styled edges (runs in background after brief delay)
+    private func scheduleWireframeUpdate(device: MTLDevice, styledEdges: [StyledEdge], thickness: Float, bounds: [[Double]]) {
+        // Cancel any existing background task
+        wireframeUpdateTask?.cancel()
+
+        // Start background task with debounce built-in
+        wireframeUpdateTask = Task { @MainActor [weak self] in
+            // Short delay to debounce rapid updates
+            try? await Task.sleep(for: .milliseconds(16))
+
+            // Check if cancelled during sleep
+            if Task.isCancelled { return }
+
+            // Create clipped wireframe (runs on main actor but WireframeData does its heavy lifting in parallel internally)
+            do {
+                let clippedWireframe = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness, sliceBounds: bounds)
+
+                // Check if cancelled
+                if Task.isCancelled { return }
+
+                // Update directly (we're already on main actor)
+                self?.wireframeData = clippedWireframe
+            } catch {
+                print("ERROR: Background wireframe update failed: \(error)")
+            }
+        }
+    }
+
     /// Clear the current model (for empty files)
     func clearModel() {
         self.model = nil
         self.cachedEdges = nil
         self.cachedFeatureEdges = nil
+        self.cachedStyledEdges = nil
         self.meshData = nil
         self.wireframeData = nil
         self.slicePlaneData = nil
@@ -640,6 +703,7 @@ final class AppState: @unchecked Sendable {
         self.model = model
         self.cachedEdges = nil  // Clear edge cache for new model
         self.cachedFeatureEdges = nil  // Clear feature edge cache for new model
+        self.cachedStyledEdges = nil  // Clear styled edge cache for new model
         self.unclippedWireframeData = nil  // Clear cached wireframe for new model
         try updateMeshData(device: device)
 
@@ -823,6 +887,7 @@ final class AppState: @unchecked Sendable {
         // Clear cached data for the new model
         cachedEdges = nil
         cachedFeatureEdges = nil
+        cachedStyledEdges = nil
         unclippedWireframeData = nil
         wireframeData = nil
         gridData = nil

@@ -25,22 +25,17 @@ Feature: Wireframe Display Modes
 
   Scenario: Wireframe mode "Edge"
     When I set wireframe mode to "Edge"
-    Then only feature edges should be displayed
-    And feature edges are edges where adjacent faces exceed the angle threshold
-    And non-feature edges should be hidden
+    Then edges should be displayed with angle-based styling
+    And feature edges (>= 20 degrees) should be displayed at full width and opacity
+    And soft edges (1-20 degrees) should be displayed at half width and 30% opacity
+    And edges below 1 degree should be hidden
+    And boundary edges (single adjacent face) should always be displayed as feature edges
 
-  Scenario: Configure edge angle threshold
+  Scenario: Edge mode angle thresholds
     Given wireframe mode is set to "Edge"
-    When I adjust the edge angle threshold
-    Then the threshold should be adjustable from 1 to 90 degrees
-    And the default threshold should be 30 degrees
-    And the wireframe should update to show edges exceeding the new threshold
-
-  Scenario: Debounced threshold slider
-    Given wireframe mode is set to "Edge"
-    When I rapidly adjust the angle threshold slider
-    Then the wireframe should update with a 150ms debounce delay
-    And this ensures responsive UI during adjustment
+    Then the feature edge threshold should be 20 degrees
+    And the minimum visible edge threshold should be 1 degree
+    And these thresholds ensure a clean visualization that highlights model features
 
   Scenario: Wireframe thickness auto-scaling
     When wireframe is enabled

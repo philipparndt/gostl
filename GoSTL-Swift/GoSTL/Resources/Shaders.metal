@@ -42,6 +42,14 @@ struct InstanceData {
     float4 color;
 };
 
+/// Per-instance data for wireframe edges with styling
+struct WireframeInstance {
+    float4x4 matrix;          // Transformation matrix for the edge
+    float widthMultiplier;    // Width multiplier (1.0 = normal, 0.5 = thinner)
+    float alpha;              // Alpha/transparency (1.0 = opaque, 0.3 = transparent)
+    float2 _padding;          // Align to 16 bytes
+};
+
 // MARK: - Basic Shaders (Phase 0)
 
 vertex VertexOut basicVertexShader(VertexIn in [[stage_in]]) {
@@ -127,13 +135,14 @@ fragment float4 meshFragmentShader(
 vertex VertexOut wireframeVertexShader(
     const VertexIn in [[stage_in]],
     constant Uniforms &uniforms [[buffer(1)]],
-    constant float4x4 *instanceMatrices [[buffer(2)]],
+    constant WireframeInstance *instances [[buffer(2)]],
     uint instanceID [[instance_id]]
 ) {
     VertexOut out;
 
-    // Apply instance transformation to position cylinder along edge
-    float4x4 instanceMatrix = instanceMatrices[instanceID];
+    // Get instance data
+    WireframeInstance instance = instances[instanceID];
+    float4x4 instanceMatrix = instance.matrix;
 
     // Calculate edge position in world space
     float3 edgeStart = instanceMatrix[3].xyz;
@@ -143,7 +152,7 @@ vertex VertexOut wireframeVertexShader(
     // Extract FOV from projection matrix (assuming perspective projection)
     float fovY = 2.0 * atan(1.0 / uniforms.projectionMatrix[1][1]);
     float pixelSize = (distanceToCamera * tan(fovY * 0.5) * 2.0) / uniforms.viewportHeight;
-    float wireframeThickness = pixelSize * 2.0; // 2 pixels
+    float wireframeThickness = pixelSize * 2.0 * instance.widthMultiplier; // Apply width multiplier
 
     // Scale the radius (XZ plane) while keeping length (Y axis)
     float3 scaledPosition = in.position;
@@ -164,7 +173,9 @@ vertex VertexOut wireframeVertexShader(
     );
     out.normal = uniforms.normalMatrix * instanceRotation * in.normal;
     out.worldPosition = worldPos.xyz;
-    out.color = in.color;
+
+    // Apply alpha from instance
+    out.color = float4(in.color.rgb, instance.alpha);
 
     return out;
 }

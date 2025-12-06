@@ -15,13 +15,21 @@ final class WireframeData {
     }
 
     /// Initialize wireframe from pre-extracted edges (faster for repeated slicing)
-    init(device: MTLDevice, edges: [Edge], thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
+    /// All edges get full width and opacity
+    convenience init(device: MTLDevice, edges: [Edge], thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
+        // Convert to styled edges with full opacity
+        let styledEdges = edges.map { StyledEdge(edge: $0, isFeatureEdge: true) }
+        try self.init(device: device, styledEdges: styledEdges, thickness: thickness, sliceBounds: sliceBounds)
+    }
+
+    /// Initialize wireframe from styled edges (with per-edge width and alpha)
+    init(device: MTLDevice, styledEdges: [StyledEdge], thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
         // Clip edges to bounds (parallelized for large edge counts)
-        let clippedEdges: [Edge]
+        let clippedEdges: [StyledEdge]
         if let bounds = sliceBounds {
-            clippedEdges = Self.clipEdgesParallel(edges, bounds: bounds)
+            clippedEdges = Self.clipStyledEdgesParallel(styledEdges, bounds: bounds)
         } else {
-            clippedEdges = edges
+            clippedEdges = styledEdges
         }
 
         self.instanceCount = clippedEdges.count
@@ -44,15 +52,15 @@ final class WireframeData {
         }
         self.cylinderIndexBuffer = indexBuffer
 
-        // Create instance buffer with transformation matrices for each edge (parallelized)
-        let instances = Self.createInstanceMatricesParallel(edges: clippedEdges)
+        // Create instance buffer with WireframeInstance data for each edge (parallelized)
+        let instances = Self.createWireframeInstancesParallel(styledEdges: clippedEdges)
 
         // Guard against empty instances (zero-length buffers are invalid in Metal)
         guard !instances.isEmpty else {
             throw MetalError.bufferCreationFailed
         }
 
-        let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
+        let instanceSize = instances.count * MemoryLayout<WireframeInstance>.stride
         guard let instanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: []) else {
             throw MetalError.bufferCreationFailed
         }
@@ -134,6 +142,106 @@ final class WireframeData {
         }
 
         return buffer.matrices
+    }
+
+    /// Container for parallel styled edge clipping results
+    private final class StyledEdgeChunkResult: @unchecked Sendable {
+        var edges: [StyledEdge] = []
+    }
+
+    /// Clip styled edges in parallel for better performance on large edge counts
+    private static func clipStyledEdgesParallel(_ styledEdges: [StyledEdge], bounds: [[Double]]) -> [StyledEdge] {
+        let chunkSize = max(1000, styledEdges.count / ProcessInfo.processInfo.activeProcessorCount)
+        let chunkCount = (styledEdges.count + chunkSize - 1) / chunkSize
+
+        // Pre-allocate result containers
+        let chunkResults = (0..<chunkCount).map { _ in StyledEdgeChunkResult() }
+
+        // Process chunks in parallel
+        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
+            let startIdx = chunkIndex * chunkSize
+            let endIdx = min(startIdx + chunkSize, styledEdges.count)
+            let result = chunkResults[chunkIndex]
+
+            result.edges.reserveCapacity(endIdx - startIdx)
+
+            for i in startIdx..<endIdx {
+                let styledEdge = styledEdges[i]
+                if let clippedEdge = clipEdgeToBounds(styledEdge.edge, bounds: bounds) {
+                    // Preserve styling when clipping
+                    result.edges.append(StyledEdge(
+                        edge: clippedEdge,
+                        isFeatureEdge: styledEdge.widthMultiplier >= 1.0
+                    ))
+                }
+            }
+        }
+
+        // Merge results
+        var finalResult: [StyledEdge] = []
+        finalResult.reserveCapacity(styledEdges.count)
+        for result in chunkResults {
+            finalResult.append(contentsOf: result.edges)
+        }
+
+        return finalResult
+    }
+
+    /// Container for parallel WireframeInstance results
+    private final class WireframeInstanceBuffer: @unchecked Sendable {
+        var instances: [WireframeInstance]
+
+        init(count: Int) {
+            instances = [WireframeInstance](repeating: WireframeInstance(
+                matrix: matrix_identity_float4x4,
+                widthMultiplier: 1.0,
+                alpha: 1.0
+            ), count: count)
+        }
+    }
+
+    /// Create WireframeInstance data in parallel
+    private static func createWireframeInstancesParallel(styledEdges: [StyledEdge]) -> [WireframeInstance] {
+        guard !styledEdges.isEmpty else { return [] }
+
+        // For small counts, use serial
+        if styledEdges.count < 1000 {
+            return createWireframeInstances(styledEdges: styledEdges)
+        }
+
+        // Pre-allocate the result array in a Sendable container
+        let buffer = WireframeInstanceBuffer(count: styledEdges.count)
+
+        // Process in parallel - each index is only written by one thread
+        let chunkSize = max(500, styledEdges.count / ProcessInfo.processInfo.activeProcessorCount)
+        let chunkCount = (styledEdges.count + chunkSize - 1) / chunkSize
+
+        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
+            let startIdx = chunkIndex * chunkSize
+            let endIdx = min(startIdx + chunkSize, styledEdges.count)
+
+            for i in startIdx..<endIdx {
+                let styledEdge = styledEdges[i]
+                buffer.instances[i] = WireframeInstance(
+                    matrix: createEdgeMatrix(start: styledEdge.edge.start.float3, end: styledEdge.edge.end.float3),
+                    widthMultiplier: styledEdge.widthMultiplier,
+                    alpha: styledEdge.alpha
+                )
+            }
+        }
+
+        return buffer.instances
+    }
+
+    /// Create WireframeInstance data for each styled edge (serial version for small counts)
+    private static func createWireframeInstances(styledEdges: [StyledEdge]) -> [WireframeInstance] {
+        styledEdges.map { styledEdge in
+            WireframeInstance(
+                matrix: createEdgeMatrix(start: styledEdge.edge.start.float3, end: styledEdge.edge.end.float3),
+                widthMultiplier: styledEdge.widthMultiplier,
+                alpha: styledEdge.alpha
+            )
+        }
     }
 
     // MARK: - Cylinder Geometry

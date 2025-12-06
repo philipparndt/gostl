@@ -164,6 +164,66 @@ struct STLModel {
         return featureEdges
     }
 
+    /// Extract all edges with styling based on angle threshold
+    /// Feature edges (>= threshold angle) get full width/opacity, soft edges (< threshold but >= minAngle) get reduced
+    /// Edges below minAngle are hidden (not included)
+    /// - Parameter angleThreshold: Angle in degrees; edges with angle >= this are feature edges
+    /// - Parameter minAngle: Minimum angle in degrees; edges below this are hidden
+    /// - Returns: Array of styled edges with width multiplier and alpha values
+    func extractStyledEdges(angleThreshold: Double = 20.0, minAngle: Double = 1.0) -> [StyledEdge] {
+        // Build edge-to-triangles adjacency map
+        var edgeTriangles: [Edge: [Triangle]] = [:]
+        edgeTriangles.reserveCapacity(triangles.count * 3)
+
+        for triangle in triangles {
+            let edges = [
+                Edge(triangle.v1, triangle.v2),
+                Edge(triangle.v2, triangle.v3),
+                Edge(triangle.v3, triangle.v1)
+            ]
+            for edge in edges {
+                edgeTriangles[edge, default: []].append(triangle)
+            }
+        }
+
+        // Convert thresholds to cosine (for faster comparison)
+        let thresholdRadians = angleThreshold * .pi / 180.0
+        let cosThreshold = cos(thresholdRadians)
+        let minAngleRadians = minAngle * .pi / 180.0
+        let cosMinAngle = cos(minAngleRadians)
+
+        var styledEdges: [StyledEdge] = []
+        styledEdges.reserveCapacity(edgeTriangles.count)
+
+        for (edge, adjacentTriangles) in edgeTriangles {
+            // Boundary edge (only one adjacent triangle) - always a feature edge
+            if adjacentTriangles.count == 1 {
+                styledEdges.append(StyledEdge(edge: edge, isFeatureEdge: true))
+                continue
+            }
+
+            // Check angle between adjacent faces
+            if adjacentTriangles.count >= 2 {
+                let n1 = adjacentTriangles[0].normal
+                let n2 = adjacentTriangles[1].normal
+
+                // Dot product of normals gives cos(angle between them)
+                let dot = n1.dot(n2)
+
+                // Skip edges with angle < minAngle (dot > cosMinAngle means angle is smaller)
+                if dot > cosMinAngle {
+                    continue
+                }
+
+                // If angle >= threshold (i.e., cos(angle) <= cos(threshold)), it's a feature edge
+                let isFeatureEdge = dot < cosThreshold
+                styledEdges.append(StyledEdge(edge: edge, isFeatureEdge: isFeatureEdge))
+            }
+        }
+
+        return styledEdges
+    }
+
     /// Calculate average vertex spacing (for adaptive selection threshold)
     func averageVertexSpacing(sampleSize: Int = 1000) -> Double {
         let samplesToCheck = min(sampleSize, triangles.count)
@@ -181,6 +241,26 @@ struct STLModel {
         }
 
         return totalSpacing / Double(count)
+    }
+}
+
+// MARK: - StyledEdge
+
+/// An edge with styling information for rendering (width multiplier and alpha)
+struct StyledEdge {
+    let edge: Edge
+    let widthMultiplier: Float  // 1.0 for feature edges, smaller for soft edges
+    let alpha: Float            // 1.0 for feature edges, lower for soft edges
+
+    init(edge: Edge, isFeatureEdge: Bool) {
+        self.edge = edge
+        if isFeatureEdge {
+            self.widthMultiplier = 1.0
+            self.alpha = 1.0
+        } else {
+            self.widthMultiplier = 0.5  // Half width for soft edges
+            self.alpha = 0.3            // More transparent for soft edges
+        }
     }
 }
 

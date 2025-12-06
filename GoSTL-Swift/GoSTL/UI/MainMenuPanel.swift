@@ -197,10 +197,6 @@ struct ViewSectionContent: View {
                     WireframeModeRadio(mode: .edge, label: "Edge", currentMode: appState.wireframeMode, appState: appState)
                 }
 
-                // Edge angle threshold slider (only show when edge mode is selected)
-                if appState.wireframeMode == .edge {
-                    EdgeAngleSlider(appState: appState)
-                }
             }
 
             // Grid mode
@@ -598,49 +594,6 @@ struct WireframeModeRadio: View {
             )
         }
         .buttonStyle(.plain)
-    }
-}
-
-struct EdgeAngleSlider: View {
-    let appState: AppState
-    @State private var sliderValue: Double = 30.0
-    @State private var debounceTask: Task<Void, Never>?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text("Angle:")
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.6))
-                Spacer()
-                Text("\(Int(sliderValue))°")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.white.opacity(0.8))
-                    .frame(width: 30, alignment: .trailing)
-            }
-
-            Slider(value: $sliderValue, in: 1...90, step: 1)
-                .controlSize(.mini)
-                .onChange(of: sliderValue) { _, newValue in
-                    // Debounce the update to avoid regenerating edges on every slider tick
-                    debounceTask?.cancel()
-                    debounceTask = Task {
-                        try? await Task.sleep(for: .milliseconds(150))
-                        if !Task.isCancelled {
-                            await MainActor.run {
-                                appState.edgeAngleThreshold = newValue
-                                if let device = MTLCreateSystemDefaultDevice() {
-                                    try? appState.updateWireframe(device: device)
-                                }
-                            }
-                        }
-                    }
-                }
-        }
-        .padding(.top, 2)
-        .onAppear {
-            sliderValue = appState.edgeAngleThreshold
-        }
     }
 }
 

@@ -36,3 +36,11 @@ struct VertexIn {
     }
 }
 
+/// Per-instance data for wireframe edges with styling
+struct WireframeInstance {
+    var matrix: simd_float4x4      // Transformation matrix for the edge
+    var widthMultiplier: Float     // Width multiplier (1.0 = normal, 0.5 = thinner)
+    var alpha: Float               // Alpha/transparency (1.0 = opaque, 0.3 = transparent)
+    var _padding: SIMD2<Float> = .zero  // Align to 16 bytes
+}
+
