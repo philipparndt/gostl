@@ -284,7 +284,15 @@ final class AppState: @unchecked Sendable {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.copyMeasurementsAsOpenSCAD()
+            self?.copyMeasurementsAsOpenSCAD(closeMesh: false)
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CopyMeasurementsAsOpenSCADClosed"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.copyMeasurementsAsOpenSCAD(closeMesh: true)
         }
 
         NotificationCenter.default.addObserver(
@@ -1110,12 +1118,14 @@ final class AppState: @unchecked Sendable {
     }
 
     /// Copy measurements or selected triangles as OpenSCAD code to clipboard
-    func copyMeasurementsAsOpenSCAD() {
+    /// - Parameter closeMesh: If true, detect open edges and add faces to close the mesh
+    func copyMeasurementsAsOpenSCAD(closeMesh: Bool = false) {
         // If we have selected triangles, export those as polyhedron
         if !measurementSystem.selectedTriangles.isEmpty, let model = model {
-            let code = OpenSCADGenerator.generate(from: model.triangles, indices: measurementSystem.selectedTriangles)
+            let code = OpenSCADGenerator.generate(from: model.triangles, indices: measurementSystem.selectedTriangles, closeMesh: closeMesh)
             OpenSCADGenerator.copyToClipboard(code)
-            print("Copied \(measurementSystem.selectedTriangles.count) triangle(s) as OpenSCAD polyhedron to clipboard")
+            let modeStr = closeMesh ? " (closed solid)" : ""
+            print("Copied \(measurementSystem.selectedTriangles.count) triangle(s) as OpenSCAD polyhedron\(modeStr) to clipboard")
             return
         }
 

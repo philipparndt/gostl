@@ -271,6 +271,11 @@ struct GoSTLApp: App {
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
 
+                Button("Copy as OpenSCAD (Closed Solid)") {
+                    NotificationCenter.default.post(name: NSNotification.Name("CopyMeasurementsAsOpenSCADClosed"), object: nil)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift, .option])
+
                 Divider()
 
                 Button("Change Material") {

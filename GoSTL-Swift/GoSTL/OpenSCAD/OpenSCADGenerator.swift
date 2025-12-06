@@ -8,8 +8,9 @@ class OpenSCADGenerator {
     /// - Parameters:
     ///   - triangles: Array of triangles to convert
     ///   - indices: Optional set of indices to include (nil = all triangles)
+    ///   - closeMesh: If true, detect open edges and add faces to close the mesh
     /// - Returns: OpenSCAD code string
-    static func generate(from triangles: [Triangle], indices: Set<Int>? = nil) -> String {
+    static func generate(from triangles: [Triangle], indices: Set<Int>? = nil, closeMesh: Bool = false) -> String {
         let selectedTriangles: [Triangle]
         if let indices = indices {
             selectedTriangles = indices.sorted().compactMap { index in
@@ -27,6 +28,9 @@ class OpenSCADGenerator {
         lines.append("// OpenSCAD polyhedron generated from GoSTL")
         lines.append("// Generated: \(formattedDate())")
         lines.append("// Triangles: \(selectedTriangles.count)")
+        if closeMesh {
+            lines.append("// Mode: Closed mesh (open edges filled)")
+        }
         lines.append("")
 
         // Extract unique points and build face indices
@@ -38,6 +42,16 @@ class OpenSCADGenerator {
             let idx2 = findOrAddPoint(triangle.v2, in: &uniquePoints)
             let idx3 = findOrAddPoint(triangle.v3, in: &uniquePoints)
             faces.append([idx1, idx2, idx3])
+        }
+
+        // If closeMesh is enabled, find open edges and create closing faces
+        if closeMesh {
+            let closingFaces = generateClosingFaces(points: uniquePoints, existingFaces: faces)
+            if !closingFaces.isEmpty {
+                lines.append("// Added \(closingFaces.count) closing face(s) to fill open edges")
+                lines.append("")
+                faces.append(contentsOf: closingFaces)
+            }
         }
 
         lines.append("// \(uniquePoints.count) unique vertices, \(faces.count) faces")
@@ -56,7 +70,13 @@ class OpenSCADGenerator {
         lines.append("faces = [")
         for (index, face) in faces.enumerated() {
             let comma = index < faces.count - 1 ? "," : ""
-            lines.append("    [\(face[0]), \(face[1]), \(face[2])]\(comma)")
+            if face.count == 3 {
+                lines.append("    [\(face[0]), \(face[1]), \(face[2])]\(comma)")
+            } else {
+                // For polygons with more than 3 vertices
+                let faceStr = face.map { String($0) }.joined(separator: ", ")
+                lines.append("    [\(faceStr)]\(comma)")
+            }
         }
         lines.append("];")
         lines.append("")
@@ -65,6 +85,148 @@ class OpenSCADGenerator {
         lines.append("polyhedron(points = points, faces = faces, convexity = 10);")
 
         return lines.joined(separator: "\n")
+    }
+
+    /// Find open edges and generate faces to close the mesh
+    /// An edge is "open" if it only appears in one face (not shared by two faces)
+    private static func generateClosingFaces(points: [Vector3], existingFaces: [[Int]]) -> [[Int]] {
+        // Count how many times each edge appears (edge = sorted pair of vertex indices)
+        var edgeCount: [String: Int] = [:]
+        var edgeFaceNormal: [String: Vector3] = [:]
+
+        for face in existingFaces {
+            guard face.count >= 3 else { continue }
+
+            // Calculate face normal for winding order
+            let v0 = points[face[0]]
+            let v1 = points[face[1]]
+            let v2 = points[face[2]]
+            let normal = (v1 - v0).cross(v2 - v0).normalized()
+
+            // Process each edge of the face
+            for i in 0..<face.count {
+                let a = face[i]
+                let b = face[(i + 1) % face.count]
+                let edgeKey = a < b ? "\(a)-\(b)" : "\(b)-\(a)"
+                edgeCount[edgeKey, default: 0] += 1
+                edgeFaceNormal[edgeKey] = normal
+            }
+        }
+
+        // Find open edges (appear only once)
+        var openEdges: [(Int, Int)] = []
+        for (edgeKey, count) in edgeCount {
+            if count == 1 {
+                let parts = edgeKey.split(separator: "-")
+                if parts.count == 2, let a = Int(parts[0]), let b = Int(parts[1]) {
+                    openEdges.append((a, b))
+                }
+            }
+        }
+
+        guard !openEdges.isEmpty else { return [] }
+
+        // Try to form closed loops from open edges and create faces
+        var closingFaces: [[Int]] = []
+        var remainingEdges = openEdges
+
+        while !remainingEdges.isEmpty {
+            // Start a new loop
+            var loop: [Int] = []
+            let firstEdge = remainingEdges.removeFirst()
+            loop.append(firstEdge.0)
+            loop.append(firstEdge.1)
+
+            var currentVertex = firstEdge.1
+            let startVertex = firstEdge.0
+
+            // Try to complete the loop
+            var foundNext = true
+            while foundNext && currentVertex != startVertex {
+                foundNext = false
+                for i in 0..<remainingEdges.count {
+                    let edge = remainingEdges[i]
+                    if edge.0 == currentVertex {
+                        currentVertex = edge.1
+                        if currentVertex != startVertex {
+                            loop.append(currentVertex)
+                        }
+                        remainingEdges.remove(at: i)
+                        foundNext = true
+                        break
+                    } else if edge.1 == currentVertex {
+                        currentVertex = edge.0
+                        if currentVertex != startVertex {
+                            loop.append(currentVertex)
+                        }
+                        remainingEdges.remove(at: i)
+                        foundNext = true
+                        break
+                    }
+                }
+            }
+
+            // If we completed a loop (3+ vertices), create a face
+            if loop.count >= 3 && currentVertex == startVertex {
+                // Determine correct winding order
+                // Calculate the centroid and normal of the loop
+                var centroid = Vector3(0, 0, 0)
+                for idx in loop {
+                    centroid = centroid + points[idx]
+                }
+                centroid = centroid / Double(loop.count)
+
+                // Calculate loop normal
+                let loopNormal = calculatePolygonNormal(points: points, indices: loop)
+
+                // Check if we need to reverse the winding
+                // Compare with the average normal of adjacent faces
+                var avgAdjacentNormal = Vector3(0, 0, 0)
+                var adjacentCount = 0
+                for i in 0..<loop.count {
+                    let a = loop[i]
+                    let b = loop[(i + 1) % loop.count]
+                    let edgeKey = a < b ? "\(a)-\(b)" : "\(b)-\(a)"
+                    if let normal = edgeFaceNormal[edgeKey] {
+                        avgAdjacentNormal = avgAdjacentNormal + normal
+                        adjacentCount += 1
+                    }
+                }
+
+                if adjacentCount > 0 {
+                    avgAdjacentNormal = avgAdjacentNormal / Double(adjacentCount)
+                    // The closing face should have opposite normal to create a closed solid
+                    // If normals point same direction, reverse the loop
+                    if loopNormal.dot(avgAdjacentNormal) > 0 {
+                        closingFaces.append(loop.reversed())
+                    } else {
+                        closingFaces.append(loop)
+                    }
+                } else {
+                    closingFaces.append(loop)
+                }
+            }
+        }
+
+        return closingFaces
+    }
+
+    /// Calculate the normal of a polygon defined by point indices
+    private static func calculatePolygonNormal(points: [Vector3], indices: [Int]) -> Vector3 {
+        guard indices.count >= 3 else { return Vector3(0, 0, 1) }
+
+        // Use Newell's method for robust normal calculation
+        var normal = Vector3(0, 0, 0)
+        for i in 0..<indices.count {
+            let current = points[indices[i]]
+            let next = points[indices[(i + 1) % indices.count]]
+            normal = normal + Vector3(
+                (current.y - next.y) * (current.z + next.z),
+                (current.z - next.z) * (current.x + next.x),
+                (current.x - next.x) * (current.y + next.y)
+            )
+        }
+        return normal.normalized()
     }
 
     /// Generate OpenSCAD code from a set of measurements
