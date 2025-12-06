@@ -159,13 +159,7 @@ struct Triangle {
         let positionFloat = ray.origin + ray.direction * t
         let hitPoint = Vector3(Double(positionFloat.x), Double(positionFloat.y), Double(positionFloat.z))
 
-        // Snap to nearest vertex
-        let vertices = [v1, v2, v3]
-        let distances = vertices.map { $0.distance(to: hitPoint) }
-        let minIndex = distances.enumerated().min(by: { $0.element < $1.element })!.offset
-        let snappedPosition = vertices[minIndex]
-
-        return (snappedPosition, normal)
+        return (hitPoint, normal)
     }
 }
 

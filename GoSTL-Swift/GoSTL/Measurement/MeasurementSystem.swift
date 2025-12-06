@@ -196,11 +196,12 @@ final class MeasurementSystem: @unchecked Sendable {
     }
 
     /// Find intersection point on model for a ray
+    /// Snaps to nearby vertices if within threshold
     func findIntersection(ray: Ray, model: STLModel) -> MeasurementPoint? {
         var closestDistance: Float = .infinity
         var closestIntersection: (position: Vector3, normal: Vector3)?
 
-        // Test all triangles
+        // Test all triangles to find the closest hit point
         for triangle in model.triangles {
             if let (position, normal) = triangle.intersectionPoint(ray: ray) {
                 let distance = ray.origin.distance(to: position.float3)
@@ -211,10 +212,26 @@ final class MeasurementSystem: @unchecked Sendable {
             }
         }
 
-        if let intersection = closestIntersection {
-            return MeasurementPoint(position: intersection.position, normal: intersection.normal)
+        guard let intersection = closestIntersection else {
+            return nil
         }
-        return nil
+
+        // Snap to nearest vertex in the model if within threshold
+        let snapThreshold: Double = 2.0
+        var snappedPosition = intersection.position
+
+        var closestVertexDistance: Double = .infinity
+        for triangle in model.triangles {
+            for vertex in [triangle.v1, triangle.v2, triangle.v3] {
+                let distance = vertex.distance(to: intersection.position)
+                if distance < closestVertexDistance && distance <= snapThreshold {
+                    closestVertexDistance = distance
+                    snappedPosition = vertex
+                }
+            }
+        }
+
+        return MeasurementPoint(position: snappedPosition, normal: intersection.normal)
     }
 
     /// Clear all measurements

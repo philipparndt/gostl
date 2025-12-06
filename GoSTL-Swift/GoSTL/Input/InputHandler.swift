@@ -304,6 +304,125 @@ final class InputHandler {
         camera.zoom(delta: -Double(deltaY) * sensitivity)
     }
 
+    /// Debug ray casting - right-click to see detailed intersection info
+    func debugRayCast(at location: CGPoint, camera: Camera, viewSize: CGSize, appState: AppState) {
+        print("\n=== DEBUG RAY CAST ===")
+        print("Screen location: (\(location.x), \(location.y))")
+        print("View size: \(viewSize.width) x \(viewSize.height)")
+        print("Camera distance: \(camera.distance)")
+        print("Camera position: \(camera.position)")
+        print("Camera target: \(camera.target)")
+        print("Camera angles: X=\(camera.angleX), Y=\(camera.angleY)")
+
+        // Generate ray
+        let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
+        print("Ray origin: \(ray.origin)")
+        print("Ray direction: \(ray.direction)")
+
+        guard let model = appState.model else {
+            print("No model loaded")
+            return
+        }
+
+        print("Model triangles: \(model.triangles.count)")
+        let bbox = model.boundingBox()
+        print("Model bounding box: min=\(bbox.min), max=\(bbox.max)")
+
+        // Test intersection with all triangles and find closest
+        var closestHit: (distance: Double, triangle: Triangle, point: Vector3)?
+        var hitCount = 0
+        var backfaceHitCount = 0
+
+        for triangle in model.triangles {
+            if let hit = rayTriangleIntersection(ray: ray, triangle: triangle) {
+                hitCount += 1
+
+                // Check if backface
+                let rayDir = Vector3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z))
+                let dotProduct = triangle.normal.dot(rayDir)
+                if dotProduct > 0 {
+                    backfaceHitCount += 1
+                }
+
+                if closestHit == nil || hit.distance < closestHit!.distance {
+                    closestHit = (hit.distance, triangle, hit.point)
+                }
+            }
+        }
+
+        print("Total hits: \(hitCount) (backfaces: \(backfaceHitCount))")
+
+        if let hit = closestHit {
+            print("Closest hit:")
+            print("  Distance: \(hit.distance)")
+            print("  Point: \(hit.point)")
+            print("  Triangle normal: \(hit.triangle.normal)")
+
+            // Check if this would be rejected as backface
+            let rayDir = Vector3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z))
+            let dotProduct = hit.triangle.normal.dot(rayDir)
+            print("  Dot(normal, rayDir): \(dotProduct)")
+            print("  Is backface: \(dotProduct > 0)")
+        } else {
+            print("No intersection found")
+        }
+
+        // Also test what MeasurementSystem.findIntersection returns
+        if let point = appState.measurementSystem.findIntersection(ray: ray, model: model) {
+            print("MeasurementSystem found: \(point.position)")
+        } else {
+            print("MeasurementSystem found: nothing")
+        }
+
+        print("======================\n")
+    }
+
+    /// Ray-triangle intersection test (Möller–Trumbore algorithm)
+    private func rayTriangleIntersection(ray: Ray, triangle: Triangle) -> (distance: Double, point: Vector3)? {
+        let epsilon: Double = 0.000001
+
+        let v0 = triangle.v1
+        let v1 = triangle.v2
+        let v2 = triangle.v3
+
+        let rayOrigin = Vector3(Double(ray.origin.x), Double(ray.origin.y), Double(ray.origin.z))
+        let rayDir = Vector3(Double(ray.direction.x), Double(ray.direction.y), Double(ray.direction.z))
+
+        let edge1 = v1 - v0
+        let edge2 = v2 - v0
+
+        let h = rayDir.cross(edge2)
+        let a = edge1.dot(h)
+
+        if a > -epsilon && a < epsilon {
+            return nil // Ray parallel to triangle
+        }
+
+        let f = 1.0 / a
+        let s = rayOrigin - v0
+        let u = f * s.dot(h)
+
+        if u < 0.0 || u > 1.0 {
+            return nil
+        }
+
+        let q = s.cross(edge1)
+        let v = f * rayDir.dot(q)
+
+        if v < 0.0 || u + v > 1.0 {
+            return nil
+        }
+
+        let t = f * edge2.dot(q)
+
+        if t > epsilon {
+            let point = rayOrigin + rayDir * t
+            return (t, point)
+        }
+
+        return nil
+    }
+
     // MARK: - Modifier Key Events
 
     /// Handle modifier key changes (Option key for point constraint)

@@ -205,6 +205,26 @@ class InteractiveMTKView: MTKView {
         )
     }
 
+    override func rightMouseDown(with event: NSEvent) {
+        guard let coordinator = coordinator else { return }
+        let location = convert(event.locationInWindow, from: nil)
+
+        // Convert location from points to pixels
+        let scale = drawableSize.width / bounds.size.width
+        let scaledLocation = CGPoint(
+            x: location.x * scale,
+            y: location.y * scale
+        )
+
+        // Debug ray casting
+        coordinator.inputHandler.debugRayCast(
+            at: scaledLocation,
+            camera: coordinator.appState.camera,
+            viewSize: drawableSize,
+            appState: coordinator.appState
+        )
+    }
+
     override func scrollWheel(with event: NSEvent) {
         guard let coordinator = coordinator else { return }
         coordinator.inputHandler.handleScroll(
