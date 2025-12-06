@@ -141,7 +141,7 @@ final class AppState: @unchecked Sendable {
     var tempSTLFileURL: URL?
     var isOpenSCAD: Bool = false
     var isGo3mf: Bool = false
-    var needsReload: Bool = false
+    var reloadRequestId: Int = 0  // Incremented to trigger reload - onChange fires on any change
     var isLoading: Bool = false
     var loadError: Error?
     var loadErrorID: UUID?
@@ -934,7 +934,8 @@ final class AppState: @unchecked Sendable {
         try watcher.watch(files: filesToWatch) { [weak self] changedFile in
             guard let self = self else { return }
             DispatchQueue.main.async {
-                self.needsReload = true
+                self.reloadRequestId += 1
+                print("FileWatcher callback: reloadRequestId = \(self.reloadRequestId)")
             }
         }
 
@@ -943,30 +944,37 @@ final class AppState: @unchecked Sendable {
 
     /// Reload the model from the source file
     func reloadModel(device: MTLDevice) {
+        print("reloadModel called - isLoading: \(isLoading), isPaused: \(fileWatcher?.isPaused ?? false)")
+
         guard let sourceURL = sourceFileURL else {
             print("No source file to reload")
-            needsReload = false
             return
         }
 
-        // If already loading, skip (needsReload stays true so it will reload again when done)
+        // If already loading, skip - the file watcher will trigger again if needed
         if isLoading {
+            print("Reload requested but already loading - skipping")
             return
         }
 
         // Cooldown period after last reload to prevent rapid re-triggers
-        if let lastReload = lastReloadTime, Date().timeIntervalSince(lastReload) < 1.5 {
-            print("Skipping reload - cooldown period")
-            needsReload = false
+        if let lastReload = lastReloadTime, Date().timeIntervalSince(lastReload) < 1.0 {
+            let remainingCooldown = 1.0 - Date().timeIntervalSince(lastReload)
+            print("Reload delayed - cooldown period (\(String(format: "%.1f", remainingCooldown))s remaining)")
+            // Schedule a retry after remaining cooldown
+            DispatchQueue.main.asyncAfter(deadline: .now() + remainingCooldown + 0.1) { [weak self] in
+                guard let self = self else { return }
+                print("Cooldown expired, triggering reload...")
+                self.reloadRequestId += 1  // This will trigger the onChange observer
+            }
             return
         }
 
         isLoading = true
-        needsReload = false  // Reset immediately to prevent duplicate triggers
 
         // Pause file watcher during reload to prevent re-triggers from generated files
         fileWatcher?.isPaused = true
-        print("Reloading model...")
+        print("Reloading model from: \(sourceURL.lastPathComponent)")
 
         // Perform loading in background
         Task.detached { [weak self] in

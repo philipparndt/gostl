@@ -3,12 +3,12 @@ import simd
 
 /// Filament colors for go3mf (matching extruder colors)
 private let filamentColors: [Int: TriangleColor] = [
-    0: TriangleColor(0.8, 0.8, 0.8),      // Auto/default: Light gray
-    1: TriangleColor(0.8, 0.8, 0.8),      // Filament 1: Light gray
-    2: TriangleColor(0.2, 0.6, 0.9),      // Filament 2: Blue
-    3: TriangleColor(0.9, 0.3, 0.3),      // Filament 3: Red
-    4: TriangleColor(0.3, 0.8, 0.3),      // Filament 4: Green
-    5: TriangleColor(0.9, 0.7, 0.2),      // Filament 5: Yellow/Orange
+    0: TriangleColor(1.0, 1.0, 1.0),      // Auto/default: White (uses material color)
+    1: TriangleColor(1.0, 1.0, 1.0),      // Filament 1: White (uses material color)
+    2: TriangleColor(0.4, 0.8, 1.0),      // Filament 2: Bright cyan/blue
+    3: TriangleColor(1.0, 0.5, 0.5),      // Filament 3: Bright red/coral
+    4: TriangleColor(0.5, 1.0, 0.5),      // Filament 4: Bright green
+    5: TriangleColor(1.0, 0.9, 0.4),      // Filament 5: Bright yellow
 ]
 
 /// Renderer for go3mf YAML configurations

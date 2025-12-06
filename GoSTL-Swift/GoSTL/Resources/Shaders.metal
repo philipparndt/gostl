@@ -119,10 +119,12 @@ fragment float4 meshFragmentShader(
     float ambient = 0.3;
     float diffuse = keyDiffuse * 0.6 + fillDiffuse * 0.3 + rimDiffuse * 0.2;
 
-    // Blend material base color with vertex color (for orientation cube support)
-    // When material.baseColor is white (1,1,1), vertex color dominates
-    // When vertex color is white, material.baseColor dominates
-    float3 baseColor = material.baseColor * in.color.rgb;
+    // Determine base color:
+    // - If vertex color is white (1,1,1), use material base color (single-color model)
+    // - Otherwise, use vertex color directly (multi-color model like 3MF with extruders)
+    float3 vertexColor = in.color.rgb;
+    float isWhite = step(0.99, vertexColor.r) * step(0.99, vertexColor.g) * step(0.99, vertexColor.b);
+    float3 baseColor = mix(vertexColor, material.baseColor, isWhite);
 
     // Final color = base color * (ambient + diffuse) + specular highlights
     float3 finalColor = baseColor * (ambient + diffuse) + float3(specular);

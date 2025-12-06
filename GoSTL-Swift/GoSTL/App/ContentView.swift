@@ -119,10 +119,8 @@ struct ContentView: View {
             // Only update slice plane visualization, not the whole mesh
             updateSlicePlaneOnly()
         }
-        .onChange(of: appState.needsReload) { _, needsReload in
-            if needsReload {
-                reloadModel()
-            }
+        .onChange(of: appState.reloadRequestId) { _, _ in
+            reloadModel()
         }
         .onChange(of: appState.loadErrorID) { _, errorID in
             if let error = appState.loadError {

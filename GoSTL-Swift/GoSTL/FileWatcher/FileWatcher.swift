@@ -76,11 +76,24 @@ class FileWatcher {
         let path = fileURL.path
 
         // Cancel existing timer for this file if any
-        debounceTimers[path]?.cancel()
+        if let existingTimer = debounceTimers[path] {
+            existingTimer.cancel()
+            debounceTimers[path] = nil
+        }
 
         // Create new debounced callback
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self, !self.isPaused else { return }
+            guard let self = self else { return }
+
+            // Remove from timers dict
+            self.debounceTimers[path] = nil
+
+            // Check pause state at execution time
+            guard !self.isPaused else {
+                print("File changed but watcher is paused: \(fileURL.lastPathComponent)")
+                return
+            }
+
             print("File changed: \(fileURL.lastPathComponent)")
             self.callback?(fileURL)
         }
