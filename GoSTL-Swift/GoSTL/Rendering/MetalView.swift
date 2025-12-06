@@ -127,7 +127,8 @@ class InteractiveMTKView: MTKView {
             at: scaledLocation,
             modifierFlags: event.modifierFlags,
             appState: coordinator.appState,
-            viewSize: drawableSize
+            viewSize: drawableSize,
+            camera: coordinator.appState.camera
         )
     }
 

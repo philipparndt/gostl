@@ -319,14 +319,55 @@ struct ToolsSectionContent: View {
                         }
                     }
 
-                    Text("Points: \(measurementSystem.pointsNeededText)")
-                        .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.8))
+                    if mode == .triangleSelect {
+                        Text("Selected: \(measurementSystem.selectedTriangles.count) triangles")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.8))
 
-                    Text("Click on model vertices")
-                        .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.6))
-                        .italic()
+                        Text("Click triangles to select/deselect")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.6))
+                            .italic()
+
+                        HStack(spacing: 4) {
+                            KeyHint(key: "⌘")
+                            Text("+ drag to paint select")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        .padding(.top, 2)
+
+                        HStack(spacing: 4) {
+                            KeyHint(key: "⇧⌘")
+                            Text("+ drag to paint unselect")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+
+                        HStack(spacing: 4) {
+                            KeyHint(key: "⇧⌘C")
+                            Text("Copy as OpenSCAD")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+
+                        HStack(spacing: 4) {
+                            KeyHint(key: "ESC")
+                            Text("Cancel")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                        .padding(.top, 2)
+                    } else {
+                        Text("Points: \(measurementSystem.pointsNeededText)")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.8))
+
+                        Text("Click on model vertices")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.6))
+                            .italic()
+                    }
 
                     if mode == .distance {
                         // Show constraint hint when at least one point is selected
@@ -374,7 +415,7 @@ struct ToolsSectionContent: View {
                                 .foregroundColor(.white.opacity(0.7))
                         }
                         .padding(.top, 2)
-                    } else {
+                    } else if mode != .triangleSelect {
                         HStack(spacing: 4) {
                             KeyHint(key: "ESC")
                             Text("Cancel")

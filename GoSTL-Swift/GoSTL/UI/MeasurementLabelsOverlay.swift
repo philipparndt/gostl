@@ -49,6 +49,7 @@ struct MeasurementLabelsOverlay: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
+            .allowsHitTesting(false)
         }
     }
 

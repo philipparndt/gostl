@@ -14,7 +14,7 @@ final class InputHandler {
 
     private var selectionViewSize: CGSize = .zero  // Store view size for coordinate conversion
 
-    func handleMouseDown(at location: CGPoint, modifierFlags: NSEvent.ModifierFlags, appState: AppState, viewSize: CGSize? = nil) {
+    func handleMouseDown(at location: CGPoint, modifierFlags: NSEvent.ModifierFlags, appState: AppState, viewSize: CGSize? = nil, camera: Camera? = nil) {
         lastMousePosition = location
 
         // Option+click starts selection rectangle (only when not measuring)
@@ -27,6 +27,28 @@ final class InputHandler {
                 appState.measurementSystem.startSelection(at: flippedLocation)
             } else {
                 appState.measurementSystem.startSelection(at: location)
+            }
+            return
+        }
+
+        // Paint mode: start painting triangles on mouse down
+        // Cmd+drag to paint select, Cmd+Shift+drag to paint unselect
+        let isPaintModeActive = appState.measurementSystem.paintMode || modifierFlags.contains(.command)
+        if isPaintModeActive &&
+           appState.measurementSystem.mode == .triangleSelect,
+           let viewSize = viewSize,
+           let camera = camera,
+           let model = appState.model {
+            appState.measurementSystem.isPainting = true
+            appState.measurementSystem.isPaintingToUnselect = modifierFlags.contains(.shift)
+            // Select/unselect triangle under cursor immediately
+            let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
+            if let triangleIndex = appState.measurementSystem.findTriangleAtRay(ray: ray, model: model) {
+                if appState.measurementSystem.isPaintingToUnselect {
+                    appState.measurementSystem.selectedTriangles.remove(triangleIndex)
+                } else {
+                    appState.measurementSystem.selectedTriangles.insert(triangleIndex)
+                }
             }
             return
         }
@@ -54,6 +76,21 @@ final class InputHandler {
             let flippedLocation = CGPoint(x: location.x, y: viewSize.height - location.y)
             appState.measurementSystem.updateSelection(to: flippedLocation)
             appState.measurementSystem.updateSelectedMeasurements(camera: camera, viewSize: viewSize)
+            return
+        }
+
+        // Handle paint mode dragging - continuously select/unselect triangles
+        if appState.measurementSystem.isPainting,
+           let model = appState.model {
+            let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
+            if let triangleIndex = appState.measurementSystem.findTriangleAtRay(ray: ray, model: model) {
+                if appState.measurementSystem.isPaintingToUnselect {
+                    appState.measurementSystem.selectedTriangles.remove(triangleIndex)
+                } else {
+                    appState.measurementSystem.selectedTriangles.insert(triangleIndex)
+                }
+            }
+            lastMousePosition = location
             return
         }
 
@@ -90,6 +127,11 @@ final class InputHandler {
             isSelecting = false
         }
 
+        // End painting if active
+        if appState.measurementSystem.isPainting {
+            appState.measurementSystem.isPainting = false
+        }
+
         isRotating = false
         isPanning = false
         lastMousePosition = nil
@@ -115,18 +157,25 @@ final class InputHandler {
             return
         }
 
-        // If not measuring and have selections, check if clicked on empty area to deselect
-        if !appState.measurementSystem.isCollecting &&
-           !appState.measurementSystem.selectedMeasurements.isEmpty {
-            // Check if click is near any measurement label
-            let clickedOnLabel = isClickNearMeasurementLabel(
+        // If not measuring, check for label clicks to select/deselect
+        if !appState.measurementSystem.isCollecting {
+            // Check if click is on a measurement label
+            if let clickedIndex = findMeasurementLabelAtLocation(
                 location: location,
                 camera: camera,
                 viewSize: viewSize,
                 measurementSystem: appState.measurementSystem
-            )
-
-            if !clickedOnLabel {
+            ) {
+                // Toggle selection of the clicked label
+                if appState.measurementSystem.selectedMeasurements.contains(clickedIndex) {
+                    appState.measurementSystem.selectedMeasurements.remove(clickedIndex)
+                    print("Deselected measurement \(clickedIndex)")
+                } else {
+                    appState.measurementSystem.selectedMeasurements.insert(clickedIndex)
+                    print("Selected measurement \(clickedIndex)")
+                }
+                return
+            } else if !appState.measurementSystem.selectedMeasurements.isEmpty {
                 // Clicked on empty area - clear selection
                 appState.measurementSystem.selectedMeasurements.removeAll()
                 print("Selection cleared (clicked empty area)")
@@ -280,18 +329,18 @@ final class InputHandler {
         return checkOrientationCubeHover(at: location, viewSize: viewSize, appState: appState).face
     }
 
-    /// Check if a click location is near any measurement label
-    private func isClickNearMeasurementLabel(
+    /// Check if a click location is near any measurement label, returns the index if found
+    private func findMeasurementLabelAtLocation(
         location: CGPoint,
         camera: Camera,
         viewSize: CGSize,
         measurementSystem: MeasurementSystem
-    ) -> Bool {
+    ) -> Int? {
         // Convert click location from AppKit (Y=0 bottom) to SwiftUI (Y=0 top) for comparison
         let swiftUILocation = CGPoint(x: location.x, y: viewSize.height - location.y)
 
         // Check each measurement label
-        for measurement in measurementSystem.measurements {
+        for (index, measurement) in measurementSystem.measurements.enumerated() {
             if let screenPos = camera.project(worldPosition: measurement.labelPosition, viewSize: viewSize) {
                 // Check if click is within label bounds (approximate label size)
                 let labelWidth: CGFloat = 60  // Approximate label width
@@ -305,12 +354,12 @@ final class InputHandler {
                 )
 
                 if labelBounds.contains(swiftUILocation) {
-                    return true
+                    return index
                 }
             }
         }
 
-        return false
+        return nil
     }
 
     func handleScroll(deltaY: CGFloat, camera: Camera) {

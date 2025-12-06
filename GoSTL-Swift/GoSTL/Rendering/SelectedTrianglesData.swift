@@ -9,9 +9,10 @@ final class SelectedTrianglesData {
     var selectedVertexBuffer: MTLBuffer?
     var selectedVertexCount: Int = 0
 
-    // Buffer for hovered triangle (rendered in green)
+    // Buffer for hovered triangle (rendered in green, or blended if selected)
     var hoveredVertexBuffer: MTLBuffer?
     var hoveredVertexCount: Int = 0
+    var hoveredTriangleColor: SIMD3<Float> = SIMD3<Float>(0.0, 1.0, 0.3)  // Default green
 
     init(device: MTLDevice) {
         self.device = device
@@ -63,8 +64,19 @@ final class SelectedTrianglesData {
             let triangle = model.triangles[hoveredIndex]
             let normal = triangle.normal.float3
 
-            // Hover color: green
-            let hoverColor = SIMD4<Float>(0.0, 1.0, 0.3, 1.0)
+            // Use different hover color depending on whether triangle is already selected
+            let hoverColor: SIMD4<Float>
+            if selectedIndices.contains(hoveredIndex) {
+                // Blend of selection color (cyan) and hover color (green)
+                // Selection: (0.0, 0.8, 1.0), Hover: (0.0, 1.0, 0.3)
+                // Midpoint: (0.0, 0.9, 0.65)
+                hoverColor = SIMD4<Float>(0.0, 0.9, 0.65, 1.0)
+                hoveredTriangleColor = SIMD3<Float>(0.0, 0.9, 0.65)
+            } else {
+                // Normal hover color: green
+                hoverColor = SIMD4<Float>(0.0, 1.0, 0.3, 1.0)
+                hoveredTriangleColor = SIMD3<Float>(0.0, 1.0, 0.3)
+            }
 
             var vertices: [VertexIn] = []
             vertices.append(VertexIn(position: triangle.v1.float3, normal: normal, color: hoverColor))
@@ -77,6 +89,7 @@ final class SelectedTrianglesData {
         } else {
             hoveredVertexBuffer = nil
             hoveredVertexCount = 0
+            hoveredTriangleColor = SIMD3<Float>(0.0, 1.0, 0.3)  // Reset to default
         }
     }
 }

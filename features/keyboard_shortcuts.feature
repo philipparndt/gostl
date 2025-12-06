@@ -77,6 +77,13 @@ Feature: Keyboard Shortcuts
       | Backspace | removes last point or selected items |
       | Delete    | removes last point or selected items |
 
+  @triangle-select
+  Scenario: Paint mode for triangle selection
+    Given triangle selection mode is active
+    When I hold Cmd and drag the mouse
+    Then triangles under the cursor should be continuously selected
+    And the camera should not rotate
+
   @tools
   Scenario Outline: Tool shortcuts
     When I press <shortcut>

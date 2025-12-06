@@ -428,8 +428,11 @@ final class MetalRenderer {
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: selectedTrianglesData.selectedVertexCount)
         }
 
-        // Render hovered triangle (green overlay)
+        // Render hovered triangle (green overlay, or blended color if selected)
         if let hoveredBuffer = selectedTrianglesData.hoveredVertexBuffer, selectedTrianglesData.hoveredVertexCount > 0 {
+            // Use larger depth bias to render hover in front of selection
+            encoder.setDepthBias(-2.0, slopeScale: -2.0, clamp: 0.0)
+
             encoder.setRenderPipelineState(meshPipelineState)
             encoder.setDepthStencilState(depthStencilState)
 
@@ -438,7 +441,7 @@ final class MetalRenderer {
 
             // Use a simple emissive material for hover highlight
             var materialProperties = MaterialProperties(
-                baseColor: SIMD3<Float>(0.0, 1.0, 0.3),  // Green
+                baseColor: selectedTrianglesData.hoveredTriangleColor,
                 glossiness: 0.0,
                 metalness: 0.0,
                 specularIntensity: 0.0

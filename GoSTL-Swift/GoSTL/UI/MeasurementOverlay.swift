@@ -40,12 +40,26 @@ struct MeasurementOverlay: View {
                             .italic()
 
                         HStack(spacing: 4) {
+                            KeyHint_MeasurementLegacy(key: "⌘")
+                            Text("+ drag to paint select")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        .padding(.top, 2)
+
+                        HStack(spacing: 4) {
+                            KeyHint_MeasurementLegacy(key: "⇧⌘")
+                            Text("+ drag to paint unselect")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+
+                        HStack(spacing: 4) {
                             KeyHint_MeasurementLegacy(key: "⇧⌘C")
                             Text("to copy as OpenSCAD")
                                 .font(.system(size: 9))
                                 .foregroundColor(.white.opacity(0.6))
                         }
-                        .padding(.top, 2)
                     } else {
                         Text("Points: \(measurementSystem.pointsNeededText)")
                             .font(.system(size: 10))

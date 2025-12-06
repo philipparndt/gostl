@@ -45,6 +45,15 @@ final class MeasurementSystem: @unchecked Sendable {
     /// Hovered triangle index (for visual feedback during triangle selection)
     var hoveredTriangle: Int?
 
+    /// Paint mode - when enabled, drag to continuously select triangles without rotating
+    var paintMode: Bool = false
+
+    /// Whether currently painting (mouse is down in paint mode)
+    var isPainting: Bool = false
+
+    /// Whether painting to unselect (Cmd+Shift) instead of select (Cmd)
+    var isPaintingToUnselect: Bool = false
+
     /// Number of points required for current mode
     var pointsNeeded: Int {
         guard let mode else { return 0 }
