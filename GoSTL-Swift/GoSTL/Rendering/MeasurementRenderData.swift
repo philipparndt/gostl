@@ -172,8 +172,8 @@ final class MeasurementRenderData {
 
         // Create red line from constrained endpoint to actual snap point (hover point)
         let constraintEdge = Edge(constrainedEndpoint, hoverPoint.position)
-        let instances = Self.createInstanceMatrices(edges: [constraintEdge])
-        let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
+        let instances = Self.createWireframeInstances(edges: [constraintEdge])
+        let instanceSize = instances.count * MemoryLayout<WireframeInstance>.stride
         constraintLineInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
         constraintLineInstanceCount = instances.count
 
@@ -304,8 +304,8 @@ final class MeasurementRenderData {
 
         // Create instance buffers for normal lines
         if !lineEdges.isEmpty {
-            let instances = Self.createInstanceMatrices(edges: lineEdges)
-            let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
+            let instances = Self.createWireframeInstances(edges: lineEdges)
+            let instanceSize = instances.count * MemoryLayout<WireframeInstance>.stride
             lineInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
             lineInstanceCount = instances.count
         } else {
@@ -315,8 +315,8 @@ final class MeasurementRenderData {
 
         // Create instance buffers for selected lines
         if !selectedEdges.isEmpty {
-            let instances = Self.createInstanceMatrices(edges: selectedEdges)
-            let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
+            let instances = Self.createWireframeInstances(edges: selectedEdges)
+            let instanceSize = instances.count * MemoryLayout<WireframeInstance>.stride
             selectedLineInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
             selectedLineInstanceCount = instances.count
         } else {
@@ -325,8 +325,8 @@ final class MeasurementRenderData {
         }
 
         if !previewEdges.isEmpty {
-            let instances = Self.createInstanceMatrices(edges: previewEdges)
-            let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
+            let instances = Self.createWireframeInstances(edges: previewEdges)
+            let instanceSize = instances.count * MemoryLayout<WireframeInstance>.stride
             previewLineInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
             previewLineInstanceCount = instances.count
         } else {
@@ -380,12 +380,17 @@ final class MeasurementRenderData {
         return (vertices, indices)
     }
 
-    // MARK: - Instance Matrices
+    // MARK: - Instance Data
 
-    /// Create transformation matrix for each edge (positions and orients cylinder along edge)
-    private static func createInstanceMatrices(edges: [Edge]) -> [simd_float4x4] {
+    /// Create WireframeInstance data for each edge (positions and orients cylinder along edge)
+    /// Measurements always use full width and opacity
+    private static func createWireframeInstances(edges: [Edge]) -> [WireframeInstance] {
         edges.map { edge in
-            createEdgeMatrix(start: edge.start.float3, end: edge.end.float3)
+            WireframeInstance(
+                matrix: createEdgeMatrix(start: edge.start.float3, end: edge.end.float3),
+                widthMultiplier: 1.0,
+                alpha: 1.0
+            )
         }
     }
 
@@ -478,8 +483,8 @@ final class MeasurementRenderData {
 
         // Update circle instance buffer (using instanced cylinders like measurement lines)
         if !circleEdges.isEmpty {
-            let instances = Self.createInstanceMatrices(edges: circleEdges)
-            let instanceSize = instances.count * MemoryLayout<simd_float4x4>.stride
+            let instances = Self.createWireframeInstances(edges: circleEdges)
+            let instanceSize = instances.count * MemoryLayout<WireframeInstance>.stride
             radiusCircleInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
             radiusCircleInstanceCount = instances.count
         } else {
