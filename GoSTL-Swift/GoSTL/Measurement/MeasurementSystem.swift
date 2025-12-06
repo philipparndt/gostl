@@ -39,6 +39,12 @@ final class MeasurementSystem: @unchecked Sendable {
     /// Selection rectangle (in screen coordinates) - nil when not selecting
     var selectionRect: (start: CGPoint, end: CGPoint)?
 
+    /// Set of selected triangle indices (for OpenSCAD export)
+    var selectedTriangles: Set<Int> = []
+
+    /// Hovered triangle index (for visual feedback during triangle selection)
+    var hoveredTriangle: Int?
+
     /// Number of points required for current mode
     var pointsNeeded: Int {
         guard let mode else { return 0 }
@@ -49,6 +55,8 @@ final class MeasurementSystem: @unchecked Sendable {
             return 3
         case .radius:
             return 3
+        case .triangleSelect:
+            return 0 // Continuous mode - click to select/deselect triangles
         }
     }
 
@@ -62,6 +70,8 @@ final class MeasurementSystem: @unchecked Sendable {
             return "\(currentPoints.count) / 3"
         case .radius:
             return "\(currentPoints.count) / 3"
+        case .triangleSelect:
+            return "\(selectedTriangles.count) triangles"
         }
     }
 
@@ -192,6 +202,10 @@ final class MeasurementSystem: @unchecked Sendable {
                 return (circle.radius, circle)
             }
             return (0, nil)
+
+        case .triangleSelect:
+            // Triangle selection doesn't create measurements
+            return (0, nil)
         }
     }
 
@@ -241,6 +255,8 @@ final class MeasurementSystem: @unchecked Sendable {
         measurements = []
         constraint = nil
         constrainedEndpoint = nil
+        selectedTriangles.removeAll()
+        hoveredTriangle = nil
     }
 
     // MARK: - Axis Constraint Methods
@@ -541,6 +557,57 @@ final class MeasurementSystem: @unchecked Sendable {
                 print("Removed last point, \(currentPoints.count) points remaining")
             }
         }
+    }
+
+    // MARK: - Triangle Selection Methods
+
+    /// Toggle selection of a triangle by index
+    func toggleTriangleSelection(_ index: Int) {
+        if selectedTriangles.contains(index) {
+            selectedTriangles.remove(index)
+            print("Deselected triangle \(index), \(selectedTriangles.count) selected")
+        } else {
+            selectedTriangles.insert(index)
+            print("Selected triangle \(index), \(selectedTriangles.count) selected")
+        }
+    }
+
+    /// Add triangle to selection (without deselecting)
+    func selectTriangle(_ index: Int) {
+        selectedTriangles.insert(index)
+    }
+
+    /// Clear all selected triangles
+    func clearTriangleSelection() {
+        selectedTriangles.removeAll()
+        hoveredTriangle = nil
+        print("Triangle selection cleared")
+    }
+
+    /// Find which triangle the ray intersects (returns index)
+    func findTriangleAtRay(ray: Ray, model: STLModel) -> Int? {
+        var closestDistance: Float = .infinity
+        var closestIndex: Int?
+
+        for (index, triangle) in model.triangles.enumerated() {
+            if let distance = triangle.intersect(ray: ray) {
+                if distance < closestDistance {
+                    closestDistance = distance
+                    closestIndex = index
+                }
+            }
+        }
+
+        return closestIndex
+    }
+
+    /// Update hovered triangle based on mouse position
+    func updateTriangleHover(ray: Ray, model: STLModel?) {
+        guard mode == .triangleSelect, let model else {
+            hoveredTriangle = nil
+            return
+        }
+        hoveredTriangle = findTriangleAtRay(ray: ray, model: model)
     }
 
     /// Get preview distance (distance from last point to hover point)

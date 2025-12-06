@@ -140,6 +140,15 @@ final class InputHandler {
             return
         }
 
+        // Handle triangle selection mode
+        if appState.measurementSystem.mode == .triangleSelect {
+            let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
+            if let triangleIndex = appState.measurementSystem.findTriangleAtRay(ray: ray, model: model) {
+                appState.measurementSystem.toggleTriangleSelection(triangleIndex)
+            }
+            return
+        }
+
         // If constraint is active, use the constrained endpoint
         if let constrainedEndpoint = appState.measurementSystem.constrainedEndpoint,
            appState.measurementSystem.constraint != nil {
@@ -188,14 +197,20 @@ final class InputHandler {
         guard appState.measurementSystem.isCollecting else {
             appState.measurementSystem.hoverPoint = nil
             appState.measurementSystem.constrainedEndpoint = nil
+            appState.measurementSystem.hoveredTriangle = nil
             return
         }
 
         // Generate ray from mouse position
         let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
 
-        // Update hover point
-        appState.measurementSystem.updateHover(ray: ray, model: appState.model)
+        // Update hover based on mode
+        if appState.measurementSystem.mode == .triangleSelect {
+            appState.measurementSystem.updateTriangleHover(ray: ray, model: appState.model)
+        } else {
+            // Update hover point for other modes
+            appState.measurementSystem.updateHover(ray: ray, model: appState.model)
+        }
     }
 
     /// Check if mouse is hovering over orientation cube and which face or axis label
@@ -523,6 +538,12 @@ final class InputHandler {
         case "r":
             appState.measurementSystem.startMeasurement(type: .radius)
             print("Radius measurement mode activated (pick 3 points)")
+            return true
+
+        // Triangle selection
+        case "t":
+            appState.measurementSystem.startMeasurement(type: .triangleSelect)
+            print("Triangle selection mode activated (click triangles, Cmd+Shift+C to copy as OpenSCAD)")
             return true
         case "f":
             // Frame model in view

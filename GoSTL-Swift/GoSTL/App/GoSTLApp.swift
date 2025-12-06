@@ -249,7 +249,13 @@ struct GoSTLApp: App {
                 Button("Measure Radius") {
                     NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.radius)
                 }
-                // Using 'c' for radius (circle)
+
+                Divider()
+
+                Button("Select Triangles") {
+                    NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.triangleSelect)
+                }
+                .keyboardShortcut("t", modifiers: [])
 
                 Divider()
 
@@ -257,6 +263,13 @@ struct GoSTLApp: App {
                     NotificationCenter.default.post(name: NSNotification.Name("ClearMeasurements"), object: nil)
                 }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Copy as OpenSCAD") {
+                    NotificationCenter.default.post(name: NSNotification.Name("CopyMeasurementsAsOpenSCAD"), object: nil)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
 
                 Divider()
 

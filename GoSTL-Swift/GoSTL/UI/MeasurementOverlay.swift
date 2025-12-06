@@ -29,14 +29,33 @@ struct MeasurementOverlay: View {
                         }
                     }
 
-                    Text("Points: \(measurementSystem.pointsNeededText)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.8))
+                    if mode == .triangleSelect {
+                        Text("Selected: \(measurementSystem.selectedTriangles.count) triangles")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.8))
 
-                    Text("Click on model to pick points")
-                        .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.6))
-                        .italic()
+                        Text("Click triangles to select/deselect")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.6))
+                            .italic()
+
+                        HStack(spacing: 4) {
+                            KeyHint_MeasurementLegacy(key: "⇧⌘C")
+                            Text("to copy as OpenSCAD")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        .padding(.top, 2)
+                    } else {
+                        Text("Points: \(measurementSystem.pointsNeededText)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.8))
+
+                        Text("Click on model to pick points")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.6))
+                            .italic()
+                    }
 
                     if mode == .distance {
                         // Show constraint status when at least one point is selected
@@ -143,6 +162,8 @@ struct MeasurementOverlay: View {
             return "Angle"
         case .radius:
             return "Radius"
+        case .triangleSelect:
+            return "Select Triangles"
         }
     }
 

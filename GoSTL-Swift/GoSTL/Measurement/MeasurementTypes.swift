@@ -5,6 +5,7 @@ enum MeasurementType {
     case distance  // Distance between two points
     case angle     // Angle between three points
     case radius    // Radius of a circle fitted to three points
+    case triangleSelect  // Select triangles for OpenSCAD export
 }
 
 /// A point in 3D space used for measurements
@@ -41,6 +42,8 @@ struct Measurement {
             return String(format: "%.1f°", value)
         case .radius:
             return formatDistance(value)
+        case .triangleSelect:
+            return ""  // Not used for triangle selection
         }
     }
 
@@ -53,6 +56,8 @@ struct Measurement {
             return "Angle"
         case .radius:
             return "Radius"
+        case .triangleSelect:
+            return "Triangle"  // Not used for triangle selection
         }
     }
 
@@ -90,6 +95,9 @@ struct Measurement {
                 return sum / 3.0
             }
             return points[0].position
+
+        case .triangleSelect:
+            return Vector3(0, 0, 0)  // Not used for triangle selection
         }
     }
 

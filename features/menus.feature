@@ -41,7 +41,9 @@ Feature: Application Menus
     Then I should see "Measure Distance" with Cmd+D
     And I should see "Measure Angle" with Cmd+A
     And I should see "Measure Radius"
+    And I should see "Select Triangles" with T
     And I should see "Clear All Measurements" with Cmd+Shift+K
+    And I should see "Copy as OpenSCAD" with Cmd+Shift+C
     And I should see "Change Material" with Cmd+M
     And I should see "Open with go3mf"
 

@@ -95,6 +95,9 @@ final class AppState: @unchecked Sendable {
     /// GPU measurement data for rendering measurements
     var measurementData: MeasurementRenderData?
 
+    /// GPU data for rendering selected/hovered triangles
+    var selectedTrianglesData: SelectedTrianglesData?
+
     /// GPU slice plane data for visualizing slice boundaries
     var slicePlaneData: SlicePlaneData?
 
@@ -277,6 +280,14 @@ final class AppState: @unchecked Sendable {
         }
 
         NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CopyMeasurementsAsOpenSCAD"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.copyMeasurementsAsOpenSCAD()
+        }
+
+        NotificationCenter.default.addObserver(
             forName: NSNotification.Name("CycleMaterial"),
             object: nil,
             queue: .main
@@ -432,6 +443,18 @@ final class AppState: @unchecked Sendable {
         } catch {
             print("ERROR: Failed to create measurement data: \(error)")
         }
+
+        // Initialize selected triangles data
+        self.selectedTrianglesData = SelectedTrianglesData(device: device)
+    }
+
+    /// Update selected triangles rendering data
+    func updateSelectedTriangles() {
+        selectedTrianglesData?.update(
+            model: model,
+            selectedIndices: measurementSystem.selectedTriangles,
+            hoveredIndex: measurementSystem.hoveredTriangle
+        )
     }
 
     /// Initialize orientation cube
@@ -1084,6 +1107,38 @@ final class AppState: @unchecked Sendable {
             self.modelInfo = info
             print("Material changed to: \(info.material.rawValue)")
         }
+    }
+
+    /// Copy measurements or selected triangles as OpenSCAD code to clipboard
+    func copyMeasurementsAsOpenSCAD() {
+        // If we have selected triangles, export those as polyhedron
+        if !measurementSystem.selectedTriangles.isEmpty, let model = model {
+            let code = OpenSCADGenerator.generate(from: model.triangles, indices: measurementSystem.selectedTriangles)
+            OpenSCADGenerator.copyToClipboard(code)
+            print("Copied \(measurementSystem.selectedTriangles.count) triangle(s) as OpenSCAD polyhedron to clipboard")
+            return
+        }
+
+        // Otherwise, use selected measurements if any, otherwise use all measurements
+        let measurementsToConvert: [Measurement]
+        if !measurementSystem.selectedMeasurements.isEmpty {
+            measurementsToConvert = measurementSystem.selectedMeasurements
+                .sorted()
+                .compactMap { index in
+                    index < measurementSystem.measurements.count ? measurementSystem.measurements[index] : nil
+                }
+        } else {
+            measurementsToConvert = measurementSystem.measurements
+        }
+
+        guard !measurementsToConvert.isEmpty else {
+            print("No measurements or triangles to convert to OpenSCAD")
+            return
+        }
+
+        let code = OpenSCADGenerator.generate(from: measurementsToConvert)
+        OpenSCADGenerator.copyToClipboard(code)
+        print("Copied \(measurementsToConvert.count) measurement(s) as OpenSCAD to clipboard")
     }
 }
 

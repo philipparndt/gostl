@@ -416,6 +416,13 @@ struct ToolsSectionContent: View {
                     key: "r",
                     action: { measurementSystem.startMeasurement(type: .radius) }
                 )
+
+                MeasurementToolButton(
+                    icon: "triangle",
+                    label: "Triangles",
+                    key: "t",
+                    action: { measurementSystem.startMeasurement(type: .triangleSelect) }
+                )
             }
 
             // Show Clear All button if measurements exist
@@ -481,6 +488,7 @@ struct ToolsSectionContent: View {
         case .distance: return "Distance"
         case .angle: return "Angle"
         case .radius: return "Radius"
+        case .triangleSelect: return "Select Triangles"
         }
     }
 

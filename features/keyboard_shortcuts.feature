@@ -53,12 +53,14 @@ Feature: Keyboard Shortcuts
     Then <action> should occur
 
     Examples:
-      | shortcut     | action                              |
-      | Cmd+D        | distance measurement mode starts    |
-      | Cmd+A        | angle measurement mode starts       |
-      | R            | radius measurement mode starts      |
-      | Cmd+M        | material cycles                     |
-      | Cmd+Shift+K  | all measurements are cleared        |
+      | shortcut     | action                                          |
+      | Cmd+D        | distance measurement mode starts                |
+      | Cmd+A        | angle measurement mode starts                   |
+      | R            | radius measurement mode starts                  |
+      | T            | triangle selection mode starts                  |
+      | Cmd+M        | material cycles                                 |
+      | Cmd+Shift+K  | all measurements are cleared                    |
+      | Cmd+Shift+C  | selected/all measurements copied as OpenSCAD    |
 
   @measurement-mode
   Scenario Outline: Measurement mode shortcuts

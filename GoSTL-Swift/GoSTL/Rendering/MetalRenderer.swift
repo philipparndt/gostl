@@ -370,6 +370,12 @@ final class MetalRenderer {
             renderCutEdges(encoder: renderEncoder, cutEdgeData: cutEdgeData, appState: appState, viewSize: view.drawableSize)
         }
 
+        // Update and render selected triangles
+        if let selectedTrianglesData = appState.selectedTrianglesData {
+            appState.updateSelectedTriangles()
+            renderSelectedTriangles(encoder: renderEncoder, selectedTrianglesData: selectedTrianglesData, appState: appState, viewSize: view.drawableSize)
+        }
+
         // Update and render measurements
         if let measurementData = appState.measurementData {
             measurementData.update(measurementSystem: appState.measurementSystem)
@@ -390,6 +396,61 @@ final class MetalRenderer {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    // MARK: - Selected Triangles Rendering
+
+    private func renderSelectedTriangles(encoder: MTLRenderCommandEncoder, selectedTrianglesData: SelectedTrianglesData, appState: AppState, viewSize: CGSize) {
+        let aspect = Float(viewSize.width / viewSize.height)
+        var uniforms = createUniforms(camera: appState.camera, aspect: aspect)
+
+        // Use depth bias to render overlay slightly in front of the mesh
+        encoder.setDepthBias(-1.0, slopeScale: -1.0, clamp: 0.0)
+
+        // Render selected triangles (cyan overlay)
+        if let selectedBuffer = selectedTrianglesData.selectedVertexBuffer, selectedTrianglesData.selectedVertexCount > 0 {
+            encoder.setRenderPipelineState(meshPipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(selectedBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+            // Use a simple emissive material for selection highlight
+            var materialProperties = MaterialProperties(
+                baseColor: SIMD3<Float>(0.0, 0.8, 1.0),  // Cyan
+                glossiness: 0.0,
+                metalness: 0.0,
+                specularIntensity: 0.0
+            )
+            encoder.setFragmentBytes(&materialProperties, length: MemoryLayout<MaterialProperties>.size, index: 1)
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 0)
+
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: selectedTrianglesData.selectedVertexCount)
+        }
+
+        // Render hovered triangle (green overlay)
+        if let hoveredBuffer = selectedTrianglesData.hoveredVertexBuffer, selectedTrianglesData.hoveredVertexCount > 0 {
+            encoder.setRenderPipelineState(meshPipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(hoveredBuffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 1)
+
+            // Use a simple emissive material for hover highlight
+            var materialProperties = MaterialProperties(
+                baseColor: SIMD3<Float>(0.0, 1.0, 0.3),  // Green
+                glossiness: 0.0,
+                metalness: 0.0,
+                specularIntensity: 0.0
+            )
+            encoder.setFragmentBytes(&materialProperties, length: MemoryLayout<MaterialProperties>.size, index: 1)
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.size, index: 0)
+
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: selectedTrianglesData.hoveredVertexCount)
+        }
+
+        // Reset depth bias
+        encoder.setDepthBias(0.0, slopeScale: 0.0, clamp: 0.0)
     }
 
     // MARK: - Mesh Rendering
