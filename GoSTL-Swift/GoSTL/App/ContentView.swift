@@ -96,6 +96,36 @@ struct ContentView: View {
                         .transition(.opacity)
                 }
 
+                // Background processing indicator (shown while spatial index or wireframe builds)
+                if (appState.isBuildingAccelerator || appState.isBuildingWireframe) && !appState.isLoading {
+                    VStack {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .scaleEffect(0.8)
+                            VStack(alignment: .leading, spacing: 2) {
+                                if appState.isBuildingWireframe {
+                                    Text("Building wireframe...")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                if appState.isBuildingAccelerator {
+                                    Text("Building spatial index...")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 50)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .animation(.easeInOut(duration: 0.3), value: appState.isBuildingAccelerator || appState.isBuildingWireframe)
+                }
+
                 // Empty file indicator (shown when OpenSCAD file has no geometry)
                 if appState.isEmptyFile {
                     EmptyFileOverlay(fileName: appState.modelInfo?.fileName ?? "")

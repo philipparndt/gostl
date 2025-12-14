@@ -25,13 +25,46 @@ struct STLModel {
             return BoundingBox()
         }
 
-        var box = BoundingBox(point: triangles[0].v1)
-        for triangle in triangles {
-            box.extend(triangle.v1)
-            box.extend(triangle.v2)
-            box.extend(triangle.v3)
+        // For small models, use sequential approach
+        if triangles.count < 10000 {
+            var box = BoundingBox(point: triangles[0].v1)
+            for triangle in triangles {
+                box.extend(triangle.v1)
+                box.extend(triangle.v2)
+                box.extend(triangle.v3)
+            }
+            return box
         }
-        return box
+
+        // For large models, calculate bounds in parallel
+        let processorCount = ProcessInfo.processInfo.activeProcessorCount
+        let chunkSize = max(1000, triangles.count / processorCount)
+        let chunkCount = (triangles.count + chunkSize - 1) / chunkSize
+
+        var partialBounds = [BoundingBox](repeating: BoundingBox(), count: chunkCount)
+
+        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
+            let startIndex = chunkIndex * chunkSize
+            let endIndex = min(startIndex + chunkSize, triangles.count)
+
+            guard startIndex < endIndex else { return }
+
+            var box = BoundingBox(point: triangles[startIndex].v1)
+            for i in startIndex..<endIndex {
+                let triangle = triangles[i]
+                box.extend(triangle.v1)
+                box.extend(triangle.v2)
+                box.extend(triangle.v3)
+            }
+            partialBounds[chunkIndex] = box
+        }
+
+        // Merge partial bounds
+        var finalBox = partialBounds[0]
+        for i in 1..<chunkCount {
+            finalBox.extend(partialBounds[i])
+        }
+        return finalBox
     }
 
     /// Calculate total surface area
@@ -171,6 +204,17 @@ struct STLModel {
     /// - Parameter minAngle: Minimum angle in degrees; edges below this are hidden
     /// - Returns: Array of styled edges with width multiplier and alpha values
     func extractStyledEdges(angleThreshold: Double = 20.0, minAngle: Double = 1.0) -> [StyledEdge] {
+        // For small models, use sequential algorithm
+        if triangles.count < 10000 {
+            return extractStyledEdgesSequential(angleThreshold: angleThreshold, minAngle: minAngle)
+        }
+
+        // For large models, use parallel algorithm
+        return extractStyledEdgesParallel(angleThreshold: angleThreshold, minAngle: minAngle)
+    }
+
+    /// Sequential styled edge extraction for small models
+    private func extractStyledEdgesSequential(angleThreshold: Double, minAngle: Double) -> [StyledEdge] {
         // Build edge-to-triangles adjacency map
         var edgeTriangles: [Edge: [Triangle]] = [:]
         edgeTriangles.reserveCapacity(triangles.count * 3)
@@ -186,6 +230,55 @@ struct STLModel {
             }
         }
 
+        return classifyEdges(edgeTriangles: edgeTriangles, angleThreshold: angleThreshold, minAngle: minAngle)
+    }
+
+    /// Parallel styled edge extraction for large models
+    private func extractStyledEdgesParallel(angleThreshold: Double, minAngle: Double) -> [StyledEdge] {
+        let processorCount = ProcessInfo.processInfo.activeProcessorCount
+        let chunkSize = max(1000, triangles.count / processorCount)
+        let chunkCount = (triangles.count + chunkSize - 1) / chunkSize
+
+        // Build partial edge maps in parallel
+        var partialMaps = [[Edge: [Triangle]]](repeating: [:], count: chunkCount)
+
+        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
+            let startIndex = chunkIndex * chunkSize
+            let endIndex = min(startIndex + chunkSize, triangles.count)
+
+            var localMap: [Edge: [Triangle]] = [:]
+            localMap.reserveCapacity((endIndex - startIndex) * 3)
+
+            for i in startIndex..<endIndex {
+                let triangle = triangles[i]
+                let edges = [
+                    Edge(triangle.v1, triangle.v2),
+                    Edge(triangle.v2, triangle.v3),
+                    Edge(triangle.v3, triangle.v1)
+                ]
+                for edge in edges {
+                    localMap[edge, default: []].append(triangle)
+                }
+            }
+
+            partialMaps[chunkIndex] = localMap
+        }
+
+        // Merge partial maps (sequential, but maps are smaller)
+        var edgeTriangles: [Edge: [Triangle]] = [:]
+        edgeTriangles.reserveCapacity(triangles.count * 2) // Rough estimate of unique edges
+
+        for partialMap in partialMaps {
+            for (edge, tris) in partialMap {
+                edgeTriangles[edge, default: []].append(contentsOf: tris)
+            }
+        }
+
+        return classifyEdges(edgeTriangles: edgeTriangles, angleThreshold: angleThreshold, minAngle: minAngle)
+    }
+
+    /// Classify edges based on angle thresholds
+    private func classifyEdges(edgeTriangles: [Edge: [Triangle]], angleThreshold: Double, minAngle: Double) -> [StyledEdge] {
         // Convert thresholds to cosine (for faster comparison)
         let thresholdRadians = angleThreshold * .pi / 180.0
         let cosThreshold = cos(thresholdRadians)

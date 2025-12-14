@@ -6,46 +6,55 @@ struct MainMenuPanel: View {
     let appState: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Info Section
-            if let modelInfo = appState.modelInfo {
-                MenuSection(title: "Info", icon: "info.circle") {
-                    InfoSectionContent(
-                        modelInfo: modelInfo,
-                        slicingState: appState.slicingState,
-                        visibleTriangleCount: (appState.meshData?.vertexCount ?? 0) / 3
-                    )
+        GeometryReader { geometry in
+            let maxPanelHeight = geometry.size.height - 24 // Account for padding
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 8) {
+                    // Info Section
+                    if let modelInfo = appState.modelInfo {
+                        MenuSection(title: "Info", icon: "info.circle") {
+                            InfoSectionContent(
+                                modelInfo: modelInfo,
+                                slicingState: appState.slicingState,
+                                visibleTriangleCount: (appState.meshData?.vertexCount ?? 0) / 3
+                            )
+                        }
+                    }
+
+                    // View Section
+                    MenuSection(title: "View", icon: "eye") {
+                        ViewSectionContent(appState: appState)
+                    }
+
+                    // Tools Section
+                    MenuSection(title: "Tools", icon: "ruler") {
+                        ToolsSectionContent(measurementSystem: appState.measurementSystem, appState: appState)
+                    }
+
+                    // Toggle hint
+                    HStack(spacing: 4) {
+                        KeyHint(key: "i")
+                        Text("to toggle panel")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    .padding(.top, 4)
                 }
+                .padding(8)
             }
-
-            // View Section
-            MenuSection(title: "View", icon: "eye") {
-                ViewSectionContent(appState: appState)
-            }
-
-            // Tools Section
-            MenuSection(title: "Tools", icon: "ruler") {
-                ToolsSectionContent(measurementSystem: appState.measurementSystem, appState: appState)
-            }
-
-            // Toggle hint
-            HStack(spacing: 4) {
-                KeyHint(key: "i")
-                Text("to toggle panel")
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.5))
-            }
-            .padding(.top, 4)
+            .frame(width: 260)
+            .frame(maxHeight: maxPanelHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(12)
         }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
-        )
-        .frame(minWidth: 240)
-        .fixedSize()
-        .padding(12)
+        .frame(width: 284) // 260 + 24 padding
     }
 }
 

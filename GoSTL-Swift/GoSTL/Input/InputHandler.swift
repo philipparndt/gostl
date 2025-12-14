@@ -43,7 +43,7 @@ final class InputHandler {
             appState.measurementSystem.isPaintingToUnselect = modifierFlags.contains(.shift)
             // Select/unselect triangle under cursor immediately
             let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
-            if let triangleIndex = appState.measurementSystem.findTriangleAtRay(ray: ray, model: model) {
+            if let triangleIndex = appState.measurementSystem.findTriangleAtRay(ray: ray, model: model, accelerator: appState.spatialAccelerator) {
                 if appState.measurementSystem.isPaintingToUnselect {
                     appState.measurementSystem.selectedTriangles.remove(triangleIndex)
                 } else {
@@ -83,7 +83,7 @@ final class InputHandler {
         if appState.measurementSystem.isPainting,
            let model = appState.model {
             let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
-            if let triangleIndex = appState.measurementSystem.findTriangleAtRay(ray: ray, model: model) {
+            if let triangleIndex = appState.measurementSystem.findTriangleAtRay(ray: ray, model: model, accelerator: appState.spatialAccelerator) {
                 if appState.measurementSystem.isPaintingToUnselect {
                     appState.measurementSystem.selectedTriangles.remove(triangleIndex)
                 } else {
@@ -188,7 +188,7 @@ final class InputHandler {
             guard let model = appState.model else { return }
 
             let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
-            if let position = RayPicking.findIntersection(ray: ray, model: model) {
+            if let position = RayPicking.findIntersection(ray: ray, model: model, accelerator: appState.spatialAccelerator) {
                 let completed = appState.levelingState.addPoint(position)
                 if completed {
                     print("Leveling: Both points selected, choose axis")
@@ -208,7 +208,7 @@ final class InputHandler {
         // Handle triangle selection mode
         if appState.measurementSystem.mode == .triangleSelect {
             let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
-            if let triangleIndex = appState.measurementSystem.findTriangleAtRay(ray: ray, model: model) {
+            if let triangleIndex = appState.measurementSystem.findTriangleAtRay(ray: ray, model: model, accelerator: appState.spatialAccelerator) {
                 appState.measurementSystem.toggleTriangleSelection(triangleIndex)
             }
             return
@@ -233,7 +233,7 @@ final class InputHandler {
         let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
 
         // Find intersection with model
-        if let point = appState.measurementSystem.findIntersection(ray: ray, model: model) {
+        if let point = appState.measurementSystem.findIntersection(ray: ray, model: model, accelerator: appState.spatialAccelerator) {
             _ = appState.measurementSystem.addPoint(point)
             print("Picked point: \(point.position)")
         }
@@ -262,7 +262,7 @@ final class InputHandler {
         if appState.levelingState.isActive && !appState.levelingState.isReadyForAxisSelection {
             if let model = appState.model {
                 let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
-                appState.levelingState.hoverPoint = RayPicking.findIntersection(ray: ray, model: model)
+                appState.levelingState.hoverPoint = RayPicking.findIntersection(ray: ray, model: model, accelerator: appState.spatialAccelerator)
             }
         } else {
             appState.levelingState.hoverPoint = nil
@@ -281,10 +281,10 @@ final class InputHandler {
 
         // Update hover based on mode
         if appState.measurementSystem.mode == .triangleSelect {
-            appState.measurementSystem.updateTriangleHover(ray: ray, model: appState.model)
+            appState.measurementSystem.updateTriangleHover(ray: ray, model: appState.model, accelerator: appState.spatialAccelerator)
         } else {
             // Update hover point for other modes
-            appState.measurementSystem.updateHover(ray: ray, model: appState.model)
+            appState.measurementSystem.updateHover(ray: ray, model: appState.model, accelerator: appState.spatialAccelerator)
         }
     }
 

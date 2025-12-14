@@ -58,6 +58,15 @@ final class AppState: @unchecked Sendable {
     /// Currently loaded STL model
     var model: STLModel?
 
+    /// Spatial acceleration structure for fast ray casting and vertex snapping
+    var spatialAccelerator: SpatialAccelerator?
+
+    /// Whether the spatial accelerator is currently being built
+    var isBuildingAccelerator: Bool = false
+
+    /// Whether the wireframe is currently being built
+    var isBuildingWireframe: Bool = false
+
     /// Cached edges for wireframe rendering (extracted once when model loads)
     private var cachedEdges: [Edge]?
 
@@ -741,6 +750,9 @@ final class AppState: @unchecked Sendable {
     /// Clear the current model (for empty files)
     func clearModel() {
         self.model = nil
+        self.spatialAccelerator = nil
+        self.isBuildingAccelerator = false
+        self.isBuildingWireframe = false
         self.cachedEdges = nil
         self.cachedFeatureEdges = nil
         self.cachedStyledEdges = nil
@@ -759,18 +771,101 @@ final class AppState: @unchecked Sendable {
     ///   - device: Metal device for GPU resources
     ///   - preserveCamera: If true, preserve current camera position (for reloads)
     func loadModel(_ model: STLModel, device: MTLDevice, preserveCamera: Bool = false) throws {
+        let loadStart = CFAbsoluteTimeGetCurrent()
+
         self.model = model
         self.cachedEdges = nil  // Clear edge cache for new model
         self.cachedFeatureEdges = nil  // Clear feature edge cache for new model
         self.cachedStyledEdges = nil  // Clear styled edge cache for new model
         self.unclippedWireframeData = nil  // Clear cached wireframe for new model
-        try updateMeshData(device: device)
+        self.spatialAccelerator = nil  // Clear while rebuilding
+        self.isBuildingAccelerator = true
 
-        // Calculate wireframe based on current mode
+        // Build spatial acceleration structure asynchronously for fast ray casting
+        // This allows the model to render immediately while acceleration builds in background
+        let triangles = model.triangles
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let accelerator = SpatialAccelerator(triangles: triangles)
+            DispatchQueue.main.async {
+                self?.spatialAccelerator = accelerator
+                self?.isBuildingAccelerator = false
+            }
+        }
+
+        // Calculate bounding box and thickness for wireframe
+        var t0 = CFAbsoluteTimeGetCurrent()
         let bbox = model.boundingBox()
+        print("  boundingBox: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
+
         let modelSize = bbox.diagonal
         let thickness = Float(modelSize) * 0.002 // 0.2% of model size
-        try updateWireframe(device: device)
+
+        // Show mesh immediately without wireframe
+        self.wireframeData = nil
+        t0 = CFAbsoluteTimeGetCurrent()
+        self.meshData = try MeshData(device: device, model: model)
+        print("  MeshData: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
+        print("  Total loadModel setup: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - loadStart) * 1000))ms")
+
+        // Build wireframe asynchronously for large models
+        if model.triangles.count > 10000 && wireframeMode != .off {
+            isBuildingWireframe = true
+            let triangles = model.triangles
+            let currentWireframeMode = wireframeMode
+            let currentEdgeAngleThreshold = edgeAngleThreshold
+            let currentSlicingState = slicingState
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                // Extract edges in background
+                let styledEdges: [StyledEdge]?
+                let edges: [Edge]?
+
+                if currentWireframeMode == .edge {
+                    styledEdges = STLModel(triangles: triangles).extractStyledEdges(angleThreshold: currentEdgeAngleThreshold)
+                    edges = nil
+                } else {
+                    edges = STLModel(triangles: triangles).extractEdges()
+                    styledEdges = nil
+                }
+
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+
+                    // Cache the extracted edges
+                    if let styledEdges = styledEdges {
+                        self.cachedStyledEdges = styledEdges
+                    }
+                    if let edges = edges {
+                        self.cachedEdges = edges
+                    }
+
+                    // Create wireframe data
+                    do {
+                        if currentWireframeMode == .edge, let styledEdges = styledEdges {
+                            if currentSlicingState.isVisible {
+                                self.wireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness, sliceBounds: currentSlicingState.bounds)
+                            } else {
+                                self.wireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness)
+                            }
+                        } else if let edges = edges {
+                            if currentSlicingState.isVisible {
+                                self.wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness, sliceBounds: currentSlicingState.bounds)
+                            } else {
+                                self.wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+                            }
+                        }
+                        self.unclippedWireframeData = self.wireframeData
+                    } catch {
+                        print("ERROR: Failed to create wireframe data: \(error)")
+                    }
+
+                    self.isBuildingWireframe = false
+                }
+            }
+        } else {
+            // For small models, build wireframe synchronously
+            try updateWireframe(device: device)
+        }
 
         // Reinitialize measurement data with appropriate thickness for this model
         initializeMeasurements(device: device, thickness: thickness)
@@ -861,8 +956,12 @@ final class AppState: @unchecked Sendable {
         } else if fileExtension == "stl" {
             // Regular STL file
             print("Loading STL file: \(url.lastPathComponent)")
+            var t0 = CFAbsoluteTimeGetCurrent()
             let model = try STLParser.parse(url: url)
+            print("  STL parsing: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms (\(model.triangleCount) triangles)")
+            t0 = CFAbsoluteTimeGetCurrent()
             try loadModel(model, device: device)
+            print("  loadModel total: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
 
             // Update file watching state
             self.sourceFileURL = url

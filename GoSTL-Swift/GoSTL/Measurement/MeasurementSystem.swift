@@ -105,13 +105,13 @@ final class MeasurementSystem: @unchecked Sendable {
     }
 
     /// Update hover point based on mouse position
-    func updateHover(ray: Ray, model: STLModel?) {
+    func updateHover(ray: Ray, model: STLModel?, accelerator: SpatialAccelerator? = nil) {
         guard isCollecting, let model else {
             hoverPoint = nil
             constrainedEndpoint = nil
             return
         }
-        hoverPoint = findIntersection(ray: ray, model: model)
+        hoverPoint = findIntersection(ray: ray, model: model, accelerator: accelerator)
 
         // Update constrained endpoint if constraint is active
         updateConstrainedMeasurement()
@@ -220,7 +220,22 @@ final class MeasurementSystem: @unchecked Sendable {
 
     /// Find intersection point on model for a ray
     /// Snaps to nearby vertices if within threshold
-    func findIntersection(ray: Ray, model: STLModel) -> MeasurementPoint? {
+    /// Uses spatial accelerator for O(log n) performance when available
+    func findIntersection(ray: Ray, model: STLModel, accelerator: SpatialAccelerator? = nil) -> MeasurementPoint? {
+        let snapThreshold: Double = 2.0
+
+        // Use accelerator for fast ray casting if available
+        if let accelerator = accelerator {
+            guard let hit = accelerator.raycast(ray: ray) else {
+                return nil
+            }
+
+            // Use spatial grid for fast vertex snapping
+            let snappedPosition = accelerator.findClosestVertex(to: hit.position, maxDistance: snapThreshold) ?? hit.position
+            return MeasurementPoint(position: snappedPosition, normal: hit.normal)
+        }
+
+        // Fallback to O(n) algorithm when accelerator not available
         var closestDistance: Float = .infinity
         var closestIntersection: (position: Vector3, normal: Vector3)?
 
@@ -240,7 +255,6 @@ final class MeasurementSystem: @unchecked Sendable {
         }
 
         // Snap to nearest vertex in the model if within threshold
-        let snapThreshold: Double = 2.0
         var snappedPosition = intersection.position
 
         var closestVertexDistance: Double = .infinity
@@ -594,7 +608,14 @@ final class MeasurementSystem: @unchecked Sendable {
     }
 
     /// Find which triangle the ray intersects (returns index)
-    func findTriangleAtRay(ray: Ray, model: STLModel) -> Int? {
+    /// Uses spatial accelerator for O(log n) performance when available
+    func findTriangleAtRay(ray: Ray, model: STLModel, accelerator: SpatialAccelerator? = nil) -> Int? {
+        // Use accelerator for fast lookup if available
+        if let accelerator = accelerator {
+            return accelerator.findTriangleAtRay(ray: ray)
+        }
+
+        // Fallback to O(n) algorithm
         var closestDistance: Float = .infinity
         var closestIndex: Int?
 
@@ -611,12 +632,12 @@ final class MeasurementSystem: @unchecked Sendable {
     }
 
     /// Update hovered triangle based on mouse position
-    func updateTriangleHover(ray: Ray, model: STLModel?) {
+    func updateTriangleHover(ray: Ray, model: STLModel?, accelerator: SpatialAccelerator? = nil) {
         guard mode == .triangleSelect, let model else {
             hoveredTriangle = nil
             return
         }
-        hoveredTriangle = findTriangleAtRay(ray: ray, model: model)
+        hoveredTriangle = findTriangleAtRay(ray: ray, model: model, accelerator: accelerator)
     }
 
     /// Get preview distance (distance from last point to hover point)
