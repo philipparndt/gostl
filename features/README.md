@@ -111,7 +111,8 @@ Features use tags for categorization:
 | Shortcut | Action |
 |----------|--------|
 | Cmd+O | Open file |
-| Cmd+Shift+S | Toggle slicing panel |
+| Cmd+S | Save file (if modified) |
+| Cmd+Shift+S | Save As... |
 
 ### Camera
 | Shortcut | Action |
@@ -129,6 +130,7 @@ Features use tags for categorization:
 | Cmd+W | Cycle wireframe mode |
 | Cmd+G | Cycle grid mode |
 | Cmd+B | Cycle build plate |
+| Cmd+Shift+X | Toggle slicing panel |
 
 ### Measurements
 | Shortcut | Action |

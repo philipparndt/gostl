@@ -14,9 +14,10 @@ Feature: Keyboard Shortcuts
     Then <action> should occur
 
     Examples:
-      | shortcut     | action                      |
-      | Cmd+O        | the file open dialog opens  |
-      | Cmd+Shift+S  | slicing panel toggles       |
+      | shortcut     | action                           |
+      | Cmd+O        | the file open dialog opens       |
+      | Cmd+S        | the model is saved (if modified) |
+      | Cmd+Shift+S  | the save as dialog opens         |
 
   @camera
   Scenario Outline: Camera preset shortcuts
@@ -41,11 +42,12 @@ Feature: Keyboard Shortcuts
     Then <action> should occur
 
     Examples:
-      | shortcut | action                        |
-      | Cmd+I    | info panel toggles            |
-      | Cmd+W    | wireframe mode cycles         |
-      | Cmd+G    | grid mode cycles              |
-      | Cmd+B    | build plate cycles            |
+      | shortcut     | action                        |
+      | Cmd+I        | info panel toggles            |
+      | Cmd+W        | wireframe mode cycles         |
+      | Cmd+G        | grid mode cycles              |
+      | Cmd+B        | build plate cycles            |
+      | Cmd+Shift+X  | slicing panel toggles         |
 
   @measurement
   Scenario Outline: Measurement shortcuts

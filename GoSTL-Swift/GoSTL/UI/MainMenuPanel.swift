@@ -122,7 +122,7 @@ struct InfoSectionContent: View {
                     Text("Slicing active")
                         .font(.system(size: 9))
                         .foregroundColor(.orange)
-                    KeyHint(key: "⇧S")
+                    KeyHint(key: "⇧X")
                 }
             } else {
                 InfoRow(label: "Triangles:", value: ModelInfo.formatCount(modelInfo.triangleCount))
@@ -229,7 +229,7 @@ struct ViewSectionContent: View {
                     }
                 }
                 .buttonStyle(.plain)
-                KeyHint(key: "⇧S")
+                KeyHint(key: "⇧X")
             }
 
             // Build plate selector

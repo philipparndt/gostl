@@ -76,6 +76,20 @@ struct GoSTLApp: App {
                     }
                 }
                 .disabled(recentDocuments.recentURLs.isEmpty)
+
+                Divider()
+
+                Button("Save") {
+                    saveFile()
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(appState?.canSave != true || appState?.hasSaveDestination != true)
+
+                Button("Save As...") {
+                    saveFileAs()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(appState?.model == nil)
             }
 
             // Add items to the system View menu
@@ -190,7 +204,7 @@ struct GoSTLApp: App {
                     get: { appState?.slicingState.isVisible ?? false },
                     set: { _ in appState?.slicingState.toggleVisibility() }
                 ))
-                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .keyboardShortcut("x", modifiers: [.command, .shift])
 
                 Divider()
 
@@ -351,6 +365,82 @@ struct GoSTLApp: App {
 
             // Create new window for this file
             openNewWindow(for: url)
+        }
+    }
+
+    private func saveFile() {
+        guard let appState = appState else { return }
+
+        do {
+            try appState.saveModel()
+
+            // Update window title and represented URL
+            if let savedURL = appState.savedFileURL,
+               let window = NSApp.keyWindow {
+                window.title = savedURL.lastPathComponent
+                window.representedURL = savedURL
+
+                // Add to recent documents
+                recentDocuments.addDocument(savedURL)
+            }
+        } catch {
+            showSaveError(error)
+        }
+    }
+
+    private func saveFileAs() {
+        guard let appState = appState else { return }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "stl")!]
+        panel.nameFieldStringValue = suggestFileName(for: appState)
+        panel.message = "Save STL file"
+        panel.canCreateDirectories = true
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+
+            do {
+                try appState.saveModelAs(to: url)
+
+                // Update window title and represented URL
+                if let window = NSApp.keyWindow {
+                    window.title = url.lastPathComponent
+                    window.representedURL = url
+                }
+
+                // Add to recent documents
+                self.recentDocuments.addDocument(url)
+            } catch {
+                self.showSaveError(error)
+            }
+        }
+    }
+
+    private func suggestFileName(for appState: AppState) -> String {
+        // Use saved filename if available
+        if let savedURL = appState.savedFileURL {
+            return savedURL.lastPathComponent
+        }
+
+        // Use source filename, converting extension to .stl if needed
+        if let sourceURL = appState.sourceFileURL {
+            let baseName = sourceURL.deletingPathExtension().lastPathComponent
+            return "\(baseName).stl"
+        }
+
+        // Default name
+        return "model.stl"
+    }
+
+    private func showSaveError(_ error: Error) {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Failed to Save"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
 

@@ -146,6 +146,12 @@ final class AppState: @unchecked Sendable {
     var sourceFileURL: URL?
     var tempSTLFileURL: URL?
     var isOpenSCAD: Bool = false
+
+    /// Track if the model has been modified (e.g., by leveling)
+    var isModelModified: Bool = false
+
+    /// URL where the model was last saved (may differ from sourceFileURL after "Save As")
+    var savedFileURL: URL?
     var isGo3mf: Bool = false
     var reloadRequestId: Int = 0  // Incremented to trigger reload - onChange fires on any change
     var isLoading: Bool = false
@@ -1192,6 +1198,9 @@ final class AppState: @unchecked Sendable {
 
         print("Leveling: Rotated \(angle * 180 / .pi)° around \(rotAxis) to level on \(LevelingState.axisName(for: axis)) axis")
 
+        // Mark model as modified
+        isModelModified = true
+
         // Reset leveling state but keep undo available
         levelingState.reset()
     }
@@ -1224,6 +1233,67 @@ final class AppState: @unchecked Sendable {
         levelingState.clearUndo()
 
         print("Leveling: Undo complete")
+    }
+
+    // MARK: - Save/Export Methods
+
+    /// Check if the model can be saved (has been modified and has a model)
+    var canSave: Bool {
+        model != nil && isModelModified
+    }
+
+    /// Check if "Save" should use existing file (vs requiring "Save As")
+    var hasSaveDestination: Bool {
+        // Can save directly if we have a saved URL or if source is an STL file (not OpenSCAD/3MF)
+        if savedFileURL != nil {
+            return true
+        }
+        if let sourceURL = sourceFileURL, !isOpenSCAD && !isGo3mf {
+            let ext = sourceURL.pathExtension.lowercased()
+            return ext == "stl"
+        }
+        return false
+    }
+
+    /// Save the model to the current file (or prompt for Save As if no destination)
+    func saveModel() throws {
+        guard let model = model else {
+            throw STLExportError.emptyModel
+        }
+
+        // Determine save destination
+        let destinationURL: URL
+        if let savedURL = savedFileURL {
+            destinationURL = savedURL
+        } else if let sourceURL = sourceFileURL, !isOpenSCAD && !isGo3mf {
+            destinationURL = sourceURL
+        } else {
+            // No valid destination - caller should use saveModelAs instead
+            throw STLExportError.writeFailure("No save destination. Use Save As.")
+        }
+
+        try STLExporter.exportBinary(model: model, to: destinationURL)
+        savedFileURL = destinationURL
+        isModelModified = false
+
+        print("Saved model to: \(destinationURL.path)")
+    }
+
+    /// Save the model to a new file
+    /// - Parameter url: The destination URL
+    func saveModelAs(to url: URL) throws {
+        guard let model = model else {
+            throw STLExportError.emptyModel
+        }
+
+        try STLExporter.exportBinary(model: model, to: url)
+        savedFileURL = url
+        isModelModified = false
+
+        // Update model info with new filename
+        modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
+
+        print("Saved model as: \(url.path)")
     }
 
     /// Copy measurements or selected triangles as OpenSCAD code to clipboard
