@@ -259,6 +259,18 @@ struct GoSTLApp: App {
 
                 Divider()
 
+                Button("Level Object") {
+                    NotificationCenter.default.post(name: NSNotification.Name("StartLeveling"), object: nil)
+                }
+                .keyboardShortcut("l", modifiers: .command)
+
+                Button("Undo Leveling") {
+                    NotificationCenter.default.post(name: NSNotification.Name("UndoLeveling"), object: nil)
+                }
+                .disabled(appState?.levelingState.canUndo != true)
+
+                Divider()
+
                 Button("Clear All Measurements") {
                     NotificationCenter.default.post(name: NSNotification.Name("ClearMeasurements"), object: nil)
                 }

@@ -56,6 +56,31 @@ struct ContentView: View {
                     }
                 }
 
+                // Leveling panel (bottom-right, replaces slicing when active)
+                if appState.levelingState.isActive {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            LevelingPanel(
+                                levelingState: appState.levelingState,
+                                onApply: { axis in
+                                    appState.levelingState.selectAxis(axis)
+                                    applyLeveling()
+                                },
+                                onCancel: {
+                                    appState.levelingState.reset()
+                                },
+                                onUndo: {
+                                    guard let device = MTLCreateSystemDefaultDevice() else { return }
+                                    try? appState.undoLeveling(device: device)
+                                }
+                            )
+                            .padding(12)
+                        }
+                    }
+                }
+
                 // Plate selector (bottom-center) - only shown for 3MF files with multiple plates
                 if appState.hasMultiplePlates {
                     VStack {
@@ -147,6 +172,15 @@ struct ContentView: View {
             try appState.updateMeshData(device: device)
         } catch {
             print("ERROR: Failed to update sliced mesh: \(error)")
+        }
+    }
+
+    private func applyLeveling() {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        do {
+            try appState.applyLevelingRotation(device: device)
+        } catch {
+            print("ERROR: Failed to apply leveling: \(error)")
         }
     }
 

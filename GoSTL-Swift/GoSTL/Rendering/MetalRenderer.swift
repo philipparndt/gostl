@@ -376,9 +376,9 @@ final class MetalRenderer {
             renderSelectedTriangles(encoder: renderEncoder, selectedTrianglesData: selectedTrianglesData, appState: appState, viewSize: view.drawableSize)
         }
 
-        // Update and render measurements
+        // Update and render measurements (and leveling visualization)
         if let measurementData = appState.measurementData {
-            measurementData.update(measurementSystem: appState.measurementSystem)
+            measurementData.update(measurementSystem: appState.measurementSystem, levelingState: appState.levelingState)
             renderMeasurements(encoder: renderEncoder, measurementData: measurementData, appState: appState, viewSize: view.drawableSize)
         }
 
@@ -749,6 +749,50 @@ final class MetalRenderer {
             var uniformsCopy = uniforms
             encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.radiusCenterVertexCount)
+        }
+
+        // MARK: - Leveling Visualization
+
+        // Render leveling selected points (cyan cubes)
+        if let levelingPointBuffer = measurementData.levelingPointBuffer, measurementData.levelingPointVertexCount > 0 {
+            encoder.setRenderPipelineState(measurementPipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(levelingPointBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.levelingPointVertexCount)
+        }
+
+        // Render leveling hover point (green cube)
+        if let levelingHoverBuffer = measurementData.levelingHoverBuffer, measurementData.levelingHoverVertexCount > 0 {
+            encoder.setRenderPipelineState(measurementPipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(levelingHoverBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: measurementData.levelingHoverVertexCount)
+        }
+
+        // Render leveling preview line (green line from point1 to hover/point2)
+        if let levelingPreviewBuffer = measurementData.levelingPreviewLineInstanceBuffer, measurementData.levelingPreviewLineInstanceCount > 0 {
+            encoder.setRenderPipelineState(wireframePipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(measurementData.previewCylinderVertexBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.size, index: 1)
+            encoder.setVertexBuffer(levelingPreviewBuffer, offset: 0, index: 2)
+
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: measurementData.indexCount,
+                indexType: .uint16,
+                indexBuffer: measurementData.cylinderIndexBuffer,
+                indexBufferOffset: 0,
+                instanceCount: measurementData.levelingPreviewLineInstanceCount
+            )
         }
     }
 

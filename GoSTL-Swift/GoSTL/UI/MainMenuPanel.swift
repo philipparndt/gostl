@@ -301,8 +301,62 @@ struct ToolsSectionContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // Leveling mode active
+            if let levelingState = appState?.levelingState, levelingState.isActive {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.cyan)
+                            .frame(width: 6, height: 6)
+                        Text("Leveling")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+
+                    Text(levelingState.statusText)
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.8))
+
+                    if levelingState.isReadyForAxisSelection {
+                        Text("Choose axis in panel (bottom-right)")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.6))
+                            .italic()
+                    } else {
+                        // Show point coordinates if selected
+                        if let p1 = levelingState.point1 {
+                            Text("P1: (\(String(format: "%.1f", p1.x)), \(String(format: "%.1f", p1.y)), \(String(format: "%.1f", p1.z)))")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(.cyan.opacity(0.8))
+                        }
+                        if let p2 = levelingState.point2 {
+                            Text("P2: (\(String(format: "%.1f", p2.x)), \(String(format: "%.1f", p2.y)), \(String(format: "%.1f", p2.z)))")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(.cyan.opacity(0.8))
+                        }
+                    }
+
+                    HStack(spacing: 4) {
+                        KeyHint(key: "ESC")
+                        Text("Cancel")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .padding(.top, 2)
+                }
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.cyan.opacity(0.15))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.cyan.opacity(0.4), lineWidth: 1)
+                        )
+                )
+            }
             // Measurement mode buttons
-            if let mode = measurementSystem.mode {
+            else if let mode = measurementSystem.mode {
                 // Active measurement mode
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
@@ -463,6 +517,17 @@ struct ToolsSectionContent: View {
                     label: "Triangles",
                     key: "t",
                     action: { measurementSystem.startMeasurement(type: .triangleSelect) }
+                )
+
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                    .padding(.vertical, 2)
+
+                MeasurementToolButton(
+                    icon: "level",
+                    label: "Level Object",
+                    key: "l",
+                    action: { appState?.levelingState.startLeveling() }
                 )
             }
 

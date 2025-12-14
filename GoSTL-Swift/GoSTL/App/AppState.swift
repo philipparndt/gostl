@@ -138,6 +138,9 @@ final class AppState: @unchecked Sendable {
     /// Slicing system for clipping model along axes
     var slicingState = SlicingState()
 
+    /// Leveling system for rotating model to align two points
+    var levelingState = LevelingState()
+
     /// File watching state
     var fileWatcher: FileWatcher?
     var sourceFileURL: URL?
@@ -350,6 +353,25 @@ final class AppState: @unchecked Sendable {
                 if let device = MTLCreateSystemDefaultDevice() {
                     self.updateBuildPlate(device: device)
                 }
+            }
+        }
+
+        // Leveling notifications
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("StartLeveling"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.levelingState.startLeveling()
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("UndoLeveling"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if let device = MTLCreateSystemDefaultDevice() {
+                try? self?.undoLeveling(device: device)
             }
         }
     }
@@ -1115,6 +1137,93 @@ final class AppState: @unchecked Sendable {
             self.modelInfo = info
             print("Material changed to: \(info.material.rawValue)")
         }
+    }
+
+    // MARK: - Leveling Methods
+
+    /// Apply leveling rotation to the model
+    /// Rotates the model so that the two selected points become level on the chosen axis
+    func applyLevelingRotation(device: MTLDevice) throws {
+        guard let model = model,
+              let point1 = levelingState.point1,
+              let point2 = levelingState.point2,
+              let axis = levelingState.selectedAxis else {
+            print("Leveling: Missing model or points")
+            return
+        }
+
+        // Store current triangles for undo
+        levelingState.storeForUndo(model.triangles)
+
+        // Calculate rotation
+        let bbox = model.boundingBox()
+        let (rotAxis, angle) = Rotation.calculateLevelingRotation(
+            point1: point1,
+            point2: point2,
+            targetAxis: axis,
+            center: bbox.center
+        )
+
+        // Skip if no rotation needed
+        guard abs(angle) > 1e-10 else {
+            print("Leveling: Points already level on \(LevelingState.axisName(for: axis)) axis")
+            levelingState.reset()
+            return
+        }
+
+        // Apply rotation to model
+        var newModel = model
+        Rotation.rotateModel(&newModel, axis: rotAxis, angle: angle, center: bbox.center)
+
+        // Update model and regenerate GPU data
+        self.model = newModel
+        cachedEdges = nil
+        cachedFeatureEdges = nil
+        cachedStyledEdges = nil
+        unclippedWireframeData = nil
+        try updateMeshData(device: device)
+        try updateWireframe(device: device)
+        try updateGrid(device: device)
+
+        // Update model info for the new model
+        if let sourceURL = sourceFileURL {
+            modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent, model: newModel)
+        }
+
+        print("Leveling: Rotated \(angle * 180 / .pi)° around \(rotAxis) to level on \(LevelingState.axisName(for: axis)) axis")
+
+        // Reset leveling state but keep undo available
+        levelingState.reset()
+    }
+
+    /// Undo the last leveling rotation
+    func undoLeveling(device: MTLDevice) throws {
+        guard let previousTriangles = levelingState.previousModelTriangles else {
+            print("Leveling: Nothing to undo")
+            return
+        }
+
+        // Restore previous model
+        self.model = STLModel(triangles: previousTriangles, name: model?.name)
+
+        // Clear caches and regenerate GPU data
+        cachedEdges = nil
+        cachedFeatureEdges = nil
+        cachedStyledEdges = nil
+        unclippedWireframeData = nil
+        try updateMeshData(device: device)
+        try updateWireframe(device: device)
+        try updateGrid(device: device)
+
+        // Update model info for the restored model
+        if let model = model, let sourceURL = sourceFileURL {
+            modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent, model: model)
+        }
+
+        // Clear undo state
+        levelingState.clearUndo()
+
+        print("Leveling: Undo complete")
     }
 
     /// Copy measurements or selected triangles as OpenSCAD code to clipboard

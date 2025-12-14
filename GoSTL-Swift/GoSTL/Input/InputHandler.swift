@@ -183,6 +183,22 @@ final class InputHandler {
             }
         }
 
+        // Check for leveling mode point picking
+        if appState.levelingState.isActive && !appState.levelingState.isReadyForAxisSelection {
+            guard let model = appState.model else { return }
+
+            let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
+            if let position = RayPicking.findIntersection(ray: ray, model: model) {
+                let completed = appState.levelingState.addPoint(position)
+                if completed {
+                    print("Leveling: Both points selected, choose axis")
+                } else {
+                    print("Leveling: First point selected at \(position)")
+                }
+            }
+            return
+        }
+
         // Then check for measurement clicks
         guard appState.measurementSystem.isCollecting,
               let model = appState.model else {
@@ -240,6 +256,16 @@ final class InputHandler {
             // Still continue to update measurement hover for preview line
         } else {
             appState.hoveredCubeFace = nil
+        }
+
+        // Update leveling hover point
+        if appState.levelingState.isActive && !appState.levelingState.isReadyForAxisSelection {
+            if let model = appState.model {
+                let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
+                appState.levelingState.hoverPoint = RayPicking.findIntersection(ray: ray, model: model)
+            }
+        } else {
+            appState.levelingState.hoverPoint = nil
         }
 
         // Then check for measurement hover
@@ -657,10 +683,22 @@ final class InputHandler {
             openWithGo3mf(sourceFileURL: appState.sourceFileURL)
             return true
 
+        case "l":
+            // Start leveling mode
+            appState.levelingState.startLeveling()
+            print("Leveling mode activated (pick 2 points)")
+            return true
+
         default:
-            // ESC key to cancel measurement, clear selection, or reset view
+            // ESC key to cancel measurement, leveling, clear selection, or reset view
             if event.keyCode == 53 {  // ESC key code
-                // First, clear any selection
+                // First, cancel leveling if active
+                if appState.levelingState.isActive {
+                    appState.levelingState.reset()
+                    print("Leveling cancelled")
+                    return true
+                }
+                // Clear any selection
                 if !appState.measurementSystem.selectedMeasurements.isEmpty {
                     appState.measurementSystem.selectedMeasurements.removeAll()
                     print("Selection cleared")

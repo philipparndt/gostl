@@ -37,6 +37,14 @@ final class MeasurementRenderData {
     var radiusCircleInstanceCount: Int = 0
     var radiusCenterVertexCount: Int = 0
 
+    // Leveling visualization
+    var levelingPointBuffer: MTLBuffer?
+    var levelingPointVertexCount: Int = 0
+    var levelingHoverBuffer: MTLBuffer?
+    var levelingHoverVertexCount: Int = 0
+    var levelingPreviewLineInstanceBuffer: MTLBuffer?
+    var levelingPreviewLineInstanceCount: Int = 0
+
     // Radius circle cylinder geometry
     let radiusCircleCylinderVertexBuffer: MTLBuffer
 
@@ -123,8 +131,10 @@ final class MeasurementRenderData {
         self.selectedCylinderVertexBuffer = selectedVertexBuffer
     }
 
-    /// Update buffers based on measurement system state
-    func update(measurementSystem: MeasurementSystem) {
+    /// Update buffers based on measurement system state and leveling state
+    func update(measurementSystem: MeasurementSystem, levelingState: LevelingState? = nil) {
+        // Update leveling visualization
+        updateLevelingVisualization(levelingState)
         // Clear hover if not collecting
         if !measurementSystem.isCollecting {
             hoverBuffer = nil
@@ -457,6 +467,76 @@ final class MeasurementRenderData {
         }
 
         return vertices
+    }
+
+    // MARK: - Leveling Visualization
+
+    /// Update leveling visualization (hover point and selected points)
+    private func updateLevelingVisualization(_ levelingState: LevelingState?) {
+        guard let levelingState = levelingState, levelingState.isActive else {
+            levelingPointBuffer = nil
+            levelingPointVertexCount = 0
+            levelingHoverBuffer = nil
+            levelingHoverVertexCount = 0
+            levelingPreviewLineInstanceBuffer = nil
+            levelingPreviewLineInstanceCount = 0
+            return
+        }
+
+        // Create point markers for selected leveling points
+        var pointVertices: [VertexIn] = []
+        let pointColor = SIMD4<Float>(0.0, 0.8, 1.0, 1.0) // Cyan for leveling points
+        let pointSize: Float = 0.6
+
+        if let p1 = levelingState.point1 {
+            pointVertices.append(contentsOf: createCube(center: p1.float3, size: pointSize, color: pointColor))
+        }
+        if let p2 = levelingState.point2 {
+            pointVertices.append(contentsOf: createCube(center: p2.float3, size: pointSize, color: pointColor))
+        }
+
+        if !pointVertices.isEmpty {
+            levelingPointVertexCount = pointVertices.count
+            let bufferSize = pointVertices.count * MemoryLayout<VertexIn>.stride
+            levelingPointBuffer = device.makeBuffer(bytes: pointVertices, length: bufferSize, options: [])
+        } else {
+            levelingPointBuffer = nil
+            levelingPointVertexCount = 0
+        }
+
+        // Create hover point marker (green, like measurement hover)
+        if let hoverPoint = levelingState.hoverPoint {
+            let hoverColor = SIMD4<Float>(0.3, 1.0, 0.3, 1.0) // Green for hover
+            let hoverVertices = createCube(center: hoverPoint.float3, size: 0.7, color: hoverColor)
+            levelingHoverVertexCount = hoverVertices.count
+            let bufferSize = hoverVertices.count * MemoryLayout<VertexIn>.stride
+            levelingHoverBuffer = device.makeBuffer(bytes: hoverVertices, length: bufferSize, options: [])
+        } else {
+            levelingHoverBuffer = nil
+            levelingHoverVertexCount = 0
+        }
+
+        // Create preview line from point1 to hover point (or point2)
+        var previewEdges: [Edge] = []
+        if let p1 = levelingState.point1 {
+            if let p2 = levelingState.point2 {
+                // Show line between the two selected points
+                previewEdges.append(Edge(p1, p2))
+            } else if let hover = levelingState.hoverPoint {
+                // Show preview line from first point to hover
+                previewEdges.append(Edge(p1, hover))
+            }
+        }
+
+        if !previewEdges.isEmpty {
+            let instances = Self.createWireframeInstances(edges: previewEdges)
+            let instanceSize = instances.count * MemoryLayout<WireframeInstance>.stride
+            levelingPreviewLineInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
+            levelingPreviewLineInstanceCount = instances.count
+        } else {
+            levelingPreviewLineInstanceBuffer = nil
+            levelingPreviewLineInstanceCount = 0
+        }
     }
 
     // MARK: - Radius Circle Rendering

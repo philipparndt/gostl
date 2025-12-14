@@ -26,6 +26,7 @@ This directory contains Cucumber/Gherkin feature files documenting all functiona
 
 ### Model Interaction
 - `slicing.feature` - Model slicing and cross-sections
+- `leveling.feature` - Level object by aligning two points
 - `measure_distance.feature` - Distance measurement tool
 - `measure_angle.feature` - Angle measurement tool
 - `measure_radius.feature` - Radius/circle measurement tool
@@ -56,6 +57,7 @@ Features use tags for categorization:
 - `@visualization` - Display modes
 - `@measurement` - Measurement tools
 - `@slicing` - Slicing functionality
+- `@leveling` - Leveling/transformation functionality
 - `@material` - Material system
 - `@3mf` - 3MF format specific
 - `@openscad` - OpenSCAD integration
@@ -137,6 +139,11 @@ Features use tags for categorization:
 | X/Y/Z | Axis constraint (in measurement mode) |
 | Backspace | Undo last point / delete selected |
 | Cmd+Shift+K | Clear all measurements |
+
+### Transformation
+| Shortcut | Action |
+|----------|--------|
+| Cmd+L / L | Level object (align two points) |
 
 ### Other
 | Shortcut | Action |

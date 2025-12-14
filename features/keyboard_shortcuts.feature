@@ -84,6 +84,23 @@ Feature: Keyboard Shortcuts
     Then triangles under the cursor should be continuously selected
     And the camera should not rotate
 
+  @leveling
+  Scenario Outline: Leveling shortcuts
+    When I press <shortcut>
+    Then <action> should occur
+
+    Examples:
+      | shortcut | action                      |
+      | Cmd+L    | leveling mode starts        |
+      | L        | leveling mode starts        |
+
+  @leveling
+  Scenario: Leveling with point selection
+    Given leveling mode is active
+    When I click on two points on the model
+    And I select an axis (X, Y, or Z)
+    Then the model should rotate so both points have the same coordinate on that axis
+
   @tools
   Scenario Outline: Tool shortcuts
     When I press <shortcut>
@@ -93,6 +110,12 @@ Feature: Keyboard Shortcuts
       | shortcut | action                      |
       | O        | opens file with go3mf       |
       | Ctrl+C   | quits the application       |
+
+  @escape
+  Scenario: Escape key behavior - cancel leveling
+    Given leveling mode is active
+    When I press Escape
+    Then leveling mode should be cancelled
 
   @escape
   Scenario: Escape key behavior - cancel measurement
