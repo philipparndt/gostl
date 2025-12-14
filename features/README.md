@@ -51,6 +51,7 @@ This directory contains Cucumber/Gherkin feature files documenting all functiona
 Features use tags for categorization:
 
 - `@file-handling` - File operations
+- `@drag-and-drop` - Drag and drop file opening
 - `@camera` - Camera controls
 - `@visualization` - Display modes
 - `@measurement` - Measurement tools

@@ -102,3 +102,36 @@ Feature: Open 3D Model Files
     And the entire model should be visible in the viewport
     And the camera distance should be calculated based on bounding box diagonal
     And a 1.5x safety factor should ensure full model visibility
+
+  @drag-and-drop
+  Scenario: Open file via drag and drop
+    When I drag a supported file onto the application window
+    Then the file should be loaded and displayed
+    And the file should be added to recent files
+    And the window title should update to show the file name
+
+  @drag-and-drop
+  Scenario Outline: Drag and drop supported file types
+    When I drag a <file_type> file onto the application window
+    Then the file should be loaded successfully
+
+    Examples:
+      | file_type |
+      | .stl      |
+      | .3mf      |
+      | .scad     |
+      | .yaml     |
+      | .yml      |
+
+  @drag-and-drop @intellij
+  Scenario: Drag file from IntelliJ
+    Given a file is open in IntelliJ IDEA
+    When I drag the file from IntelliJ's project tree onto the application window
+    Then the file should be loaded successfully
+    And the legacy NSFilenamesPboardType should be handled correctly
+
+  @drag-and-drop
+  Scenario: Reject unsupported file type on drag
+    When I drag an unsupported file type onto the application window
+    Then the drag cursor should indicate the file cannot be dropped
+    And no file should be loaded

@@ -89,15 +89,19 @@ class InteractiveMTKView: MTKView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    /// Supported file extensions for drag and drop
+    private static let supportedExtensions: Set<String> = ["stl", "3mf", "scad", "yaml", "yml"]
+
     override init(frame frameRect: CGRect, device: MTLDevice?) {
         super.init(frame: frameRect, device: device)
-        registerForDraggedTypes([.fileURL])
+        // Register for both modern file URLs and legacy file names (for IntelliJ compatibility)
+        registerForDraggedTypes([.fileURL, NSPasteboard.PasteboardType("NSFilenamesPboardType")])
         setupTrackingArea()
     }
 
     required init(coder: NSCoder) {
         super.init(coder: coder)
-        registerForDraggedTypes([.fileURL])
+        registerForDraggedTypes([.fileURL, NSPasteboard.PasteboardType("NSFilenamesPboardType")])
         setupTrackingArea()
     }
 
@@ -289,15 +293,35 @@ class InteractiveMTKView: MTKView {
 
     // MARK: - Drag and Drop
 
+    /// Extract file URL from pasteboard, handling both modern fileURL and legacy filenames (IntelliJ)
+    private func extractFileURL(from pasteboard: NSPasteboard) -> URL? {
+        // Try modern file URL first
+        if let url = pasteboard.url {
+            return url
+        }
+
+        // Try legacy NSFilenamesPboardType (used by IntelliJ and some other apps)
+        if let filenames = pasteboard.propertyList(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) as? [String],
+           let firstPath = filenames.first {
+            return URL(fileURLWithPath: firstPath)
+        }
+
+        return nil
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        // Check if dragged item is a file URL
-        guard sender.draggingPasteboard.availableType(from: [.fileURL]) != nil else {
+        // Check if dragged item is a file
+        let supportedTypes: [NSPasteboard.PasteboardType] = [
+            .fileURL,
+            NSPasteboard.PasteboardType("NSFilenamesPboardType")
+        ]
+        guard sender.draggingPasteboard.availableType(from: supportedTypes) != nil else {
             return []
         }
 
-        // Check if it's an STL file
-        if let url = sender.draggingPasteboard.url,
-           url.pathExtension.lowercased() == "stl" {
+        // Check if it's a supported file type
+        if let url = extractFileURL(from: sender.draggingPasteboard),
+           Self.supportedExtensions.contains(url.pathExtension.lowercased()) {
             return .copy
         }
 
@@ -305,8 +329,8 @@ class InteractiveMTKView: MTKView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let url = sender.draggingPasteboard.url,
-              url.pathExtension.lowercased() == "stl" else {
+        guard let url = extractFileURL(from: sender.draggingPasteboard),
+              Self.supportedExtensions.contains(url.pathExtension.lowercased()) else {
             return false
         }
 
