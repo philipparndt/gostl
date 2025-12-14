@@ -1,5 +1,15 @@
 import Foundation
 
+/// Thread-safe array wrapper for parallel writes to different indices
+private final class ParallelArray<T>: @unchecked Sendable {
+    var storage: [T]
+    init(_ array: [T]) { self.storage = array }
+    subscript(index: Int) -> T {
+        get { storage[index] }
+        set { storage[index] = newValue }
+    }
+}
+
 /// Parser for STL files (both ASCII and Binary formats)
 enum STLParser {
 
@@ -120,23 +130,32 @@ enum STLParser {
         splitPoints.append(data.count)
 
         // Parse chunks in parallel
-        var chunkResults = [[Triangle]](repeating: [], count: splitPoints.count - 1)
+        let actualChunkCount = splitPoints.count - 1
+        let chunkResults = ParallelArray([[Triangle]](repeating: [], count: actualChunkCount))
+
+        // Copy splitPoints to immutable array for safe concurrent access
+        let splits = splitPoints
 
         data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
             guard let baseAddress = buffer.baseAddress else { return }
-            let bytes = baseAddress.assumingMemoryBound(to: UInt8.self)
+            // Wrap pointer in Sendable wrapper for concurrent access
+            final class BytesWrapper: @unchecked Sendable {
+                let ptr: UnsafePointer<UInt8>
+                init(_ ptr: UnsafePointer<UInt8>) { self.ptr = ptr }
+            }
+            let bytesWrapper = BytesWrapper(baseAddress.assumingMemoryBound(to: UInt8.self))
 
-            DispatchQueue.concurrentPerform(iterations: splitPoints.count - 1) { chunkIndex in
-                let start = splitPoints[chunkIndex]
-                let end = splitPoints[chunkIndex + 1]
-                chunkResults[chunkIndex] = parseASCIIChunk(bytes: bytes, start: start, end: end)
+            DispatchQueue.concurrentPerform(iterations: actualChunkCount) { chunkIndex in
+                let start = splits[chunkIndex]
+                let end = splits[chunkIndex + 1]
+                chunkResults[chunkIndex] = parseASCIIChunk(bytes: bytesWrapper.ptr, start: start, end: end)
             }
         }
 
         // Merge results
         var allTriangles: [Triangle] = []
         allTriangles.reserveCapacity(data.count / 250)
-        for chunk in chunkResults {
+        for chunk in chunkResults.storage {
             allTriangles.append(contentsOf: chunk)
         }
 
@@ -365,7 +384,7 @@ enum STLParser {
     /// Parallel binary parsing for large files
     private static func parseBinaryParallel(data: Data, triangleCount: Int, name: String?) -> STLModel {
         // Pre-allocate array with placeholder triangles
-        var triangles = [Triangle](repeating: Triangle(v1: .zero, v2: .zero, v3: .zero), count: triangleCount)
+        let triangles = ParallelArray([Triangle](repeating: Triangle(v1: .zero, v2: .zero, v3: .zero), count: triangleCount))
 
         // Determine chunk size based on CPU cores
         let processorCount = ProcessInfo.processInfo.activeProcessorCount
@@ -382,7 +401,7 @@ enum STLParser {
             }
         }
 
-        return STLModel(triangles: triangles, name: name)
+        return STLModel(triangles: triangles.storage, name: name)
     }
 
     /// Parse a single triangle at a given byte offset

@@ -1,5 +1,15 @@
 import Foundation
 
+/// Thread-safe array wrapper for parallel writes to different indices
+private final class ParallelArray<T>: @unchecked Sendable {
+    var storage: [T]
+    init(_ array: [T]) { self.storage = array }
+    subscript(index: Int) -> T {
+        get { storage[index] }
+        set { storage[index] = newValue }
+    }
+}
+
 /// A 3D model loaded from an STL file
 struct STLModel {
     var triangles: [Triangle]
@@ -40,18 +50,19 @@ struct STLModel {
         let processorCount = ProcessInfo.processInfo.activeProcessorCount
         let chunkSize = max(1000, triangles.count / processorCount)
         let chunkCount = (triangles.count + chunkSize - 1) / chunkSize
+        let triangleCount = triangles.count
 
-        var partialBounds = [BoundingBox](repeating: BoundingBox(), count: chunkCount)
+        let partialBounds = ParallelArray([BoundingBox](repeating: BoundingBox(), count: chunkCount))
 
         DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
             let startIndex = chunkIndex * chunkSize
-            let endIndex = min(startIndex + chunkSize, triangles.count)
+            let endIndex = min(startIndex + chunkSize, triangleCount)
 
             guard startIndex < endIndex else { return }
 
-            var box = BoundingBox(point: triangles[startIndex].v1)
+            var box = BoundingBox(point: self.triangles[startIndex].v1)
             for i in startIndex..<endIndex {
-                let triangle = triangles[i]
+                let triangle = self.triangles[i]
                 box.extend(triangle.v1)
                 box.extend(triangle.v2)
                 box.extend(triangle.v3)
@@ -60,9 +71,9 @@ struct STLModel {
         }
 
         // Merge partial bounds
-        var finalBox = partialBounds[0]
+        var finalBox = partialBounds.storage[0]
         for i in 1..<chunkCount {
-            finalBox.extend(partialBounds[i])
+            finalBox.extend(partialBounds.storage[i])
         }
         return finalBox
     }
@@ -238,38 +249,40 @@ struct STLModel {
         let processorCount = ProcessInfo.processInfo.activeProcessorCount
         let chunkSize = max(1000, triangles.count / processorCount)
         let chunkCount = (triangles.count + chunkSize - 1) / chunkSize
+        let triangleCount = triangles.count
 
-        // Build partial edge maps in parallel
-        var partialMaps = [[Edge: [Triangle]]](repeating: [:], count: chunkCount)
+        // Build partial edge maps in parallel using class wrapper
+        final class MapResult: @unchecked Sendable {
+            var map: [Edge: [Triangle]] = [:]
+        }
+        let partialMaps = (0..<chunkCount).map { _ in MapResult() }
 
         DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
             let startIndex = chunkIndex * chunkSize
-            let endIndex = min(startIndex + chunkSize, triangles.count)
+            let endIndex = min(startIndex + chunkSize, triangleCount)
+            let result = partialMaps[chunkIndex]
 
-            var localMap: [Edge: [Triangle]] = [:]
-            localMap.reserveCapacity((endIndex - startIndex) * 3)
+            result.map.reserveCapacity((endIndex - startIndex) * 3)
 
             for i in startIndex..<endIndex {
-                let triangle = triangles[i]
+                let triangle = self.triangles[i]
                 let edges = [
                     Edge(triangle.v1, triangle.v2),
                     Edge(triangle.v2, triangle.v3),
                     Edge(triangle.v3, triangle.v1)
                 ]
                 for edge in edges {
-                    localMap[edge, default: []].append(triangle)
+                    result.map[edge, default: []].append(triangle)
                 }
             }
-
-            partialMaps[chunkIndex] = localMap
         }
 
         // Merge partial maps (sequential, but maps are smaller)
         var edgeTriangles: [Edge: [Triangle]] = [:]
         edgeTriangles.reserveCapacity(triangles.count * 2) // Rough estimate of unique edges
 
-        for partialMap in partialMaps {
-            for (edge, tris) in partialMap {
+        for result in partialMaps {
+            for (edge, tris) in result.map {
                 edgeTriangles[edge, default: []].append(contentsOf: tris)
             }
         }

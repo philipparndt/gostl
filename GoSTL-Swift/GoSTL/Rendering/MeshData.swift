@@ -1,6 +1,16 @@
 import Metal
 import simd
 
+/// Thread-safe array wrapper for parallel writes to different indices
+private final class ParallelArray<T>: @unchecked Sendable {
+    var storage: [T]
+    init(_ array: [T]) { self.storage = array }
+    subscript(index: Int) -> T {
+        get { storage[index] }
+        set { storage[index] = newValue }
+    }
+}
+
 /// GPU-ready mesh data with pre-baked lighting
 final class MeshData {
     let vertexBuffer: MTLBuffer
@@ -37,7 +47,7 @@ final class MeshData {
 
         // For large models, use parallel approach
         // Pre-allocate array with placeholder vertices
-        var vertices = [VertexIn](repeating: VertexIn(position: .zero, normal: .zero, color: .zero), count: vertexCount)
+        let vertices = ParallelArray([VertexIn](repeating: VertexIn(position: .zero, normal: .zero, color: .zero), count: vertexCount))
 
         let processorCount = ProcessInfo.processInfo.activeProcessorCount
         let chunkSize = max(1000, triangleCount / processorCount)
@@ -58,7 +68,7 @@ final class MeshData {
             }
         }
 
-        return vertices
+        return vertices.storage
     }
 
     private static func createVerticesSequential(from model: STLModel) -> [VertexIn] {

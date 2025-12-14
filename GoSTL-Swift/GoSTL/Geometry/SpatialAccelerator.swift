@@ -74,23 +74,35 @@ final class SpatialAccelerator: @unchecked Sendable {
     // Depth at which to start parallel subtree construction
     private static let parallelDepthThreshold = 4
 
+    /// Thread-safe array wrapper for parallel writes to different indices
+    private final class ParallelArray<T>: @unchecked Sendable {
+        var storage: [T]
+        init(_ array: [T]) { self.storage = array }
+        subscript(index: Int) -> T {
+            get { storage[index] }
+            set { storage[index] = newValue }
+        }
+    }
+
     private func buildBVH() {
         // Pre-compute all centroids in parallel for faster sorting
-        var centroids = [Vector3](repeating: .zero, count: triangles.count)
         let processorCount = ProcessInfo.processInfo.activeProcessorCount
         let chunkSize = max(1000, triangles.count / processorCount)
+        let triangleCount = triangles.count
 
-        DispatchQueue.concurrentPerform(iterations: (triangles.count + chunkSize - 1) / chunkSize) { chunkIndex in
+        let centroids = ParallelArray([Vector3](repeating: .zero, count: triangleCount))
+
+        DispatchQueue.concurrentPerform(iterations: (triangleCount + chunkSize - 1) / chunkSize) { chunkIndex in
             let startIndex = chunkIndex * chunkSize
-            let endIndex = min(startIndex + chunkSize, triangles.count)
+            let endIndex = min(startIndex + chunkSize, triangleCount)
             for i in startIndex..<endIndex {
-                centroids[i] = triangleCentroid(triangles[i])
+                centroids[i] = self.triangleCentroid(self.triangles[i])
             }
         }
 
         // Use a single indices array and operate on ranges (in-place) to avoid copying
         var indices = Array(0..<triangles.count)
-        bvhRoot = buildBVHNodeInPlace(indices: &indices, range: 0..<triangles.count, centroids: centroids, depth: 0)
+        bvhRoot = buildBVHNodeInPlace(indices: &indices, range: 0..<triangles.count, centroids: centroids.storage, depth: 0)
     }
 
     /// Build BVH node using in-place partitioning (no array copies!)
@@ -138,22 +150,30 @@ final class SpatialAccelerator: @unchecked Sendable {
         // Build subtrees - parallel at shallow depths only
         if depth < Self.parallelDepthThreshold && range.count > 10000 {
             // For parallel building, we need separate copies since we can't share mutable array
-            var leftIndices = Array(indices[leftRange])
-            var rightIndices = Array(indices[rightRange])
+            let leftIndices = Array(indices[leftRange])
+            let rightIndices = Array(indices[rightRange])
+            let leftCount = leftIndices.count
+            let rightCount = rightIndices.count
 
-            var leftNode: BVHNode?
-            var rightNode: BVHNode?
+            // Use class wrapper for thread-safe result storage and indices
+            final class BuildTask: @unchecked Sendable {
+                var indices: [Int]
+                var node: BVHNode?
+                init(indices: [Int]) { self.indices = indices }
+            }
+            let leftTask = BuildTask(indices: leftIndices)
+            let rightTask = BuildTask(indices: rightIndices)
 
             DispatchQueue.concurrentPerform(iterations: 2) { i in
                 if i == 0 {
-                    leftNode = self.buildBVHNodeInPlace(indices: &leftIndices, range: 0..<leftIndices.count, centroids: centroids, depth: depth + 1)
+                    leftTask.node = self.buildBVHNodeInPlace(indices: &leftTask.indices, range: 0..<leftCount, centroids: centroids, depth: depth + 1)
                 } else {
-                    rightNode = self.buildBVHNodeInPlace(indices: &rightIndices, range: 0..<rightIndices.count, centroids: centroids, depth: depth + 1)
+                    rightTask.node = self.buildBVHNodeInPlace(indices: &rightTask.indices, range: 0..<rightCount, centroids: centroids, depth: depth + 1)
                 }
             }
 
-            node.left = leftNode
-            node.right = rightNode
+            node.left = leftTask.node
+            node.right = rightTask.node
         } else {
             // Sequential construction - fully in-place, no copies
             node.left = buildBVHNodeInPlace(indices: &indices, range: leftRange, centroids: centroids, depth: depth + 1)
@@ -168,28 +188,30 @@ final class SpatialAccelerator: @unchecked Sendable {
         let processorCount = ProcessInfo.processInfo.activeProcessorCount
         let chunkSize = max(1000, range.count / processorCount)
         let chunkCount = (range.count + chunkSize - 1) / chunkSize
+        let rangeCount = range.count
+        let rangeLower = range.lowerBound
 
-        var partialBounds = [BoundingBox](repeating: BoundingBox(), count: chunkCount)
+        let partialBounds = ParallelArray([BoundingBox](repeating: BoundingBox(), count: chunkCount))
 
         DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
             let startOffset = chunkIndex * chunkSize
-            let endOffset = min(startOffset + chunkSize, range.count)
-            let startIndex = range.lowerBound + startOffset
-            let endIndex = range.lowerBound + endOffset
+            let endOffset = min(startOffset + chunkSize, rangeCount)
+            let startIndex = rangeLower + startOffset
+            let endIndex = rangeLower + endOffset
 
             guard startIndex < endIndex else { return }
 
-            var bounds = triangleBounds(triangles[indices[startIndex]])
+            var bounds = self.triangleBounds(self.triangles[indices[startIndex]])
             for i in (startIndex + 1)..<endIndex {
-                bounds.extend(triangleBounds(triangles[indices[i]]))
+                bounds.extend(self.triangleBounds(self.triangles[indices[i]]))
             }
             partialBounds[chunkIndex] = bounds
         }
 
         // Merge bounds
-        var finalBounds = partialBounds[0]
+        var finalBounds = partialBounds.storage[0]
         for i in 1..<chunkCount {
-            finalBounds.extend(partialBounds[i])
+            finalBounds.extend(partialBounds.storage[i])
         }
         return finalBounds
     }
@@ -276,24 +298,25 @@ final class SpatialAccelerator: @unchecked Sendable {
         let processorCount = ProcessInfo.processInfo.activeProcessorCount
         let chunkSize = max(1000, triangles.count / processorCount)
         let chunkCount = (triangles.count + chunkSize - 1) / chunkSize
+        let triangleCount = triangles.count
 
-        var partialBounds = [BoundingBox](repeating: BoundingBox(), count: chunkCount)
+        let partialBounds = ParallelArray([BoundingBox](repeating: BoundingBox(), count: chunkCount))
 
         DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
             let startIndex = chunkIndex * chunkSize
-            let endIndex = min(startIndex + chunkSize, triangles.count)
+            let endIndex = min(startIndex + chunkSize, triangleCount)
             guard startIndex < endIndex else { return }
 
-            var bounds = triangleBounds(triangles[startIndex])
+            var bounds = self.triangleBounds(self.triangles[startIndex])
             for i in (startIndex + 1)..<endIndex {
-                bounds.extend(triangleBounds(triangles[i]))
+                bounds.extend(self.triangleBounds(self.triangles[i]))
             }
             partialBounds[chunkIndex] = bounds
         }
 
-        var modelBounds = partialBounds[0]
+        var modelBounds = partialBounds.storage[0]
         for i in 1..<chunkCount {
-            modelBounds.extend(partialBounds[i])
+            modelBounds.extend(partialBounds.storage[i])
         }
 
         // Use cell size based on model size (aim for ~100 cells per axis max)
@@ -309,41 +332,41 @@ final class SpatialAccelerator: @unchecked Sendable {
         )
 
         // Build partial grids in parallel, then merge
-        var partialGrids = [[Int: GridCell]](repeating: [:], count: chunkCount)
-        var partialSeenSets = [Set<Int>](repeating: Set<Int>(), count: chunkCount)
+        // Use class wrapper to avoid Sendable issues with dictionaries
+        final class GridResult: @unchecked Sendable {
+            var grid: [Int: GridCell] = [:]
+            var seen: Set<Int> = Set<Int>()
+        }
+
+        let results = (0..<chunkCount).map { _ in GridResult() }
 
         DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
             let startIndex = chunkIndex * chunkSize
-            let endIndex = min(startIndex + chunkSize, triangles.count)
-
-            var localGrid: [Int: GridCell] = [:]
-            var localSeen = Set<Int>()
+            let endIndex = min(startIndex + chunkSize, triangleCount)
+            let result = results[chunkIndex]
 
             for triangleIndex in startIndex..<endIndex {
-                let triangle = triangles[triangleIndex]
+                let triangle = self.triangles[triangleIndex]
                 for vertex in [triangle.v1, triangle.v2, triangle.v3] {
-                    let hash = vertexHash(vertex)
-                    if localSeen.contains(hash) {
+                    let hash = self.vertexHash(vertex)
+                    if result.seen.contains(hash) {
                         continue
                     }
-                    localSeen.insert(hash)
+                    result.seen.insert(hash)
 
-                    let cellKey = gridKeyLocal(for: vertex)
-                    if localGrid[cellKey] == nil {
-                        localGrid[cellKey] = GridCell(vertices: [])
+                    let cellKey = self.gridKeyLocal(for: vertex)
+                    if result.grid[cellKey] == nil {
+                        result.grid[cellKey] = GridCell(vertices: [])
                     }
-                    localGrid[cellKey]?.vertices.append((position: vertex, triangleIndex: triangleIndex))
+                    result.grid[cellKey]?.vertices.append((position: vertex, triangleIndex: triangleIndex))
                 }
             }
-
-            partialGrids[chunkIndex] = localGrid
-            partialSeenSets[chunkIndex] = localSeen
         }
 
         // Merge partial grids (sequential, but faster than building sequentially)
         var globalSeen = Set<Int>()
-        for chunkIndex in 0..<chunkCount {
-            for (cellKey, cell) in partialGrids[chunkIndex] {
+        for result in results {
+            for (cellKey, cell) in result.grid {
                 for (vertex, triangleIndex) in cell.vertices {
                     let hash = vertexHash(vertex)
                     if globalSeen.contains(hash) {
