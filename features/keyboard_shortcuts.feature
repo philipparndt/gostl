@@ -15,6 +15,7 @@ Feature: Keyboard Shortcuts
 
     Examples:
       | shortcut     | action                           |
+      | Cmd+T        | a new tab with example cube opens |
       | Cmd+O        | the file open dialog opens       |
       | Cmd+S        | the model is saved (if modified) |
       | Cmd+Shift+S  | the save as dialog opens         |

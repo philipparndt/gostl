@@ -24,6 +24,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first?.makeKeyAndOrderFront(nil)
+
+        // Configure initial window
+        configureAllWindows()
+
+        // Observe window changes to reapply title bar configuration
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidChange),
+            name: NSWindow.didBecomeMainNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidChange),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidChange),
+            name: NSWindow.didResizeNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidChange),
+            name: NSWindow.didUpdateNotification,
+            object: nil
+        )
+    }
+
+    @objc private func windowDidChange(_ notification: Notification) {
+        // Apply immediately and again after a short delay to catch post-animation state
+        configureAllWindows()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
+            configureAllWindows()
+        }
+    }
+
+    private func configureAllWindows() {
+        for window in NSApp.windows where window.tabbingIdentifier == "GoSTLWindow" || window.className.contains("NSWindow") {
+            window.titlebarSeparatorStyle = .none
+            window.titlebarAppearsTransparent = true
+            if !window.styleMask.contains(.fullSizeContentView) {
+                window.styleMask.insert(.fullSizeContentView)
+            }
+        }
     }
 }
 
@@ -45,14 +92,22 @@ struct GoSTLApp: App {
                     saveCurrentWindowState()
                 }
         }
+        .windowStyle(.automatic)
+        .windowToolbarStyle(.unified)
         .defaultSize(width: 1400, height: 900)
         .defaultPosition(.center)
         .onChange(of: NSApp.windows) { _, _ in
-            // Save window state whenever windows change
+            // Save window state and reapply window configuration when windows change
             saveCurrentWindowState()
+            configureWindowForTabbing()
         }
         .commands {
             CommandGroup(replacing: .newItem) {
+                Button("New Tab") {
+                    openNewTab()
+                }
+                .keyboardShortcut("t", modifiers: .command)
+
                 Button("Open...") {
                     openFile()
                 }
@@ -478,11 +533,41 @@ struct GoSTLApp: App {
             window.title = url.lastPathComponent
             window.representedURL = url
             window.setContentSize(NSSize(width: 1400, height: 900))
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
 
-            // Configure for tabbing
+            // Configure for tabbing and title bar appearance
             window.tabbingMode = .preferred
             window.tabbingIdentifier = "GoSTLWindow"
+            window.titlebarSeparatorStyle = .none
+            window.titlebarAppearsTransparent = true
+
+            // Show the window
+            window.makeKeyAndOrderFront(nil)
+
+            // Add to existing tab group if tab bar is visible
+            if let mainWindow = NSApp.mainWindow,
+               mainWindow.tabbingIdentifier == "GoSTLWindow" {
+                mainWindow.addTabbedWindow(window, ordered: .above)
+            }
+        }
+    }
+
+    private func openNewTab() {
+        DispatchQueue.main.async {
+            // Create a new NSWindow with ContentView (no file URL = test cube)
+            let contentView = ContentView(fileURL: nil)
+            let hostingController = NSHostingController(rootView: contentView)
+
+            let window = NSWindow(contentViewController: hostingController)
+            window.title = "GoSTL"
+            window.setContentSize(NSSize(width: 1400, height: 900))
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+
+            // Configure for tabbing and title bar appearance
+            window.tabbingMode = .preferred
+            window.tabbingIdentifier = "GoSTLWindow"
+            window.titlebarSeparatorStyle = .none
+            window.titlebarAppearsTransparent = true
 
             // Show the window
             window.makeKeyAndOrderFront(nil)
@@ -502,10 +587,16 @@ struct GoSTLApp: App {
 
     private func configureWindowForTabbing() {
         DispatchQueue.main.async {
-            // Configure all windows to support tabbing
+            // Configure all windows to support tabbing and title bar appearance
             for window in NSApp.windows {
                 window.tabbingMode = .preferred
                 window.tabbingIdentifier = "GoSTLWindow"
+                window.titlebarSeparatorStyle = .none
+                window.titlebarAppearsTransparent = true
+                // Add fullSizeContentView if not already present
+                if !window.styleMask.contains(.fullSizeContentView) {
+                    window.styleMask.insert(.fullSizeContentView)
+                }
             }
         }
     }

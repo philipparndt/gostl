@@ -615,11 +615,14 @@ final class InputHandler {
             print("Radius measurement mode activated (pick 3 points)")
             return true
 
-        // Triangle selection
+        // Triangle selection (only when Command is not pressed - Cmd+T creates new tab)
         case "t":
-            appState.measurementSystem.startMeasurement(type: .triangleSelect)
-            print("Triangle selection mode activated (click triangles, Cmd+Shift+C to copy as OpenSCAD)")
-            return true
+            if !event.modifierFlags.contains(.command) {
+                appState.measurementSystem.startMeasurement(type: .triangleSelect)
+                print("Triangle selection mode activated (click triangles, Cmd+Shift+C to copy as OpenSCAD)")
+                return true
+            }
+            return false
         case "f":
             // Frame model in view
             if let model = appState.model {

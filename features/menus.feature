@@ -9,7 +9,8 @@ Feature: Application Menus
 
   Scenario: File menu structure
     When I open the File menu
-    Then I should see "Open..." with shortcut Cmd+O
+    Then I should see "New Tab" with shortcut Cmd+T
+    And I should see "Open..." with shortcut Cmd+O
     And I should see "Open Recent" as a submenu
     And "Open Recent" should have "Clear Menu" option
 

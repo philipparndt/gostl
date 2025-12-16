@@ -110,6 +110,7 @@ Features use tags for categorization:
 ### File Operations
 | Shortcut | Action |
 |----------|--------|
+| Cmd+T | New tab with example cube |
 | Cmd+O | Open file |
 | Cmd+S | Save file (if modified) |
 | Cmd+Shift+S | Save As... |
@@ -138,6 +139,7 @@ Features use tags for categorization:
 | Cmd+D | Measure distance |
 | Cmd+A | Measure angle |
 | R | Measure radius |
+| T | Select triangles |
 | X/Y/Z | Axis constraint (in measurement mode) |
 | Backspace | Undo last point / delete selected |
 | Cmd+Shift+K | Clear all measurements |
