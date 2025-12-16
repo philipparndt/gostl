@@ -1010,23 +1010,44 @@ final class AppState: @unchecked Sendable {
             print("Successfully loaded: \(model.triangleCount) triangles (\(parseResult.plates.count) plates)")
 
         } else if fileExtension == "yaml" || fileExtension == "yml" {
-            // go3mf YAML configuration file
+            // go3mf YAML configuration file - use external go3mf tool to build 3MF
             print("Loading go3mf config: \(url.lastPathComponent)")
 
-            let renderer = try Go3mfRenderer(configURL: url)
-            let model = try renderer.render()
+            let workDir = url.deletingLastPathComponent()
+            let renderer = Go3mfToolRenderer(workDir: workDir)
+
+            // Create temporary 3MF file
+            let temp3MFURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("gostl_go3mf_\(Int(Date().timeIntervalSince1970)).3mf")
+
+            try renderer.buildTo3MF(yamlFile: url, outputFile: temp3MFURL)
+
+            // Load the generated 3MF file
+            let parseResult = try ThreeMFParser.parseWithPlates(url: temp3MFURL)
+            self.threeMFParseResult = parseResult
+
+            // Select first plate by default, or show all if only one plate
+            let initialPlateId = parseResult.plates.first?.id
+            self.selectedPlateId = initialPlateId
+
+            let model: STLModel
+            if let plateId = initialPlateId, parseResult.plates.count > 1 {
+                model = parseResult.model(forPlate: plateId)
+                print("Loaded plate \(plateId): \(parseResult.plates.first { $0.id == plateId }?.name ?? "Unknown")")
+            } else {
+                model = parseResult.modelWithAllPlates()
+            }
+
             try loadModel(model, device: device)
 
             // Update file watching state
             self.sourceFileURL = url
-            self.tempSTLFileURL = nil
+            self.tempSTLFileURL = temp3MFURL  // Store temp 3MF for cleanup
             self.isOpenSCAD = false
             self.isGo3mf = true
-            self.threeMFParseResult = nil
-            self.selectedPlateId = nil
             self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
-            print("Successfully loaded go3mf config: \(model.triangleCount) triangles")
+            print("Successfully loaded go3mf config: \(model.triangleCount) triangles (\(parseResult.plates.count) plates)")
 
         } else {
             throw FileLoadError.unsupportedFileType(fileExtension)
@@ -1079,9 +1100,9 @@ final class AppState: @unchecked Sendable {
         var filesToWatch: [URL] = []
 
         if isGo3mf {
-            // For go3mf YAML files, watch the config and all referenced files
-            let renderer = try Go3mfRenderer(configURL: sourceURL)
-            filesToWatch = renderer.getDependencies()
+            // For go3mf YAML files, just watch the source file
+            // (go3mf tool handles dependency resolution internally)
+            filesToWatch = [sourceURL]
         } else if isOpenSCAD {
             // For OpenSCAD files, watch the source file and all dependencies
             let workDir = sourceURL.deletingLastPathComponent()
@@ -1149,9 +1170,31 @@ final class AppState: @unchecked Sendable {
                 var tempURL: URL?
 
                 if self.isGo3mf {
-                    // Render go3mf YAML config
-                    let renderer = try Go3mfRenderer(configURL: sourceURL)
-                    model = try renderer.render()
+                    // Build go3mf YAML config using external go3mf tool
+                    let workDir = sourceURL.deletingLastPathComponent()
+                    let renderer = Go3mfToolRenderer(workDir: workDir)
+
+                    let newTempURL = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("gostl_go3mf_\(Int(Date().timeIntervalSince1970)).3mf")
+
+                    try renderer.buildTo3MF(yamlFile: sourceURL, outputFile: newTempURL)
+
+                    // Load the generated 3MF file (supports plates)
+                    let parseResult = try ThreeMFParser.parseWithPlates(url: newTempURL)
+
+                    // Get model based on selected plate
+                    if let plateId = self.selectedPlateId, parseResult.plates.count > 1 {
+                        model = parseResult.model(forPlate: plateId)
+                    } else {
+                        model = parseResult.modelWithAllPlates()
+                    }
+
+                    tempURL = newTempURL
+
+                    // Update parse result on main thread
+                    await MainActor.run {
+                        self.threeMFParseResult = parseResult
+                    }
                 } else if self.isOpenSCAD {
                     // Render OpenSCAD to STL
                     let workDir = sourceURL.deletingLastPathComponent()
@@ -1176,8 +1219,8 @@ final class AppState: @unchecked Sendable {
                 // Apply loaded model on main thread
                 await MainActor.run {
                     do {
-                        // Clean up old temp file if exists
-                        if let oldTempURL = self.tempSTLFileURL, self.isOpenSCAD, oldTempURL != tempURL {
+                        // Clean up old temp file if exists (for both OpenSCAD and go3mf)
+                        if let oldTempURL = self.tempSTLFileURL, (self.isOpenSCAD || self.isGo3mf), oldTempURL != tempURL {
                             try? FileManager.default.removeItem(at: oldTempURL)
                         }
 

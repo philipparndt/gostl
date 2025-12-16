@@ -48,3 +48,18 @@ Feature: External Tool Integration
     Given an OpenSCAD file with include statements is loaded
     Then all included files should be tracked
     And changes to any included file should trigger a reload
+
+  @go3mf
+  Scenario: go3mf YAML rendering
+    Given a go3mf YAML configuration file is loaded
+    Then it should be rendered to a temporary 3MF file via go3mf CLI
+    And the command should be "go3mf build <file> -o <output.3mf>"
+    And the resulting 3MF should be parsed and displayed
+    And the temporary file should be cleaned up on reload
+
+  @go3mf @multi-plate
+  Scenario: go3mf YAML with multiple plates
+    Given a go3mf YAML configuration produces a multi-plate 3MF
+    When the file is loaded
+    Then the plate selector panel should appear
+    And all plates from the generated 3MF should be available

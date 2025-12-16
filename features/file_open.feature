@@ -70,8 +70,9 @@ Feature: Open 3D Model Files
   Scenario: Open go3mf YAML configuration file
     Given go3mf CLI tool is installed on the system
     When I open a go3mf YAML configuration file
-    Then the file should be rendered via go3mf
-    And the resulting 3D model should be displayed
+    Then the file should be rendered to 3MF via go3mf CLI
+    And the resulting 3MF file should be loaded
+    And if the 3MF contains multiple plates, the plate selector should appear
     And the file should be added to recent files
 
   @go3mf @missing

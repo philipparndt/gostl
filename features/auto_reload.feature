@@ -28,12 +28,14 @@ Feature: Auto-Reload on File Changes
     And the updated model should be displayed
 
   @go3mf
-  Scenario: Auto-reload go3mf with dependencies
+  Scenario: Auto-reload go3mf on YAML change
     Given I have a go3mf YAML file open
-    And the YAML file references other files
-    When any referenced file is modified
-    Then the configuration should be re-rendered
+    When the YAML file is modified
+    Then the file should be rebuilt via go3mf CLI
+    And the resulting 3MF should be reloaded
     And the updated model should be displayed
+    # Note: Changes to referenced files (STL, OpenSCAD) do not trigger auto-reload
+    # since dependency tracking is handled by the external go3mf tool
 
   Scenario: Preserve camera on reload
     Given I have positioned the camera at a specific angle
