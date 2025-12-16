@@ -29,15 +29,19 @@ final class SpatialAccelerator: @unchecked Sendable {
     private var bvhRoot: BVHNode?
     private let triangles: [Triangle]
 
-    // Spatial grid for vertex snapping
-    private var vertexGrid: [Int: GridCell] = [:]
+    // Precomputed triangle bounds (computed once, used many times)
+    private var triangleBoundsCache: [BoundingBox] = []
+
+    // Spatial grid for vertex snapping (built lazily)
+    private var vertexGrid: [Int: GridCell]?
     private var gridCellSize: Double = 1.0
     private var gridOrigin: Vector3 = .zero
     private var gridDimensions: (x: Int, y: Int, z: Int) = (0, 0, 0)
+    private var modelBounds: BoundingBox?
 
-    // Constants
-    private static let maxTrianglesPerLeaf = 8
-    private static let maxDepth = 32
+    // Constants - larger leaf size = shallower tree = faster build
+    private static let maxTrianglesPerLeaf = 32
+    private static let maxDepth = 24
 
     // MARK: - Initialization
 
@@ -48,22 +52,8 @@ final class SpatialAccelerator: @unchecked Sendable {
 
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        // Build BVH and vertex grid in parallel
-        let group = DispatchGroup()
-
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            self.buildBVH()
-            group.leave()
-        }
-
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            self.buildVertexGrid()
-            group.leave()
-        }
-
-        group.wait()
+        // Build BVH only - vertex grid is built lazily when needed
+        buildBVH()
 
         let totalTime = CFAbsoluteTimeGetCurrent() - startTime
         print("SpatialAccelerator built in \(String(format: "%.2f", totalTime * 1000))ms (\(triangles.count) triangles)")
@@ -85,20 +75,31 @@ final class SpatialAccelerator: @unchecked Sendable {
     }
 
     private func buildBVH() {
-        // Pre-compute all centroids in parallel for faster sorting
         let processorCount = ProcessInfo.processInfo.activeProcessorCount
         let chunkSize = max(1000, triangles.count / processorCount)
+        let chunkCount = (triangles.count + chunkSize - 1) / chunkSize
         let triangleCount = triangles.count
 
+        // Pre-compute ALL triangle bounds and centroids in parallel (computed once, used many times)
+        let boundsArray = ParallelArray([BoundingBox](repeating: BoundingBox(), count: triangleCount))
         let centroids = ParallelArray([Vector3](repeating: .zero, count: triangleCount))
 
-        DispatchQueue.concurrentPerform(iterations: (triangleCount + chunkSize - 1) / chunkSize) { chunkIndex in
+        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
             let startIndex = chunkIndex * chunkSize
             let endIndex = min(startIndex + chunkSize, triangleCount)
             for i in startIndex..<endIndex {
-                centroids[i] = self.triangleCentroid(self.triangles[i])
+                let t = self.triangles[i]
+                // Compute bounds
+                var box = BoundingBox(point: t.v1)
+                box.extend(t.v2)
+                box.extend(t.v3)
+                boundsArray[i] = box
+                // Compute centroid
+                centroids[i] = (t.v1 + t.v2 + t.v3) / 3.0
             }
         }
+
+        triangleBoundsCache = boundsArray.storage
 
         // Use a single indices array and operate on ranges (in-place) to avoid copying
         var indices = Array(0..<triangles.count)
@@ -109,16 +110,10 @@ final class SpatialAccelerator: @unchecked Sendable {
     private func buildBVHNodeInPlace(indices: inout [Int], range: Range<Int>, centroids: [Vector3], depth: Int) -> BVHNode? {
         guard !range.isEmpty else { return nil }
 
-        // Calculate bounds
-        let bounds: BoundingBox
-        if range.count > 50000 {
-            bounds = calculateBoundsInRange(indices: indices, range: range)
-        } else {
-            var b = triangleBounds(triangles[indices[range.lowerBound]])
-            for i in (range.lowerBound + 1)..<range.upperBound {
-                b.extend(triangleBounds(triangles[indices[i]]))
-            }
-            bounds = b
+        // Calculate bounds using cached triangle bounds (much faster!)
+        var bounds = triangleBoundsCache[indices[range.lowerBound]]
+        for i in (range.lowerBound + 1)..<range.upperBound {
+            bounds.extend(triangleBoundsCache[indices[i]])
         }
 
         let node = BVHNode(bounds: bounds)
@@ -183,39 +178,6 @@ final class SpatialAccelerator: @unchecked Sendable {
         return node
     }
 
-    /// Calculate bounds for a range of indices
-    private func calculateBoundsInRange(indices: [Int], range: Range<Int>) -> BoundingBox {
-        let processorCount = ProcessInfo.processInfo.activeProcessorCount
-        let chunkSize = max(1000, range.count / processorCount)
-        let chunkCount = (range.count + chunkSize - 1) / chunkSize
-        let rangeCount = range.count
-        let rangeLower = range.lowerBound
-
-        let partialBounds = ParallelArray([BoundingBox](repeating: BoundingBox(), count: chunkCount))
-
-        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
-            let startOffset = chunkIndex * chunkSize
-            let endOffset = min(startOffset + chunkSize, rangeCount)
-            let startIndex = rangeLower + startOffset
-            let endIndex = rangeLower + endOffset
-
-            guard startIndex < endIndex else { return }
-
-            var bounds = self.triangleBounds(self.triangles[indices[startIndex]])
-            for i in (startIndex + 1)..<endIndex {
-                bounds.extend(self.triangleBounds(self.triangles[indices[i]]))
-            }
-            partialBounds[chunkIndex] = bounds
-        }
-
-        // Merge bounds
-        var finalBounds = partialBounds.storage[0]
-        for i in 1..<chunkCount {
-            finalBounds.extend(partialBounds.storage[i])
-        }
-        return finalBounds
-    }
-
     /// In-place quickselect for a range
     private func partialSortInPlace(indices: inout [Int], range: Range<Int>, centroids: [Vector3], axis: Int, k: Int) {
         guard range.count > 1 else { return }
@@ -278,46 +240,14 @@ final class SpatialAccelerator: @unchecked Sendable {
         }
     }
 
-    private func triangleBounds(_ triangle: Triangle) -> BoundingBox {
-        var box = BoundingBox(point: triangle.v1)
-        box.extend(triangle.v2)
-        box.extend(triangle.v3)
-        return box
-    }
-
-    private func triangleCentroid(_ triangle: Triangle) -> Vector3 {
-        (triangle.v1 + triangle.v2 + triangle.v3) / 3.0
-    }
-
     // MARK: - Vertex Grid Construction
 
     private func buildVertexGrid() {
         guard !triangles.isEmpty else { return }
 
-        // Calculate model bounds in parallel
-        let processorCount = ProcessInfo.processInfo.activeProcessorCount
-        let chunkSize = max(1000, triangles.count / processorCount)
-        let chunkCount = (triangles.count + chunkSize - 1) / chunkSize
-        let triangleCount = triangles.count
-
-        let partialBounds = ParallelArray([BoundingBox](repeating: BoundingBox(), count: chunkCount))
-
-        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
-            let startIndex = chunkIndex * chunkSize
-            let endIndex = min(startIndex + chunkSize, triangleCount)
-            guard startIndex < endIndex else { return }
-
-            var bounds = self.triangleBounds(self.triangles[startIndex])
-            for i in (startIndex + 1)..<endIndex {
-                bounds.extend(self.triangleBounds(self.triangles[i]))
-            }
-            partialBounds[chunkIndex] = bounds
-        }
-
-        var modelBounds = partialBounds.storage[0]
-        for i in 1..<chunkCount {
-            modelBounds.extend(partialBounds.storage[i])
-        }
+        // Use BVH root bounds (already computed)
+        guard let rootBounds = bvhRoot?.bounds else { return }
+        let modelBounds = rootBounds
 
         // Use cell size based on model size (aim for ~100 cells per axis max)
         let size = modelBounds.size
@@ -330,6 +260,11 @@ final class SpatialAccelerator: @unchecked Sendable {
             y: Int(ceil(size.y / gridCellSize)) + 1,
             z: Int(ceil(size.z / gridCellSize)) + 1
         )
+
+        let processorCount = ProcessInfo.processInfo.activeProcessorCount
+        let chunkSize = max(1000, triangles.count / processorCount)
+        let chunkCount = (triangles.count + chunkSize - 1) / chunkSize
+        let triangleCount = triangles.count
 
         // Build partial grids in parallel, then merge
         // Use class wrapper to avoid Sendable issues with dictionaries
@@ -363,7 +298,8 @@ final class SpatialAccelerator: @unchecked Sendable {
             }
         }
 
-        // Merge partial grids (sequential, but faster than building sequentially)
+        // Initialize vertexGrid and merge partial grids
+        vertexGrid = [:]
         var globalSeen = Set<Int>()
         for result in results {
             for (cellKey, cell) in result.grid {
@@ -374,10 +310,10 @@ final class SpatialAccelerator: @unchecked Sendable {
                     }
                     globalSeen.insert(hash)
 
-                    if vertexGrid[cellKey] == nil {
-                        vertexGrid[cellKey] = GridCell(vertices: [])
+                    if vertexGrid![cellKey] == nil {
+                        vertexGrid![cellKey] = GridCell(vertices: [])
                     }
-                    vertexGrid[cellKey]?.vertices.append((position: vertex, triangleIndex: triangleIndex))
+                    vertexGrid![cellKey]?.vertices.append((position: vertex, triangleIndex: triangleIndex))
                 }
             }
         }
@@ -524,6 +460,11 @@ final class SpatialAccelerator: @unchecked Sendable {
     /// Find the closest vertex to a point within a given radius
     /// Uses spatial grid for O(1) lookup instead of O(n) full scan
     func findClosestVertex(to point: Vector3, maxDistance: Double) -> Vector3? {
+        // Build vertex grid lazily on first use
+        if vertexGrid == nil {
+            buildVertexGrid()
+        }
+
         // Calculate how many cells to search based on maxDistance
         let cellRadius = Int(ceil(maxDistance / gridCellSize))
 
@@ -552,7 +493,7 @@ final class SpatialAccelerator: @unchecked Sendable {
                     }
 
                     let key = cx + cy * gridDimensions.x + cz * gridDimensions.x * gridDimensions.y
-                    guard let cell = vertexGrid[key] else { continue }
+                    guard let cell = vertexGrid?[key] else { continue }
 
                     for (vertex, _) in cell.vertices {
                         let dist = vertex.distance(to: point)

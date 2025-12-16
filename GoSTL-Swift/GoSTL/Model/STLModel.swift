@@ -15,11 +15,15 @@ struct STLModel {
     var triangles: [Triangle]
     var name: String?
 
+    /// Pre-computed bounding box (computed during parsing for performance)
+    private var _precomputedBounds: BoundingBox?
+
     // MARK: - Initializers
 
-    init(triangles: [Triangle] = [], name: String? = nil) {
+    init(triangles: [Triangle] = [], name: String? = nil, precomputedBounds: BoundingBox? = nil) {
         self.triangles = triangles
         self.name = name
+        self._precomputedBounds = precomputedBounds
     }
 
     // MARK: - Computed Properties
@@ -31,6 +35,11 @@ struct STLModel {
 
     /// Calculate the bounding box of the entire model
     func boundingBox() -> BoundingBox {
+        // Return precomputed bounds if available (computed during parsing)
+        if let precomputed = _precomputedBounds {
+            return precomputed
+        }
+
         guard !triangles.isEmpty else {
             return BoundingBox()
         }

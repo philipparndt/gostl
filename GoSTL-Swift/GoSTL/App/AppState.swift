@@ -868,15 +868,21 @@ final class AppState: @unchecked Sendable {
         }
 
         // Reinitialize measurement data with appropriate thickness for this model
+        t0 = CFAbsoluteTimeGetCurrent()
         initializeMeasurements(device: device, thickness: thickness)
+        print("  initializeMeasurements: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
 
         // Initialize grid based on model bounds
+        t0 = CFAbsoluteTimeGetCurrent()
         try updateGrid(device: device)
+        print("  updateGrid: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
 
         // Update build plate if one is selected
+        t0 = CFAbsoluteTimeGetCurrent()
         if buildPlate != .off {
             updateBuildPlate(device: device)
         }
+        print("  updateBuildPlate: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
 
         // Frame the model in view (only for initial load, not reloads)
         if !preserveCamera {

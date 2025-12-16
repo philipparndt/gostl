@@ -129,9 +129,15 @@ enum STLParser {
         }
         splitPoints.append(data.count)
 
-        // Parse chunks in parallel
+        // Parse chunks in parallel, also computing partial bounds
         let actualChunkCount = splitPoints.count - 1
-        let chunkResults = ParallelArray([[Triangle]](repeating: [], count: actualChunkCount))
+
+        // Store results with bounds
+        final class ChunkResult: @unchecked Sendable {
+            var triangles: [Triangle] = []
+            var bounds: BoundingBox = BoundingBox()
+        }
+        let chunkResults = (0..<actualChunkCount).map { _ in ChunkResult() }
 
         // Copy splitPoints to immutable array for safe concurrent access
         let splits = splitPoints
@@ -148,51 +154,104 @@ enum STLParser {
             DispatchQueue.concurrentPerform(iterations: actualChunkCount) { chunkIndex in
                 let start = splits[chunkIndex]
                 let end = splits[chunkIndex + 1]
-                chunkResults[chunkIndex] = parseASCIIChunk(bytes: bytesWrapper.ptr, start: start, end: end)
+                let result = chunkResults[chunkIndex]
+                result.triangles = parseASCIIChunk(bytes: bytesWrapper.ptr, start: start, end: end)
+
+                // Compute bounds for this chunk
+                var minX = Double.infinity, minY = Double.infinity, minZ = Double.infinity
+                var maxX = -Double.infinity, maxY = -Double.infinity, maxZ = -Double.infinity
+                for triangle in result.triangles {
+                    minX = min(minX, triangle.v1.x, triangle.v2.x, triangle.v3.x)
+                    minY = min(minY, triangle.v1.y, triangle.v2.y, triangle.v3.y)
+                    minZ = min(minZ, triangle.v1.z, triangle.v2.z, triangle.v3.z)
+                    maxX = max(maxX, triangle.v1.x, triangle.v2.x, triangle.v3.x)
+                    maxY = max(maxY, triangle.v1.y, triangle.v2.y, triangle.v3.y)
+                    maxZ = max(maxZ, triangle.v1.z, triangle.v2.z, triangle.v3.z)
+                }
+                if !result.triangles.isEmpty {
+                    result.bounds = BoundingBox(min: Vector3(minX, minY, minZ), max: Vector3(maxX, maxY, maxZ))
+                }
             }
         }
 
-        // Merge results
+        // Merge results and bounds
         var allTriangles: [Triangle] = []
         allTriangles.reserveCapacity(data.count / 250)
-        for chunk in chunkResults.storage {
-            allTriangles.append(contentsOf: chunk)
+        var finalBounds: BoundingBox?
+
+        for result in chunkResults {
+            allTriangles.append(contentsOf: result.triangles)
+            if !result.triangles.isEmpty {
+                if var bounds = finalBounds {
+                    bounds.extend(result.bounds)
+                    finalBounds = bounds
+                } else {
+                    finalBounds = result.bounds
+                }
+            }
         }
 
-        return STLModel(triangles: allTriangles, name: name)
+        return STLModel(triangles: allTriangles, name: name, precomputedBounds: finalBounds)
     }
 
-    /// Parse a chunk of ASCII STL data
+    /// Parse a chunk of ASCII STL data - optimized direct vertex scanning
     private static func parseASCIIChunk(bytes: UnsafePointer<UInt8>, start: Int, end: Int) -> [Triangle] {
         var triangles: [Triangle] = []
         triangles.reserveCapacity((end - start) / 250)
 
-        var currentVertices: [Vector3] = []
-        currentVertices.reserveCapacity(3)
-        var currentNormal: Vector3?
+        // Vertex buffer for building triangles
+        var v1: Vector3?
+        var v2: Vector3?
 
-        var lineStart = start
         var i = start
 
-        while i < end {
-            // Find end of line
-            while i < end && bytes[i] != 0x0A && bytes[i] != 0x0D {
-                i += 1
-            }
+        // Scan for "vertex" keyword directly (much faster than line-by-line)
+        // v=0x76/0x56, e=0x65/0x45, r=0x72/0x52, t=0x74/0x54, e=0x65/0x45, x=0x78/0x58
+        while i < end - 10 {  // Need at least "vertex X Y Z"
+            let b0 = bytes[i]
 
-            // Process line if non-empty
-            if i > lineStart {
-                processASCIILineIntoArray(bytes: bytes, start: lineStart, end: i,
-                                triangles: &triangles,
-                                currentVertices: &currentVertices,
-                                currentNormal: &currentNormal)
-            }
+            // Quick check: is this 'v' or 'V'?
+            if b0 == 0x76 || b0 == 0x56 {
+                // Check for "vertex" (case insensitive)
+                if (bytes[i + 1] == 0x65 || bytes[i + 1] == 0x45) &&  // e
+                   (bytes[i + 2] == 0x72 || bytes[i + 2] == 0x52) &&  // r
+                   (bytes[i + 3] == 0x74 || bytes[i + 3] == 0x54) &&  // t
+                   (bytes[i + 4] == 0x65 || bytes[i + 4] == 0x45) &&  // e
+                   (bytes[i + 5] == 0x78 || bytes[i + 5] == 0x58) {   // x
 
-            // Skip newline characters
-            while i < end && (bytes[i] == 0x0A || bytes[i] == 0x0D) {
-                i += 1
+                    // Found "vertex", parse the 3 floats
+                    let charPtr = UnsafeRawPointer(bytes + i + 6).assumingMemoryBound(to: CChar.self)
+                    var endPtr: UnsafeMutablePointer<CChar>?
+
+                    let x = strtod(charPtr, &endPtr)
+                    guard let e1 = endPtr, e1 > charPtr else { i += 1; continue }
+
+                    let y = strtod(e1, &endPtr)
+                    guard let e2 = endPtr, e2 > e1 else { i += 1; continue }
+
+                    let z = strtod(e2, &endPtr)
+                    guard let e3 = endPtr, e3 > e2 else { i += 1; continue }
+
+                    let vertex = Vector3(x, y, z)
+
+                    // Build triangles from every 3 vertices
+                    if v1 == nil {
+                        v1 = vertex
+                    } else if v2 == nil {
+                        v2 = vertex
+                    } else {
+                        triangles.append(Triangle(v1: v1!, v2: v2!, v3: vertex))
+                        v1 = nil
+                        v2 = nil
+                    }
+
+                    // Skip past parsed content
+                    let basePtr = UnsafeRawPointer(bytes).assumingMemoryBound(to: CChar.self)
+                    i = Int(bitPattern: e3) - Int(bitPattern: basePtr)
+                    continue
+                }
             }
-            lineStart = i
+            i += 1
         }
 
         return triangles
@@ -206,6 +265,10 @@ enum STLParser {
         var currentVertices: [Vector3] = []
         currentVertices.reserveCapacity(3)
         var currentNormal: Vector3?
+
+        // Track bounds during parsing
+        var minX = Double.infinity, minY = Double.infinity, minZ = Double.infinity
+        var maxX = -Double.infinity, maxY = -Double.infinity, maxZ = -Double.infinity
 
         data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
             guard let baseAddress = buffer.baseAddress else { return }
@@ -221,10 +284,21 @@ enum STLParser {
                 }
 
                 if i > lineStart {
+                    let prevCount = triangles.count
                     processASCIILineIntoArray(bytes: bytes, start: lineStart, end: i,
                                     triangles: &triangles,
                                     currentVertices: &currentVertices,
                                     currentNormal: &currentNormal)
+                    // Update bounds if a triangle was added
+                    if triangles.count > prevCount {
+                        let triangle = triangles[triangles.count - 1]
+                        minX = min(minX, triangle.v1.x, triangle.v2.x, triangle.v3.x)
+                        minY = min(minY, triangle.v1.y, triangle.v2.y, triangle.v3.y)
+                        minZ = min(minZ, triangle.v1.z, triangle.v2.z, triangle.v3.z)
+                        maxX = max(maxX, triangle.v1.x, triangle.v2.x, triangle.v3.x)
+                        maxY = max(maxY, triangle.v1.y, triangle.v2.y, triangle.v3.y)
+                        maxZ = max(maxZ, triangle.v1.z, triangle.v2.z, triangle.v3.z)
+                    }
                 }
 
                 while i < count && (bytes[i] == 0x0A || bytes[i] == 0x0D) {
@@ -234,7 +308,10 @@ enum STLParser {
             }
         }
 
-        return STLModel(triangles: triangles, name: name)
+        let bounds = triangles.isEmpty ? nil
+            : BoundingBox(min: Vector3(minX, minY, minZ), max: Vector3(maxX, maxY, maxZ))
+
+        return STLModel(triangles: triangles, name: name, precomputedBounds: bounds)
     }
 
     /// Process a single ASCII line (renamed to avoid conflict)
@@ -365,43 +442,132 @@ enum STLParser {
         return parseBinaryParallel(data: data, triangleCount: triangleCount, name: name)
     }
 
-    /// Sequential binary parsing for small files
+    /// Sequential binary parsing for small files using direct memory access
     private static func parseBinarySequential(data: Data, triangleCount: Int, name: String?) -> STLModel {
         var triangles: [Triangle] = []
         triangles.reserveCapacity(triangleCount)
 
-        var offset = 84 // Header (80) + count (4)
+        // Track bounds during parsing
+        var minX = Double.infinity, minY = Double.infinity, minZ = Double.infinity
+        var maxX = -Double.infinity, maxY = -Double.infinity, maxZ = -Double.infinity
 
-        for _ in 0..<triangleCount {
-            let triangle = parseTriangleAt(data: data, offset: offset)
-            triangles.append(triangle)
-            offset += 50
+        data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
+            guard let baseAddress = buffer.baseAddress else { return }
+            let bytes = baseAddress.assumingMemoryBound(to: UInt8.self)
+
+            for i in 0..<triangleCount {
+                let offset = 84 + (i * 50)
+                let triangle = parseTriangleDirect(bytes: bytes, offset: offset)
+                triangles.append(triangle)
+
+                // Update bounds inline
+                minX = min(minX, triangle.v1.x, triangle.v2.x, triangle.v3.x)
+                minY = min(minY, triangle.v1.y, triangle.v2.y, triangle.v3.y)
+                minZ = min(minZ, triangle.v1.z, triangle.v2.z, triangle.v3.z)
+                maxX = max(maxX, triangle.v1.x, triangle.v2.x, triangle.v3.x)
+                maxY = max(maxY, triangle.v1.y, triangle.v2.y, triangle.v3.y)
+                maxZ = max(maxZ, triangle.v1.z, triangle.v2.z, triangle.v3.z)
+            }
         }
 
-        return STLModel(triangles: triangles, name: name)
+        let bounds = triangleCount > 0
+            ? BoundingBox(min: Vector3(minX, minY, minZ), max: Vector3(maxX, maxY, maxZ))
+            : nil
+
+        return STLModel(triangles: triangles, name: name, precomputedBounds: bounds)
     }
 
-    /// Parallel binary parsing for large files
+    /// Parallel binary parsing for large files using direct memory access
     private static func parseBinaryParallel(data: Data, triangleCount: Int, name: String?) -> STLModel {
         // Pre-allocate array with placeholder triangles
         let triangles = ParallelArray([Triangle](repeating: Triangle(v1: .zero, v2: .zero, v3: .zero), count: triangleCount))
 
-        // Determine chunk size based on CPU cores
+        // Pre-allocate partial bounding boxes for parallel computation
         let processorCount = ProcessInfo.processInfo.activeProcessorCount
         let chunkSize = max(1000, triangleCount / processorCount)
+        let chunkCount = (triangleCount + chunkSize - 1) / chunkSize
+        let partialBounds = ParallelArray([BoundingBox](repeating: BoundingBox(), count: chunkCount))
 
-        // Parse in parallel chunks
-        DispatchQueue.concurrentPerform(iterations: (triangleCount + chunkSize - 1) / chunkSize) { chunkIndex in
-            let startIndex = chunkIndex * chunkSize
-            let endIndex = min(startIndex + chunkSize, triangleCount)
+        // Use direct memory access for maximum performance
+        data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
+            guard let baseAddress = buffer.baseAddress else { return }
+            let bytes = baseAddress.assumingMemoryBound(to: UInt8.self)
 
-            for i in startIndex..<endIndex {
-                let offset = 84 + (i * 50)
-                triangles[i] = parseTriangleAt(data: data, offset: offset)
+            // Wrap pointer for safe concurrent access
+            final class BytesWrapper: @unchecked Sendable {
+                let ptr: UnsafePointer<UInt8>
+                init(_ ptr: UnsafePointer<UInt8>) { self.ptr = ptr }
+            }
+            let bytesWrapper = BytesWrapper(bytes)
+
+            // Parse in parallel chunks with direct memory access
+            DispatchQueue.concurrentPerform(iterations: chunkCount) { chunkIndex in
+                let startIndex = chunkIndex * chunkSize
+                let endIndex = min(startIndex + chunkSize, triangleCount)
+                let ptr = bytesWrapper.ptr
+
+                // Track bounds for this chunk
+                var minX = Double.infinity, minY = Double.infinity, minZ = Double.infinity
+                var maxX = -Double.infinity, maxY = -Double.infinity, maxZ = -Double.infinity
+
+                for i in startIndex..<endIndex {
+                    let offset = 84 + (i * 50)
+                    let triangle = parseTriangleDirect(bytes: ptr, offset: offset)
+                    triangles[i] = triangle
+
+                    // Update bounds inline (essentially free)
+                    minX = min(minX, triangle.v1.x, triangle.v2.x, triangle.v3.x)
+                    minY = min(minY, triangle.v1.y, triangle.v2.y, triangle.v3.y)
+                    minZ = min(minZ, triangle.v1.z, triangle.v2.z, triangle.v3.z)
+                    maxX = max(maxX, triangle.v1.x, triangle.v2.x, triangle.v3.x)
+                    maxY = max(maxY, triangle.v1.y, triangle.v2.y, triangle.v3.y)
+                    maxZ = max(maxZ, triangle.v1.z, triangle.v2.z, triangle.v3.z)
+                }
+
+                partialBounds[chunkIndex] = BoundingBox(
+                    min: Vector3(minX, minY, minZ),
+                    max: Vector3(maxX, maxY, maxZ)
+                )
             }
         }
 
-        return STLModel(triangles: triangles.storage, name: name)
+        // Merge partial bounds
+        var finalBounds = partialBounds.storage[0]
+        for i in 1..<chunkCount {
+            finalBounds.extend(partialBounds.storage[i])
+        }
+
+        return STLModel(triangles: triangles.storage, name: name, precomputedBounds: finalBounds)
+    }
+
+    /// Parse a single triangle using direct memory access (no copying)
+    @inline(__always)
+    private static func parseTriangleDirect(bytes: UnsafePointer<UInt8>, offset: Int) -> Triangle {
+        // Read all 12 floats directly from memory (normal + 3 vertices)
+        let floatPtr = UnsafeRawPointer(bytes + offset).assumingMemoryBound(to: Float.self)
+
+        let nx = Double(floatPtr[0])
+        let ny = Double(floatPtr[1])
+        let nz = Double(floatPtr[2])
+
+        let v1x = Double(floatPtr[3])
+        let v1y = Double(floatPtr[4])
+        let v1z = Double(floatPtr[5])
+
+        let v2x = Double(floatPtr[6])
+        let v2y = Double(floatPtr[7])
+        let v2z = Double(floatPtr[8])
+
+        let v3x = Double(floatPtr[9])
+        let v3y = Double(floatPtr[10])
+        let v3z = Double(floatPtr[11])
+
+        return Triangle(
+            v1: Vector3(v1x, v1y, v1z),
+            v2: Vector3(v2x, v2y, v2z),
+            v3: Vector3(v3x, v3y, v3z),
+            normal: Vector3(nx, ny, nz)
+        )
     }
 
     /// Parse a single triangle at a given byte offset
