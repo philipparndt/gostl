@@ -164,7 +164,11 @@ class InteractiveMTKView: MTKView {
 
     override func mouseUp(with event: NSEvent) {
         guard let coordinator = coordinator else { return }
-        coordinator.inputHandler.handleMouseUp(appState: coordinator.appState)
+        coordinator.inputHandler.handleMouseUp(
+            appState: coordinator.appState,
+            camera: coordinator.appState.camera,
+            viewSize: drawableSize
+        )
 
         // If it was a click (not a drag), handle measurement point picking
         if !didDrag, let location = mouseDownLocation {
@@ -259,7 +263,11 @@ class InteractiveMTKView: MTKView {
 
     override func otherMouseUp(with event: NSEvent) {
         guard let coordinator = coordinator else { return }
-        coordinator.inputHandler.handleMouseUp(appState: coordinator.appState)
+        coordinator.inputHandler.handleMouseUp(
+            appState: coordinator.appState,
+            camera: coordinator.appState.camera,
+            viewSize: drawableSize
+        )
     }
 
     // MARK: - Keyboard Events

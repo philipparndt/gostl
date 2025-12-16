@@ -87,6 +87,13 @@ Feature: Keyboard Shortcuts
     Then triangles under the cursor should be continuously selected
     And the camera should not rotate
 
+  @triangle-select
+  Scenario: Rectangle selection for triangles
+    Given triangle selection mode is active
+    When I hold Option+Cmd and drag to draw a selection rectangle
+    Then all triangles with vertices inside the rectangle should be selected
+    And triangles behind visible triangles should also be selected
+
   @leveling
   Scenario Outline: Leveling shortcuts
     When I press <shortcut>

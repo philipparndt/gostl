@@ -55,6 +55,13 @@ struct MeasurementOverlay: View {
                         }
 
                         HStack(spacing: 4) {
+                            KeyHint_MeasurementLegacy(key: "⌥⌘")
+                            Text("+ drag to rectangle select")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+
+                        HStack(spacing: 4) {
                             KeyHint_MeasurementLegacy(key: "⇧⌘C")
                             Text("to copy as OpenSCAD")
                                 .font(.system(size: 9))

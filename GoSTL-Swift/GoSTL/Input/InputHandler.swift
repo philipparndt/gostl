@@ -8,6 +8,7 @@ final class InputHandler {
     private var isRotating = false
     private var isPanning = false
     private var isSelecting = false  // Track selection rectangle mode
+    private var isSelectingTriangles = false  // Track triangle selection rectangle mode
     private var optionWasPressed = false  // Track Option key state for constraint release
 
     // MARK: - Mouse Events
@@ -16,6 +17,21 @@ final class InputHandler {
 
     func handleMouseDown(at location: CGPoint, modifierFlags: NSEvent.ModifierFlags, appState: AppState, viewSize: CGSize? = nil, camera: Camera? = nil) {
         lastMousePosition = location
+
+        // Option+Command starts triangle selection rectangle in triangle mode
+        if modifierFlags.contains(.option) && modifierFlags.contains(.command) &&
+           appState.measurementSystem.mode == .triangleSelect {
+            isSelectingTriangles = true
+            if let viewSize = viewSize {
+                selectionViewSize = viewSize
+                // Convert from AppKit coordinates (Y=0 at bottom) to SwiftUI coordinates (Y=0 at top)
+                let flippedLocation = CGPoint(x: location.x, y: viewSize.height - location.y)
+                appState.measurementSystem.startSelection(at: flippedLocation)
+            } else {
+                appState.measurementSystem.startSelection(at: location)
+            }
+            return
+        }
 
         // Option+click starts selection rectangle (only when not measuring)
         if modifierFlags.contains(.option) && !appState.measurementSystem.isCollecting {
@@ -70,6 +86,14 @@ final class InputHandler {
     func handleMouseDragged(to location: CGPoint, camera: Camera, viewSize: CGSize, appState: AppState) {
         guard let lastPos = lastMousePosition else { return }
 
+        // Handle triangle selection rectangle drag
+        if isSelectingTriangles {
+            // Convert from AppKit coordinates (Y=0 at bottom) to SwiftUI coordinates (Y=0 at top)
+            let flippedLocation = CGPoint(x: location.x, y: viewSize.height - location.y)
+            appState.measurementSystem.updateSelection(to: flippedLocation)
+            return
+        }
+
         // Handle selection rectangle drag
         if isSelecting {
             // Convert from AppKit coordinates (Y=0 at bottom) to SwiftUI coordinates (Y=0 at top)
@@ -120,7 +144,20 @@ final class InputHandler {
         lastMousePosition = location
     }
 
-    func handleMouseUp(appState: AppState) {
+    func handleMouseUp(appState: AppState, camera: Camera? = nil, viewSize: CGSize? = nil) {
+        // End triangle selection rectangle if active
+        if isSelectingTriangles {
+            if let camera = camera, let viewSize = viewSize, let model = appState.model {
+                appState.measurementSystem.selectTrianglesInRect(
+                    model: model,
+                    camera: camera,
+                    viewSize: viewSize
+                )
+            }
+            appState.measurementSystem.endSelection()
+            isSelectingTriangles = false
+        }
+
         // End selection if active
         if isSelecting {
             appState.measurementSystem.endSelection()

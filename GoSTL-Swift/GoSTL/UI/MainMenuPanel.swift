@@ -408,6 +408,13 @@ struct ToolsSectionContent: View {
                         }
 
                         HStack(spacing: 4) {
+                            KeyHint(key: "⌥⌘")
+                            Text("+ drag to rectangle select")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+
+                        HStack(spacing: 4) {
                             KeyHint(key: "⇧⌘C")
                             Text("Copy as OpenSCAD")
                                 .font(.system(size: 9))

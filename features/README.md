@@ -140,6 +140,8 @@ Features use tags for categorization:
 | Cmd+A | Measure angle |
 | R | Measure radius |
 | T | Select triangles |
+| Cmd+drag | Paint select triangles (in triangle mode) |
+| Option+Cmd+drag | Rectangle select triangles (in triangle mode) |
 | X/Y/Z | Axis constraint (in measurement mode) |
 | Backspace | Undo last point / delete selected |
 | Cmd+Shift+K | Clear all measurements |

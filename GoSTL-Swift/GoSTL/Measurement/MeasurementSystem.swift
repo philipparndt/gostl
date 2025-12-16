@@ -494,6 +494,39 @@ final class MeasurementSystem: @unchecked Sendable {
         }
     }
 
+    /// Select all triangles that have any vertex projecting within the selection rectangle
+    func selectTrianglesInRect(model: STLModel, camera: Camera, viewSize: CGSize) {
+        guard let rect = selectionRect else { return }
+
+        // Normalize rectangle (handle drag in any direction)
+        let minX = min(rect.start.x, rect.end.x)
+        let maxX = max(rect.start.x, rect.end.x)
+        let minY = min(rect.start.y, rect.end.y)
+        let maxY = max(rect.start.y, rect.end.y)
+
+        let selectionBounds = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+
+        // Check each triangle
+        for (index, triangle) in model.triangles.enumerated() {
+            // Project all three vertices to screen space
+            let vertices = [triangle.v1, triangle.v2, triangle.v3]
+            var anyVertexInRect = false
+
+            for vertex in vertices {
+                if let screenPos = camera.worldToScreen(point: vertex, viewSize: viewSize) {
+                    if selectionBounds.contains(screenPos) {
+                        anyVertexInRect = true
+                        break
+                    }
+                }
+            }
+
+            if anyVertexInRect {
+                selectedTriangles.insert(index)
+            }
+        }
+    }
+
     /// Check if a line segment intersects a rectangle
     private func lineIntersectsRect(lineStart: CGPoint, lineEnd: CGPoint, rect: CGRect) -> Bool {
         // Check if either endpoint is inside the rectangle
