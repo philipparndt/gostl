@@ -330,15 +330,35 @@ class InteractiveMTKView: MTKView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard let url = extractFileURL(from: sender.draggingPasteboard),
-              Self.supportedExtensions.contains(url.pathExtension.lowercased()) else {
+              Self.supportedExtensions.contains(url.pathExtension.lowercased()),
+              let coordinator = coordinator,
+              let device = device else {
             return false
         }
 
-        // Post notification to load file
-        NotificationCenter.default.post(
-            name: NSNotification.Name("LoadSTLFile"),
-            object: url
-        )
+        // Load file directly into this view's appState (not via notification which affects all tabs)
+        let appState = coordinator.appState
+        appState.isLoading = true
+        Task { @MainActor in
+            do {
+                try appState.loadFile(url, device: device)
+
+                // Update window title and representedURL
+                if let window = self.window {
+                    window.title = url.lastPathComponent
+                    window.representedURL = url
+                }
+
+                // Add to recent documents
+                RecentDocuments.shared.addDocument(url)
+
+                // Set up file watching for auto-reload
+                try? appState.setupFileWatcher()
+            } catch {
+                print("ERROR: Failed to load file: \(error)")
+                appState.isLoading = false
+            }
+        }
 
         return true
     }

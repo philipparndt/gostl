@@ -25,6 +25,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.windows.first?.makeKeyAndOrderFront(nil)
 
+        // Set initial window title if no file was opened
+        if AppDelegate.commandLineFileURL == nil,
+           let window = NSApp.windows.first,
+           window.representedURL == nil {
+            window.title = "Empty 1"
+        }
+
         // Configure initial window
         configureAllWindows()
 
@@ -559,7 +566,7 @@ struct GoSTLApp: App {
             let hostingController = NSHostingController(rootView: contentView)
 
             let window = NSWindow(contentViewController: hostingController)
-            window.title = "GoSTL"
+            window.title = self.nextEmptyWindowTitle()
             window.setContentSize(NSSize(width: 1400, height: 900))
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
 
@@ -611,5 +618,26 @@ struct GoSTLApp: App {
             // Save to RecentDocuments
             RecentDocuments.shared.saveOpenWindows(openFileURLs)
         }
+    }
+
+    private func nextEmptyWindowTitle() -> String {
+        // Find existing "Empty N" windows and determine the next number
+        let emptyPattern = /^Empty (\d+)$/
+        var usedNumbers: Set<Int> = []
+
+        for window in NSApp.windows where window.tabbingIdentifier == "GoSTLWindow" {
+            if let match = window.title.wholeMatch(of: emptyPattern),
+               let number = Int(match.1) {
+                usedNumbers.insert(number)
+            }
+        }
+
+        // Find the smallest unused number starting from 1
+        var nextNumber = 1
+        while usedNumbers.contains(nextNumber) {
+            nextNumber += 1
+        }
+
+        return "Empty \(nextNumber)"
     }
 }
