@@ -244,10 +244,14 @@ func openWithGo3mf(sourceFileURL: URL?) {
 
     print("Opening \(sourceURL.path) with go3mf at \(go3mfPath)...")
 
-    // Execute go3mf build <filename> --open
+    // Determine output filename: same as input but with .3mf extension
+    let outputFileName = sourceURL.deletingPathExtension().lastPathComponent + ".3mf"
+    let outputURL = sourceURL.deletingLastPathComponent().appendingPathComponent(outputFileName)
+
+    // Execute go3mf build <filename> -o <output.3mf> --open
     let process = Process()
     process.executableURL = URL(fileURLWithPath: go3mfPath)
-    process.arguments = ["build", sourceURL.path, "--open"]
+    process.arguments = ["build", sourceURL.path, "-o", outputURL.path, "--open"]
 
     // Inherit the user's shell PATH so go3mf can find openscad and other tools
     var environment = ProcessInfo.processInfo.environment
