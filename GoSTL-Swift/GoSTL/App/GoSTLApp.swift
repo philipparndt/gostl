@@ -5,10 +5,6 @@ import AppKit
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var commandLineFileURL: URL?
-    /// URLs opened via Finder before ContentView was ready
-    static var pendingOpenURLs: [URL] = []
-    /// Whether the main window is ready to receive file open notifications
-    static var isReadyForFiles: Bool = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Parse command line arguments before windows are created
@@ -64,38 +60,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWindow.didUpdateNotification,
             object: nil
         )
-    }
-
-    /// Handle files opened via Finder (double-click, "Open With", file associations)
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            let ext = url.pathExtension.lowercased()
-            guard ["stl", "3mf", "scad", "yaml", "yml"].contains(ext) else { continue }
-
-            if AppDelegate.isReadyForFiles {
-                // ContentView is ready, post notification immediately
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("LoadSTLFile"),
-                    object: url
-                )
-            } else {
-                // ContentView not ready yet, queue for later
-                AppDelegate.pendingOpenURLs.append(url)
-            }
-        }
-    }
-
-    /// Called by ContentView when it's ready to receive files
-    static func markReadyForFiles() {
-        isReadyForFiles = true
-        // Process any pending URLs
-        for url in pendingOpenURLs {
-            NotificationCenter.default.post(
-                name: NSNotification.Name("LoadSTLFile"),
-                object: url
-            )
-        }
-        pendingOpenURLs.removeAll()
     }
 
     @objc private func windowDidChange(_ notification: Notification) {

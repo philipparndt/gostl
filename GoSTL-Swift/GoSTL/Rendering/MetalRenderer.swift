@@ -313,17 +313,11 @@ final class MetalRenderer {
         // Will be used for aspect ratio calculations in later phases
     }
 
-    private var frameCount = 0
-
     @MainActor
     func draw(in view: MTKView, appState: AppState) {
-        frameCount += 1
-
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let renderPassDescriptor = view.currentRenderPassDescriptor,
-              let drawable = view.currentDrawable else {
-            return
-        }
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
+        guard let renderPassDescriptor = view.currentRenderPassDescriptor else { return }
+        guard let drawable = view.currentDrawable else { return }
 
         // Set clear color (dark blue: RGB 15, 18, 25)
         if let colorAttachment = renderPassDescriptor.colorAttachments[0] {

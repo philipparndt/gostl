@@ -12,8 +12,7 @@ struct ContentView: View {
 
     init(fileURL: URL? = nil) {
         self.fileURL = fileURL
-        print("DEBUG: ContentView initializing with file: \(fileURL?.lastPathComponent ?? "none")...")
-        // Note: Notifications are set up in onAppear since we need access to appState
+        // Notifications are set up in onAppear since we need access to appState
     }
 
     var body: some View {
@@ -146,23 +145,52 @@ struct ContentView: View {
         .navigationTitle(windowTitle)
         .focusedSceneValue(\.appState, appState)
         .onAppear {
-            // Set up notifications first so we can receive file open events
             setupNotifications()
 
+            // Initialize rendering components
+            if let device = MTLCreateSystemDefaultDevice() {
+                do {
+                    try appState.initializeGrid(device: device)
+                    appState.initializeMeasurements(device: device)
+                    appState.initializeOrientationCube(device: device)
+                } catch {
+                    print("ERROR: Failed to initialize rendering: \(error)")
+                }
+            }
+
+            // Load file if provided via command line or init parameter
             if let fileURL = fileURL {
-                // File passed via command line
                 loadFileOnStartup(fileURL)
-            } else if !AppDelegate.pendingOpenURLs.isEmpty {
-                // File opened via Finder - will be loaded via notification
-                setupInitialState(loadTestCube: false)
             } else {
                 // No file - show test cube
                 setupInitialState(loadTestCube: true)
             }
+        }
+        .onOpenURL { url in
+            // Handle files opened via Finder (double-click, Open With, etc.)
+            let ext = url.pathExtension.lowercased()
+            guard ["stl", "3mf", "scad", "yaml", "yml"].contains(ext) else { return }
 
-            // Signal that we're ready to receive file open notifications
-            // This will process any pending URLs from Finder
-            AppDelegate.markReadyForFiles()
+            guard let device = MTLCreateSystemDefaultDevice() else { return }
+
+            appState.isLoading = true
+            Task { @MainActor in
+                do {
+                    try appState.loadFile(url, device: device)
+                    windowTitle = url.lastPathComponent
+
+                    if let window = NSApp.keyWindow {
+                        window.representedURL = url
+                        window.title = url.lastPathComponent
+                    }
+
+                    RecentDocuments.shared.addDocument(url)
+                    try? appState.setupFileWatcher()
+                } catch {
+                    print("ERROR: Failed to load file: \(error)")
+                    appState.isLoading = false
+                }
+            }
         }
         .onChange(of: appState.slicingState.bounds) { _, _ in
             updateSlicedMesh()
@@ -252,70 +280,30 @@ struct ContentView: View {
             return
         }
 
-        appState.isLoading = true  // Show loading spinner
+        appState.isLoading = true
         Task { @MainActor in
             do {
-                // Initialize rendering components
-                try appState.initializeGrid(device: device)
-                appState.initializeMeasurements(device: device)
-                appState.initializeOrientationCube(device: device)
-
-                // Load the file
                 try appState.loadFile(url, device: device)
                 windowTitle = url.lastPathComponent
 
-                // Add to recent documents
-                RecentDocuments.shared.addDocument(url)
+                if let window = NSApp.keyWindow {
+                    window.representedURL = url
+                    window.title = url.lastPathComponent
+                }
 
-                // Set up file watching
+                RecentDocuments.shared.addDocument(url)
                 try? appState.setupFileWatcher()
             } catch {
                 print("ERROR: Failed to load file on startup: \(error)")
                 handleLoadError(error, isAutoReload: false)
-                // Fall back to test cube
                 setupInitialState(loadTestCube: true)
             }
         }
     }
 
     private func setupNotifications() {
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("LoadSTLFile"),
-            object: nil,
-            queue: .main
-        ) { [appState] notification in
-            guard let url = notification.object as? URL,
-                  let device = MTLCreateSystemDefaultDevice() else {
-                return
-            }
-
-            appState.isLoading = true  // Show loading spinner
-            Task { @MainActor in
-                do {
-                    try appState.loadFile(url, device: device)
-                    self.windowTitle = url.lastPathComponent
-
-                    // Update window's representedURL
-                    if let window = NSApp.keyWindow {
-                        window.representedURL = url
-                    }
-
-                    // Add to recent documents after successful load
-                    RecentDocuments.shared.addDocument(url)
-
-                    // Set up file watching for auto-reload
-                    do {
-                        try appState.setupFileWatcher()
-                    } catch {
-                        print("WARNING: Failed to set up file watcher: \(error)")
-                    }
-                } catch {
-                    print("ERROR: Failed to load file: \(error)")
-                    handleLoadError(error, isAutoReload: false)
-                    appState.isLoading = false
-                }
-            }
-        }
+        // Set up menu command notifications (reload, etc.)
+        // File loading is handled via onOpenURL modifier
     }
 
     private func reloadModel() {
@@ -364,12 +352,7 @@ struct ContentView: View {
         }
 
         do {
-            // Initialize rendering components
-            try appState.initializeGrid(device: device)
-            appState.initializeMeasurements(device: device)
-            appState.initializeOrientationCube(device: device)
-
-            // Optionally load test cube (skip if expecting file via notification)
+            // Load test cube if requested
             if loadTestCube {
                 let testCube = createTestCube()
                 try appState.loadModel(testCube, device: device)
