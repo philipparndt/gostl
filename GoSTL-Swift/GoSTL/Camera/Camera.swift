@@ -196,11 +196,11 @@ enum CameraPreset {
     var angles: (x: Double, y: Double) {
         switch self {
         case .top:
-            // Looking down from +Z
-            return (Double.pi / 2 - 0.1, 0)
+            // Looking down from +Z, with +X right and +Y up on screen
+            return (Double.pi / 2 - 0.1, Double.pi)
         case .bottom:
-            // Looking up from -Z
-            return (-Double.pi / 2 + 0.1, 0)
+            // Looking up from -Z, with +X right and -Y up on screen
+            return (-Double.pi / 2 + 0.1, Double.pi)
         case .front:
             // Looking from -Y toward +Y (camera at front)
             return (0, Double.pi)

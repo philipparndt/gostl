@@ -315,8 +315,8 @@ final class OrientationCubeData {
         // Z-up coordinate system: X right, Y back, Z up
         let (right, up): (SIMD3<Float>, SIMD3<Float>) = {
             switch face {
-            case .top:    return (SIMD3(1, 0, 0), SIMD3(0, 1, 0))   // right × up = +Z
-            case .bottom: return (SIMD3(1, 0, 0), SIMD3(0, -1, 0))  // right × up = -Z
+            case .top:    return (SIMD3(1, 0, 0), SIMD3(0, -1, 0))  // Text readable from front view
+            case .bottom: return (SIMD3(1, 0, 0), SIMD3(0, 1, 0))   // Text readable from front view (looking up)
             case .front:  return (SIMD3(1, 0, 0), SIMD3(0, 0, 1))   // right × up = -Y
             case .back:   return (SIMD3(-1, 0, 0), SIMD3(0, 0, 1))  // right × up = +Y
             case .left:   return (SIMD3(0, -1, 0), SIMD3(0, 0, 1))  // right × up = -X
@@ -327,8 +327,8 @@ final class OrientationCubeData {
         // Texture coordinate adjustments per face to correct text orientation
         let (flipU, flipV): (Bool, Bool) = {
             switch face {
-            case .top:    return (true, false)
-            case .bottom: return (true, false)
+            case .top:    return (false, false)
+            case .bottom: return (false, false)
             case .front:  return (false, true)
             case .back:   return (false, true)
             case .left:   return (false, true)
@@ -744,18 +744,18 @@ final class OrientationCubeData {
                 let cubeOffset: Float = 0.015  // Enough to be in front of face labels at 0.51
                 switch face {
                 case .top:
-                    // Z+ face - shortcut below label (toward +Y)
+                    // Z+ face - shortcut below label (toward -Y/front, text readable from front)
                     return (
-                        SIMD3(0, faceOffset, size * 0.5 + cubeOffset),
-                        SIMD3(1, 0, 0),
-                        SIMD3(0, 1, 0)
-                    )
-                case .bottom:
-                    // Z- face - shortcut below label (toward -Y)
-                    return (
-                        SIMD3(0, -faceOffset, -size * 0.5 - cubeOffset),
+                        SIMD3(0, -faceOffset, size * 0.5 + cubeOffset),
                         SIMD3(1, 0, 0),
                         SIMD3(0, -1, 0)
+                    )
+                case .bottom:
+                    // Z- face - shortcut below label (toward +Y/back, text readable from below)
+                    return (
+                        SIMD3(0, faceOffset, -size * 0.5 - cubeOffset),
+                        SIMD3(1, 0, 0),
+                        SIMD3(0, 1, 0)
                     )
                 case .front:
                     // Y- face (toward viewer) - shortcut at bottom (low Z)
@@ -793,8 +793,8 @@ final class OrientationCubeData {
             // Texture coordinate adjustments per face to correct text orientation
             let (flipU, flipV): (Bool, Bool) = {
                 switch face {
-                case .top:    return (true, false)
-                case .bottom: return (true, false)
+                case .top:    return (false, false)
+                case .bottom: return (false, false)
                 case .front:  return (false, true)
                 case .back:   return (false, true)
                 case .left:   return (false, true)
