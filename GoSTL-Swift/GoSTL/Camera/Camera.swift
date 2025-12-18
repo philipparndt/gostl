@@ -9,11 +9,11 @@ final class Camera {
     /// Distance from target
     var distance: Double = 100.0
 
-    /// Pitch angle (rotation around X-axis), in radians
+    /// Pitch angle (elevation above XY plane), in radians
     var angleX: Double = 0.3
 
-    /// Yaw angle (rotation around Y-axis), in radians
-    var angleY: Double = 0.5
+    /// Yaw angle (rotation around Z-axis), in radians
+    var angleY: Double = Double.pi + 0.5
 
     /// Target point to orbit around
     var target: SIMD3<Float> = .zero
@@ -21,22 +21,23 @@ final class Camera {
     // Default values for reset
     private var defaultDistance: Double = 100.0
     private var defaultAngleX: Double = 0.3
-    private var defaultAngleY: Double = 0.5
+    private var defaultAngleY: Double = Double.pi + 0.5
     private var defaultTarget: SIMD3<Float> = .zero
 
     // MARK: - Computed Properties
 
     /// Camera position in world space (calculated from spherical coordinates)
+    /// Z-up coordinate system (OpenSCAD/CAD convention): X right, Y back, Z up
     var position: SIMD3<Float> {
         let x = Float(distance * cos(angleX) * sin(angleY))
-        let y = Float(distance * sin(angleX))
-        let z = Float(distance * cos(angleX) * cos(angleY))
+        let y = Float(distance * cos(angleX) * cos(angleY))
+        let z = Float(distance * sin(angleX))
         return target + SIMD3(x, y, z)
     }
 
-    /// Up vector for the camera
+    /// Up vector for the camera (Z-up coordinate system)
     var up: SIMD3<Float> {
-        SIMD3(0, 1, 0)
+        SIMD3(0, 0, 1)
     }
 
     // MARK: - Matrix Generation
@@ -190,22 +191,31 @@ enum CameraPreset {
     case right
     case home
 
+    /// Camera angles for Z-up coordinate system (OpenSCAD/CAD convention)
+    /// angleX: pitch (elevation), angleY: yaw (azimuth around Z axis)
     var angles: (x: Double, y: Double) {
         switch self {
         case .top:
+            // Looking down from +Z
             return (Double.pi / 2 - 0.1, 0)
         case .bottom:
+            // Looking up from -Z
             return (-Double.pi / 2 + 0.1, 0)
         case .front:
-            return (0, 0)
-        case .back:
+            // Looking from -Y toward +Y (camera at front)
             return (0, Double.pi)
+        case .back:
+            // Looking from +Y toward -Y (camera at back)
+            return (0, 0)
         case .left:
-            return (0, -Double.pi / 2)
-        case .right:
+            // Looking from -X toward +X
             return (0, Double.pi / 2)
+        case .right:
+            // Looking from +X toward -X
+            return (0, -Double.pi / 2)
         case .home:
-            return (0.3, 0.5)
+            // Default isometric-ish view
+            return (0.3, Double.pi + 0.5)
         }
     }
 }

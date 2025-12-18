@@ -25,7 +25,7 @@ struct GridOverlay: View {
         }
     }
 
-    // MARK: - Grid Labels
+    // MARK: - Grid Labels (Z-up coordinate system)
 
     @ViewBuilder
     private func gridLabels(gridData: GridData, bbox: BoundingBox) -> some View {
@@ -36,46 +36,46 @@ struct GridOverlay: View {
         // Determine label spacing based on mode
         let labelSpacing: Float = gridMode == .oneMM ? 10.0 : spacing
 
-        // X labels along bottom edge (near edge)
+        // X labels along front edge (at minY)
         ForEach(generateLabelPositions(min: bounds.minX, max: bounds.maxX, spacing: labelSpacing), id: \.self) { x in
             if let screenPos = camera.project(
-                worldPosition: Vector3(Double(x), Double(bounds.bottomY), Double(bounds.minZ - 2)),
+                worldPosition: Vector3(Double(x), Double(bounds.minY - 2), Double(bounds.bottomZ)),
                 viewSize: viewSize
             ) {
                 GridLabel(text: formatCoordinate(x), position: screenPos, color: labelColor)
             }
         }
 
-        // Z labels along bottom edge (left edge)
-        ForEach(generateLabelPositions(min: bounds.minZ, max: bounds.maxZ, spacing: labelSpacing), id: \.self) { z in
-            // Skip "0" on Z axis to avoid duplicate with X axis
-            if abs(z) > 0.001 {
+        // Y labels along left edge (skip "0")
+        ForEach(generateLabelPositions(min: bounds.minY, max: bounds.maxY, spacing: labelSpacing), id: \.self) { y in
+            // Skip "0" on Y axis to avoid duplicate with X axis
+            if abs(y) > 0.001 {
                 if let screenPos = camera.project(
-                    worldPosition: Vector3(Double(bounds.minX - 2), Double(bounds.bottomY), Double(z)),
+                    worldPosition: Vector3(Double(bounds.minX - 2), Double(y), Double(bounds.bottomZ)),
                     viewSize: viewSize
                 ) {
-                    GridLabel(text: formatCoordinate(z), position: screenPos, color: labelColor)
+                    GridLabel(text: formatCoordinate(y), position: screenPos, color: labelColor)
                 }
             }
         }
 
-        // Y labels (only in allSides and oneMM modes)
+        // Z labels (vertical, only in allSides and oneMM modes)
         if gridMode == .allSides || gridMode == .oneMM {
-            ForEach(generateLabelPositions(min: bounds.minY, max: bounds.maxY, spacing: labelSpacing), id: \.self) { y in
-                // Skip "0" on Y axis to avoid duplicate
-                if abs(y) > 0.001 {
+            ForEach(generateLabelPositions(min: bounds.minZ, max: bounds.maxZ, spacing: labelSpacing), id: \.self) { z in
+                // Skip "0" on Z axis to avoid duplicate
+                if abs(z) > 0.001 {
                     if let screenPos = camera.project(
-                        worldPosition: Vector3(Double(bounds.minX - 2), Double(y), Double(bounds.minZ - 2)),
+                        worldPosition: Vector3(Double(bounds.minX - 2), Double(bounds.maxY + 2), Double(z)),
                         viewSize: viewSize
                     ) {
-                        GridLabel(text: formatCoordinate(y), position: screenPos, color: labelColor)
+                        GridLabel(text: formatCoordinate(z), position: screenPos, color: labelColor)
                     }
                 }
             }
         }
     }
 
-    // MARK: - Dimension Lines
+    // MARK: - Dimension Lines (Z-up coordinate system)
 
     @ViewBuilder
     private func dimensionLines(gridData: GridData, bbox: BoundingBox) -> some View {
@@ -88,17 +88,17 @@ struct GridOverlay: View {
         let bboxMaxY = Float(bbox.max.y)
         let bboxMinZ = Float(bbox.min.z)
         let bboxMaxZ = Float(bbox.max.z)
-        let y = gridData.bounds.bottomY
+        let z = gridData.bounds.bottomZ
 
-        // X dimension (width) - bottom front
+        // X dimension (width) - front edge
         if let start = camera.project(
-            worldPosition: Vector3(Double(bboxMinX), Double(y - offset), Double(bboxMinZ - offset)),
+            worldPosition: Vector3(Double(bboxMinX), Double(bboxMinY - offset), Double(z - offset)),
             viewSize: viewSize
         ), let end = camera.project(
-            worldPosition: Vector3(Double(bboxMaxX), Double(y - offset), Double(bboxMinZ - offset)),
+            worldPosition: Vector3(Double(bboxMaxX), Double(bboxMinY - offset), Double(z - offset)),
             viewSize: viewSize
         ), let mid = camera.project(
-            worldPosition: Vector3(Double((bboxMinX + bboxMaxX) / 2), Double(y - offset - 3), Double(bboxMinZ - offset)),
+            worldPosition: Vector3(Double((bboxMinX + bboxMaxX) / 2), Double(bboxMinY - offset - 3), Double(z - offset)),
             viewSize: viewSize
         ) {
             DimensionLine(start: start, end: end, color: dimColor)
@@ -109,39 +109,39 @@ struct GridOverlay: View {
             )
         }
 
-        // Z dimension (depth) - bottom left
+        // Y dimension (depth) - left edge
         if let start = camera.project(
-            worldPosition: Vector3(Double(bboxMinX - offset), Double(y - offset), Double(bboxMinZ)),
+            worldPosition: Vector3(Double(bboxMinX - offset), Double(bboxMinY), Double(z - offset)),
             viewSize: viewSize
         ), let end = camera.project(
-            worldPosition: Vector3(Double(bboxMinX - offset), Double(y - offset), Double(bboxMaxZ)),
+            worldPosition: Vector3(Double(bboxMinX - offset), Double(bboxMaxY), Double(z - offset)),
             viewSize: viewSize
         ), let mid = camera.project(
-            worldPosition: Vector3(Double(bboxMinX - offset), Double(y - offset - 3), Double((bboxMinZ + bboxMaxZ) / 2)),
-            viewSize: viewSize
-        ) {
-            DimensionLine(start: start, end: end, color: dimColor)
-            DimensionLabel(
-                text: String(format: "Z: %.1f mm", bboxMaxZ - bboxMinZ),
-                position: mid,
-                color: dimColor
-            )
-        }
-
-        // Y dimension (height) - right front
-        if let start = camera.project(
-            worldPosition: Vector3(Double(bboxMaxX + offset), Double(bboxMinY), Double(bboxMinZ - offset)),
-            viewSize: viewSize
-        ), let end = camera.project(
-            worldPosition: Vector3(Double(bboxMaxX + offset), Double(bboxMaxY), Double(bboxMinZ - offset)),
-            viewSize: viewSize
-        ), let mid = camera.project(
-            worldPosition: Vector3(Double(bboxMaxX + offset + 3), Double((bboxMinY + bboxMaxY) / 2), Double(bboxMinZ - offset)),
+            worldPosition: Vector3(Double(bboxMinX - offset - 3), Double((bboxMinY + bboxMaxY) / 2), Double(z - offset)),
             viewSize: viewSize
         ) {
             DimensionLine(start: start, end: end, color: dimColor)
             DimensionLabel(
                 text: String(format: "Y: %.1f mm", bboxMaxY - bboxMinY),
+                position: mid,
+                color: dimColor
+            )
+        }
+
+        // Z dimension (height) - vertical on back-right corner
+        if let start = camera.project(
+            worldPosition: Vector3(Double(bboxMaxX + offset), Double(bboxMaxY + offset), Double(bboxMinZ)),
+            viewSize: viewSize
+        ), let end = camera.project(
+            worldPosition: Vector3(Double(bboxMaxX + offset), Double(bboxMaxY + offset), Double(bboxMaxZ)),
+            viewSize: viewSize
+        ), let mid = camera.project(
+            worldPosition: Vector3(Double(bboxMaxX + offset + 3), Double(bboxMaxY + offset), Double((bboxMinZ + bboxMaxZ) / 2)),
+            viewSize: viewSize
+        ) {
+            DimensionLine(start: start, end: end, color: dimColor)
+            DimensionLabel(
+                text: String(format: "Z: %.1f mm", bboxMaxZ - bboxMinZ),
                 position: mid,
                 color: dimColor
             )

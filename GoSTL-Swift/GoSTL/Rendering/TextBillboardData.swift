@@ -4,11 +4,11 @@ import CoreGraphics
 import CoreText
 import simd
 
-/// Orientation for flat text quads
+/// Orientation for flat text quads (Z-up coordinate system)
 enum TextOrientation {
-    case horizontal  // Flat on XZ plane (bottom grid)
-    case verticalXY  // Flat on XY plane (back wall)
-    case verticalYZ  // Flat on YZ plane (left wall)
+    case horizontal  // Flat on XY plane (bottom grid, Z is up)
+    case verticalXZ  // Flat on XZ plane (back wall, facing -Y)
+    case verticalYZ  // Flat on YZ plane (left wall, facing +X)
 }
 
 /// GPU-ready flat text data for 3D text rendering
@@ -58,16 +58,16 @@ final class TextBillboardData {
             let pos = label.position
             let color = SIMD4<Float>(1, 1, 1, 1) // White, texture will provide color
 
-            // Create quad based on orientation
+            // Create quad based on orientation (Z-up coordinate system)
             switch label.orientation {
             case .horizontal:
-                // Flat on XZ plane (Y is up)
+                // Flat on XY plane (Z is up)
                 vertices.append(contentsOf: TextBillboardData.createHorizontalQuad(pos: pos, halfWidth: halfWidth, halfHeight: halfHeight, color: color))
-            case .verticalXY:
-                // Flat on XY plane (Z is normal)
-                vertices.append(contentsOf: TextBillboardData.createVerticalXYQuad(pos: pos, halfWidth: halfWidth, halfHeight: halfHeight, color: color))
+            case .verticalXZ:
+                // Flat on XZ plane (back wall, facing -Y)
+                vertices.append(contentsOf: TextBillboardData.createVerticalXZQuad(pos: pos, halfWidth: halfWidth, halfHeight: halfHeight, color: color))
             case .verticalYZ:
-                // Flat on YZ plane (X is normal)
+                // Flat on YZ plane (left wall, facing +X)
                 vertices.append(contentsOf: TextBillboardData.createVerticalYZQuad(pos: pos, halfWidth: halfWidth, halfHeight: halfHeight, color: color))
             }
         }
@@ -89,24 +89,11 @@ final class TextBillboardData {
 
     // MARK: - Quad Generation
 
+    /// Horizontal text on XY plane (Z-up: text lies flat on ground, readable from above)
     private static func createHorizontalQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, color: SIMD4<Float>) -> [VertexIn] {
-        // Flat on XZ plane (laying on the ground)
-        // X direction = width, Z direction = height (depth on ground)
-        [
-            // Triangle 1
-            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y, pos.z - halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y, pos.z - halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(1, 1)),
-            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y, pos.z + halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(1, 0)),
-            // Triangle 2
-            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y, pos.z - halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y, pos.z + halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(1, 0)),
-            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y, pos.z + halfHeight), normal: SIMD3(0, 1, 0), color: color, texCoord: SIMD2(0, 0))
-        ]
-    }
-
-    private static func createVerticalXYQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, color: SIMD4<Float>) -> [VertexIn] {
-        // Flat on XY plane (on the back wall) - facing toward positive Z
-        // X direction = width, Y direction = height
+        // Flat on XY plane (Z is up)
+        // X direction = width, Y direction = height (depth)
+        // Text readable when viewed from front (-Y looking toward +Y)
         [
             // Triangle 1
             VertexIn(position: SIMD3(pos.x - halfWidth, pos.y - halfHeight, pos.z), normal: SIMD3(0, 0, 1), color: color, texCoord: SIMD2(0, 0)),
@@ -119,18 +106,35 @@ final class TextBillboardData {
         ]
     }
 
-    private static func createVerticalYZQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, color: SIMD4<Float>) -> [VertexIn] {
-        // Flat on YZ plane (on the left wall)
-        // Z direction = width, Y direction = height
+    /// Vertical text on XZ plane (Z-up: back wall, facing toward viewer at -Y)
+    private static func createVerticalXZQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, color: SIMD4<Float>) -> [VertexIn] {
+        // Flat on XZ plane (Y is normal, facing -Y toward viewer)
+        // X direction = width, Z direction = height (up)
         [
             // Triangle 1
-            VertexIn(position: SIMD3(pos.x, pos.y - halfHeight, pos.z - halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x, pos.y - halfHeight, pos.z + halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 1)),
-            VertexIn(position: SIMD3(pos.x, pos.y + halfHeight, pos.z + halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y, pos.z - halfHeight), normal: SIMD3(0, -1, 0), color: color, texCoord: SIMD2(0, 1)),
+            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y, pos.z - halfHeight), normal: SIMD3(0, -1, 0), color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y, pos.z + halfHeight), normal: SIMD3(0, -1, 0), color: color, texCoord: SIMD2(1, 0)),
             // Triangle 2
-            VertexIn(position: SIMD3(pos.x, pos.y - halfHeight, pos.z - halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: SIMD3(pos.x, pos.y + halfHeight, pos.z + halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 0)),
-            VertexIn(position: SIMD3(pos.x, pos.y + halfHeight, pos.z - halfWidth), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 0))
+            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y, pos.z - halfHeight), normal: SIMD3(0, -1, 0), color: color, texCoord: SIMD2(0, 1)),
+            VertexIn(position: SIMD3(pos.x + halfWidth, pos.y, pos.z + halfHeight), normal: SIMD3(0, -1, 0), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x - halfWidth, pos.y, pos.z + halfHeight), normal: SIMD3(0, -1, 0), color: color, texCoord: SIMD2(0, 0))
+        ]
+    }
+
+    /// Vertical text on YZ plane (Z-up: left wall, facing +X toward viewer)
+    private static func createVerticalYZQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, color: SIMD4<Float>) -> [VertexIn] {
+        // Flat on YZ plane (X is normal, facing +X)
+        // Y direction = width, Z direction = height (up)
+        [
+            // Triangle 1
+            VertexIn(position: SIMD3(pos.x, pos.y - halfWidth, pos.z - halfHeight), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 1)),
+            VertexIn(position: SIMD3(pos.x, pos.y + halfWidth, pos.z - halfHeight), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: SIMD3(pos.x, pos.y + halfWidth, pos.z + halfHeight), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 0)),
+            // Triangle 2
+            VertexIn(position: SIMD3(pos.x, pos.y - halfWidth, pos.z - halfHeight), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 1)),
+            VertexIn(position: SIMD3(pos.x, pos.y + halfWidth, pos.z + halfHeight), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: SIMD3(pos.x, pos.y - halfWidth, pos.z + halfHeight), normal: SIMD3(1, 0, 0), color: color, texCoord: SIMD2(0, 0))
         ]
     }
 

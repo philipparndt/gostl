@@ -34,7 +34,7 @@ final class BuildPlateData {
         self.vertexBuffer = buffer
     }
 
-    // MARK: - Bottom Orientation (XZ plane, Y up)
+    // MARK: - Bottom Orientation (XY plane, Z up) - Z-up coordinate system
 
     private static func createBottomPlateVertices(buildPlate: BuildPlate, modelBoundingBox: BoundingBox?) -> [VertexIn] {
         var vertices: [VertexIn] = []
@@ -42,46 +42,6 @@ final class BuildPlateData {
         let dims = buildPlate.dimensions
         let halfWidth = dims.x / 2
         let halfDepth = dims.y / 2
-
-        let centerX: Float
-        let centerZ: Float
-        let plateY: Float
-
-        if let bbox = modelBoundingBox {
-            centerX = Float(bbox.center.x)
-            centerZ = Float(bbox.center.z)
-            plateY = Float(bbox.min.y)
-        } else {
-            centerX = 0
-            centerZ = 0
-            plateY = 0
-        }
-
-        // Build plate surface
-        let surfaceColor = SIMD4<Float>(0.12, 0.15, 0.22, 0.45)
-        addSurfaceXZ(&vertices, centerX: centerX, centerZ: centerZ, y: plateY,
-                    halfWidth: halfWidth, halfDepth: halfDepth, color: surfaceColor)
-
-        // Grid lines
-        addGridLinesXZ(&vertices, centerX: centerX, centerZ: centerZ, y: plateY,
-                      halfWidth: halfWidth, halfDepth: halfDepth)
-
-        // Frame outline
-        let frameColor = SIMD4<Float>(0.35, 0.55, 0.85, 0.85)
-        addFrameXZ(&vertices, centerX: centerX, centerZ: centerZ, y: plateY + 0.05,
-                  halfWidth: halfWidth, halfDepth: halfDepth, color: frameColor)
-
-        return vertices
-    }
-
-    // MARK: - Back Orientation (XY plane, Z forward)
-
-    private static func createBackPlateVertices(buildPlate: BuildPlate, modelBoundingBox: BoundingBox?) -> [VertexIn] {
-        var vertices: [VertexIn] = []
-
-        let dims = buildPlate.dimensions
-        let halfWidth = dims.x / 2
-        let halfHeight = dims.y / 2
 
         let centerX: Float
         let centerY: Float
@@ -100,32 +60,73 @@ final class BuildPlateData {
         // Build plate surface
         let surfaceColor = SIMD4<Float>(0.12, 0.15, 0.22, 0.45)
         addSurfaceXY(&vertices, centerX: centerX, centerY: centerY, z: plateZ,
-                    halfWidth: halfWidth, halfHeight: halfHeight, color: surfaceColor)
+                    halfWidth: halfWidth, halfDepth: halfDepth, color: surfaceColor)
 
         // Grid lines
         addGridLinesXY(&vertices, centerX: centerX, centerY: centerY, z: plateZ,
-                      halfWidth: halfWidth, halfHeight: halfHeight)
+                      halfWidth: halfWidth, halfDepth: halfDepth)
 
         // Frame outline
         let frameColor = SIMD4<Float>(0.35, 0.55, 0.85, 0.85)
         addFrameXY(&vertices, centerX: centerX, centerY: centerY, z: plateZ + 0.05,
+                  halfWidth: halfWidth, halfDepth: halfDepth, color: frameColor)
+
+        return vertices
+    }
+
+    // MARK: - Back Orientation (XZ plane, facing -Y toward viewer) - Z-up coordinate system
+
+    private static func createBackPlateVertices(buildPlate: BuildPlate, modelBoundingBox: BoundingBox?) -> [VertexIn] {
+        var vertices: [VertexIn] = []
+
+        let dims = buildPlate.dimensions
+        let halfWidth = dims.x / 2
+        let halfHeight = dims.y / 2  // This becomes Z height in Z-up
+
+        let centerX: Float
+        let centerZ: Float
+        let plateY: Float
+
+        if let bbox = modelBoundingBox {
+            centerX = Float(bbox.center.x)
+            centerZ = Float(bbox.center.z)
+            plateY = Float(bbox.max.y)  // Back wall at max Y
+        } else {
+            centerX = 0
+            centerZ = 0
+            plateY = 0
+        }
+
+        // Build plate surface
+        let surfaceColor = SIMD4<Float>(0.12, 0.15, 0.22, 0.45)
+        addSurfaceXZ(&vertices, centerX: centerX, centerZ: centerZ, y: plateY,
+                    halfWidth: halfWidth, halfHeight: halfHeight, color: surfaceColor)
+
+        // Grid lines
+        addGridLinesXZ(&vertices, centerX: centerX, centerZ: centerZ, y: plateY,
+                      halfWidth: halfWidth, halfHeight: halfHeight)
+
+        // Frame outline
+        let frameColor = SIMD4<Float>(0.35, 0.55, 0.85, 0.85)
+        addFrameXZ(&vertices, centerX: centerX, centerZ: centerZ, y: plateY - 0.05,
                   halfWidth: halfWidth, halfHeight: halfHeight, color: frameColor)
 
         return vertices
     }
 
-    // MARK: - Surface
+    // MARK: - Surface (Z-up coordinate system)
 
+    /// XZ plane surface (vertical back wall, facing -Y)
     private static func addSurfaceXZ(
         _ vertices: inout [VertexIn],
         centerX: Float, centerZ: Float, y: Float,
-        halfWidth: Float, halfDepth: Float, color: SIMD4<Float>
+        halfWidth: Float, halfHeight: Float, color: SIMD4<Float>
     ) {
-        let normal = SIMD3<Float>(0, 1, 0)
-        let p0 = SIMD3<Float>(centerX - halfWidth, y, centerZ - halfDepth)
-        let p1 = SIMD3<Float>(centerX + halfWidth, y, centerZ - halfDepth)
-        let p2 = SIMD3<Float>(centerX + halfWidth, y, centerZ + halfDepth)
-        let p3 = SIMD3<Float>(centerX - halfWidth, y, centerZ + halfDepth)
+        let normal = SIMD3<Float>(0, -1, 0)  // Facing toward viewer (-Y)
+        let p0 = SIMD3<Float>(centerX - halfWidth, y, centerZ - halfHeight)
+        let p1 = SIMD3<Float>(centerX + halfWidth, y, centerZ - halfHeight)
+        let p2 = SIMD3<Float>(centerX + halfWidth, y, centerZ + halfHeight)
+        let p3 = SIMD3<Float>(centerX - halfWidth, y, centerZ + halfHeight)
 
         vertices.append(VertexIn(position: p0, normal: normal, color: color))
         vertices.append(VertexIn(position: p1, normal: normal, color: color))
@@ -135,16 +136,17 @@ final class BuildPlateData {
         vertices.append(VertexIn(position: p3, normal: normal, color: color))
     }
 
+    /// XY plane surface (horizontal floor, facing +Z up)
     private static func addSurfaceXY(
         _ vertices: inout [VertexIn],
         centerX: Float, centerY: Float, z: Float,
-        halfWidth: Float, halfHeight: Float, color: SIMD4<Float>
+        halfWidth: Float, halfDepth: Float, color: SIMD4<Float>
     ) {
-        let normal = SIMD3<Float>(0, 0, 1)
-        let p0 = SIMD3<Float>(centerX - halfWidth, centerY - halfHeight, z)
-        let p1 = SIMD3<Float>(centerX + halfWidth, centerY - halfHeight, z)
-        let p2 = SIMD3<Float>(centerX + halfWidth, centerY + halfHeight, z)
-        let p3 = SIMD3<Float>(centerX - halfWidth, centerY + halfHeight, z)
+        let normal = SIMD3<Float>(0, 0, 1)  // Facing up (+Z)
+        let p0 = SIMD3<Float>(centerX - halfWidth, centerY - halfDepth, z)
+        let p1 = SIMD3<Float>(centerX + halfWidth, centerY - halfDepth, z)
+        let p2 = SIMD3<Float>(centerX + halfWidth, centerY + halfDepth, z)
+        let p3 = SIMD3<Float>(centerX - halfWidth, centerY + halfDepth, z)
 
         vertices.append(VertexIn(position: p0, normal: normal, color: color))
         vertices.append(VertexIn(position: p1, normal: normal, color: color))
@@ -154,30 +156,31 @@ final class BuildPlateData {
         vertices.append(VertexIn(position: p3, normal: normal, color: color))
     }
 
-    // MARK: - Grid Lines
+    // MARK: - Grid Lines (Z-up coordinate system)
 
+    /// Grid lines on XZ plane (vertical back wall, facing -Y)
     private static func addGridLinesXZ(
         _ vertices: inout [VertexIn],
         centerX: Float, centerZ: Float, y: Float,
-        halfWidth: Float, halfDepth: Float
+        halfWidth: Float, halfHeight: Float
     ) {
-        let normal = SIMD3<Float>(0, 1, 0)
+        let normal = SIMD3<Float>(0, -1, 0)  // Facing toward viewer
         let gridSpacing: Float = 10.0
         let majorEvery: Int = 5
         let lineColor = SIMD4<Float>(0.28, 0.38, 0.55, 0.35)
         let majorLineColor = SIMD4<Float>(0.32, 0.45, 0.62, 0.55)
         let lineWidth: Float = 0.12
         let majorLineWidth: Float = 0.22
-        let lineY = y + 0.015
+        let lineY = y - 0.015  // Offset toward viewer
 
-        // X-direction lines
+        // X-direction lines (horizontal)
         var lineIndex = 0
         var x = centerX - Float(Int(halfWidth / gridSpacing)) * gridSpacing
         while x <= centerX + halfWidth {
             if x >= centerX - halfWidth {
                 let isMajor = lineIndex % majorEvery == 0
-                addLineXZ(&vertices, from: SIMD3(x, lineY, centerZ - halfDepth),
-                         to: SIMD3(x, lineY, centerZ + halfDepth),
+                addLineXZ(&vertices, from: SIMD3(x, lineY, centerZ - halfHeight),
+                         to: SIMD3(x, lineY, centerZ + halfHeight),
                          width: isMajor ? majorLineWidth : lineWidth,
                          color: isMajor ? majorLineColor : lineColor, normal: normal)
             }
@@ -185,11 +188,11 @@ final class BuildPlateData {
             lineIndex += 1
         }
 
-        // Z-direction lines
+        // Z-direction lines (vertical)
         lineIndex = 0
-        var z = centerZ - Float(Int(halfDepth / gridSpacing)) * gridSpacing
-        while z <= centerZ + halfDepth {
-            if z >= centerZ - halfDepth {
+        var z = centerZ - Float(Int(halfHeight / gridSpacing)) * gridSpacing
+        while z <= centerZ + halfHeight {
+            if z >= centerZ - halfHeight {
                 let isMajor = lineIndex % majorEvery == 0
                 addLineXZ(&vertices, from: SIMD3(centerX - halfWidth, lineY, z),
                          to: SIMD3(centerX + halfWidth, lineY, z),
@@ -203,21 +206,22 @@ final class BuildPlateData {
         // Center crosshairs
         let crossColor = SIMD4<Float>(0.4, 0.55, 0.75, 0.7)
         let crossWidth: Float = 0.35
-        let crossY = y + 0.025
+        let crossY = y - 0.025
         addLineXZ(&vertices, from: SIMD3(centerX - halfWidth, crossY, centerZ),
                  to: SIMD3(centerX + halfWidth, crossY, centerZ),
                  width: crossWidth, color: crossColor, normal: normal)
-        addLineXZ(&vertices, from: SIMD3(centerX, crossY, centerZ - halfDepth),
-                 to: SIMD3(centerX, crossY, centerZ + halfDepth),
+        addLineXZ(&vertices, from: SIMD3(centerX, crossY, centerZ - halfHeight),
+                 to: SIMD3(centerX, crossY, centerZ + halfHeight),
                  width: crossWidth, color: crossColor, normal: normal)
     }
 
+    /// Grid lines on XY plane (horizontal floor, facing +Z up)
     private static func addGridLinesXY(
         _ vertices: inout [VertexIn],
         centerX: Float, centerY: Float, z: Float,
-        halfWidth: Float, halfHeight: Float
+        halfWidth: Float, halfDepth: Float
     ) {
-        let normal = SIMD3<Float>(0, 0, 1)
+        let normal = SIMD3<Float>(0, 0, 1)  // Facing up
         let gridSpacing: Float = 10.0
         let majorEvery: Int = 5
         let lineColor = SIMD4<Float>(0.28, 0.38, 0.55, 0.35)
@@ -232,8 +236,8 @@ final class BuildPlateData {
         while x <= centerX + halfWidth {
             if x >= centerX - halfWidth {
                 let isMajor = lineIndex % majorEvery == 0
-                addLineXY(&vertices, from: SIMD3(x, centerY - halfHeight, lineZ),
-                         to: SIMD3(x, centerY + halfHeight, lineZ),
+                addLineXY(&vertices, from: SIMD3(x, centerY - halfDepth, lineZ),
+                         to: SIMD3(x, centerY + halfDepth, lineZ),
                          width: isMajor ? majorLineWidth : lineWidth,
                          color: isMajor ? majorLineColor : lineColor, normal: normal)
             }
@@ -243,9 +247,9 @@ final class BuildPlateData {
 
         // Y-direction lines
         lineIndex = 0
-        var yPos = centerY - Float(Int(halfHeight / gridSpacing)) * gridSpacing
-        while yPos <= centerY + halfHeight {
-            if yPos >= centerY - halfHeight {
+        var yPos = centerY - Float(Int(halfDepth / gridSpacing)) * gridSpacing
+        while yPos <= centerY + halfDepth {
+            if yPos >= centerY - halfDepth {
                 let isMajor = lineIndex % majorEvery == 0
                 addLineXY(&vertices, from: SIMD3(centerX - halfWidth, yPos, lineZ),
                          to: SIMD3(centerX + halfWidth, yPos, lineZ),
@@ -263,56 +267,58 @@ final class BuildPlateData {
         addLineXY(&vertices, from: SIMD3(centerX - halfWidth, centerY, crossZ),
                  to: SIMD3(centerX + halfWidth, centerY, crossZ),
                  width: crossWidth, color: crossColor, normal: normal)
-        addLineXY(&vertices, from: SIMD3(centerX, centerY - halfHeight, crossZ),
-                 to: SIMD3(centerX, centerY + halfHeight, crossZ),
+        addLineXY(&vertices, from: SIMD3(centerX, centerY - halfDepth, crossZ),
+                 to: SIMD3(centerX, centerY + halfDepth, crossZ),
                  width: crossWidth, color: crossColor, normal: normal)
     }
 
-    // MARK: - Frame
+    // MARK: - Frame (Z-up coordinate system)
 
+    /// Frame on XZ plane (vertical back wall, facing -Y)
     private static func addFrameXZ(
         _ vertices: inout [VertexIn],
         centerX: Float, centerZ: Float, y: Float,
-        halfWidth: Float, halfDepth: Float, color: SIMD4<Float>
-    ) {
-        let normal = SIMD3<Float>(0, 1, 0)
-        let thickness: Float = max(0.6, min(halfWidth, halfDepth) * 0.005)
-
-        // Four edges
-        addLineXZ(&vertices, from: SIMD3(centerX - halfWidth, y, centerZ - halfDepth),
-                 to: SIMD3(centerX + halfWidth, y, centerZ - halfDepth),
-                 width: thickness, color: color, normal: normal)
-        addLineXZ(&vertices, from: SIMD3(centerX - halfWidth, y, centerZ + halfDepth),
-                 to: SIMD3(centerX + halfWidth, y, centerZ + halfDepth),
-                 width: thickness, color: color, normal: normal)
-        addLineXZ(&vertices, from: SIMD3(centerX - halfWidth, y, centerZ - halfDepth),
-                 to: SIMD3(centerX - halfWidth, y, centerZ + halfDepth),
-                 width: thickness, color: color, normal: normal)
-        addLineXZ(&vertices, from: SIMD3(centerX + halfWidth, y, centerZ - halfDepth),
-                 to: SIMD3(centerX + halfWidth, y, centerZ + halfDepth),
-                 width: thickness, color: color, normal: normal)
-    }
-
-    private static func addFrameXY(
-        _ vertices: inout [VertexIn],
-        centerX: Float, centerY: Float, z: Float,
         halfWidth: Float, halfHeight: Float, color: SIMD4<Float>
     ) {
-        let normal = SIMD3<Float>(0, 0, 1)
+        let normal = SIMD3<Float>(0, -1, 0)  // Facing toward viewer
         let thickness: Float = max(0.6, min(halfWidth, halfHeight) * 0.005)
 
         // Four edges
-        addLineXY(&vertices, from: SIMD3(centerX - halfWidth, centerY - halfHeight, z),
-                 to: SIMD3(centerX + halfWidth, centerY - halfHeight, z),
+        addLineXZ(&vertices, from: SIMD3(centerX - halfWidth, y, centerZ - halfHeight),
+                 to: SIMD3(centerX + halfWidth, y, centerZ - halfHeight),
                  width: thickness, color: color, normal: normal)
-        addLineXY(&vertices, from: SIMD3(centerX - halfWidth, centerY + halfHeight, z),
-                 to: SIMD3(centerX + halfWidth, centerY + halfHeight, z),
+        addLineXZ(&vertices, from: SIMD3(centerX - halfWidth, y, centerZ + halfHeight),
+                 to: SIMD3(centerX + halfWidth, y, centerZ + halfHeight),
                  width: thickness, color: color, normal: normal)
-        addLineXY(&vertices, from: SIMD3(centerX - halfWidth, centerY - halfHeight, z),
-                 to: SIMD3(centerX - halfWidth, centerY + halfHeight, z),
+        addLineXZ(&vertices, from: SIMD3(centerX - halfWidth, y, centerZ - halfHeight),
+                 to: SIMD3(centerX - halfWidth, y, centerZ + halfHeight),
                  width: thickness, color: color, normal: normal)
-        addLineXY(&vertices, from: SIMD3(centerX + halfWidth, centerY - halfHeight, z),
-                 to: SIMD3(centerX + halfWidth, centerY + halfHeight, z),
+        addLineXZ(&vertices, from: SIMD3(centerX + halfWidth, y, centerZ - halfHeight),
+                 to: SIMD3(centerX + halfWidth, y, centerZ + halfHeight),
+                 width: thickness, color: color, normal: normal)
+    }
+
+    /// Frame on XY plane (horizontal floor, facing +Z up)
+    private static func addFrameXY(
+        _ vertices: inout [VertexIn],
+        centerX: Float, centerY: Float, z: Float,
+        halfWidth: Float, halfDepth: Float, color: SIMD4<Float>
+    ) {
+        let normal = SIMD3<Float>(0, 0, 1)  // Facing up
+        let thickness: Float = max(0.6, min(halfWidth, halfDepth) * 0.005)
+
+        // Four edges
+        addLineXY(&vertices, from: SIMD3(centerX - halfWidth, centerY - halfDepth, z),
+                 to: SIMD3(centerX + halfWidth, centerY - halfDepth, z),
+                 width: thickness, color: color, normal: normal)
+        addLineXY(&vertices, from: SIMD3(centerX - halfWidth, centerY + halfDepth, z),
+                 to: SIMD3(centerX + halfWidth, centerY + halfDepth, z),
+                 width: thickness, color: color, normal: normal)
+        addLineXY(&vertices, from: SIMD3(centerX - halfWidth, centerY - halfDepth, z),
+                 to: SIMD3(centerX - halfWidth, centerY + halfDepth, z),
+                 width: thickness, color: color, normal: normal)
+        addLineXY(&vertices, from: SIMD3(centerX + halfWidth, centerY - halfDepth, z),
+                 to: SIMD3(centerX + halfWidth, centerY + halfDepth, z),
                  width: thickness, color: color, normal: normal)
     }
 

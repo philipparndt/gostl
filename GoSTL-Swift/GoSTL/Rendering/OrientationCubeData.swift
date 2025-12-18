@@ -68,15 +68,15 @@ enum CubeFace: Int, CaseIterable {
         }
     }
 
-    /// Get the normal vector for this face
+    /// Get the normal vector for this face (Z-up coordinate system)
     var normal: SIMD3<Float> {
         switch self {
-        case .top:    return SIMD3(0, 1, 0)
-        case .bottom: return SIMD3(0, -1, 0)
-        case .front:  return SIMD3(0, 0, 1)
-        case .back:   return SIMD3(0, 0, -1)
-        case .left:   return SIMD3(-1, 0, 0)
-        case .right:  return SIMD3(1, 0, 0)
+        case .top:    return SIMD3(0, 0, 1)   // Z+
+        case .bottom: return SIMD3(0, 0, -1)  // Z-
+        case .front:  return SIMD3(0, -1, 0)  // Y- (toward viewer)
+        case .back:   return SIMD3(0, 1, 0)   // Y+ (away from viewer)
+        case .left:   return SIMD3(-1, 0, 0)  // X-
+        case .right:  return SIMD3(1, 0, 0)   // X+
         }
     }
 }
@@ -215,50 +215,50 @@ final class OrientationCubeData {
             vertices.append(VertexIn(position: v3, normal: normal, color: color))
         }
 
-        // Top face (Y+)
+        // Top face (Z+) - Z-up coordinate system
         addQuad(
-            v0: SIMD3(-s, s, -s), v1: SIMD3(s, s, -s),
+            v0: SIMD3(-s, -s, s), v1: SIMD3(s, -s, s),
             v2: SIMD3(s, s, s), v3: SIMD3(-s, s, s),
             normal: CubeFace.top.normal,
             color: CubeFace.top.baseColor
         )
 
-        // Bottom face (Y-)
+        // Bottom face (Z-)
         addQuad(
-            v0: SIMD3(-s, -s, s), v1: SIMD3(s, -s, s),
+            v0: SIMD3(-s, s, -s), v1: SIMD3(s, s, -s),
             v2: SIMD3(s, -s, -s), v3: SIMD3(-s, -s, -s),
             normal: CubeFace.bottom.normal,
             color: CubeFace.bottom.baseColor
         )
 
-        // Front face (Z+)
+        // Front face (Y-) - toward viewer
         addQuad(
-            v0: SIMD3(-s, -s, s), v1: SIMD3(s, -s, s),
-            v2: SIMD3(s, s, s), v3: SIMD3(-s, s, s),
+            v0: SIMD3(-s, -s, -s), v1: SIMD3(s, -s, -s),
+            v2: SIMD3(s, -s, s), v3: SIMD3(-s, -s, s),
             normal: CubeFace.front.normal,
             color: CubeFace.front.baseColor
         )
 
-        // Back face (Z-)
+        // Back face (Y+) - away from viewer
         addQuad(
-            v0: SIMD3(s, -s, -s), v1: SIMD3(-s, -s, -s),
-            v2: SIMD3(-s, s, -s), v3: SIMD3(s, s, -s),
+            v0: SIMD3(s, s, -s), v1: SIMD3(-s, s, -s),
+            v2: SIMD3(-s, s, s), v3: SIMD3(s, s, s),
             normal: CubeFace.back.normal,
             color: CubeFace.back.baseColor
         )
 
         // Left face (X-)
         addQuad(
-            v0: SIMD3(-s, -s, -s), v1: SIMD3(-s, -s, s),
-            v2: SIMD3(-s, s, s), v3: SIMD3(-s, s, -s),
+            v0: SIMD3(-s, s, -s), v1: SIMD3(-s, -s, -s),
+            v2: SIMD3(-s, -s, s), v3: SIMD3(-s, s, s),
             normal: CubeFace.left.normal,
             color: CubeFace.left.baseColor
         )
 
         // Right face (X+)
         addQuad(
-            v0: SIMD3(s, -s, s), v1: SIMD3(s, -s, -s),
-            v2: SIMD3(s, s, -s), v3: SIMD3(s, s, s),
+            v0: SIMD3(s, -s, -s), v1: SIMD3(s, s, -s),
+            v2: SIMD3(s, s, s), v3: SIMD3(s, -s, s),
             normal: CubeFace.right.normal,
             color: CubeFace.right.baseColor
         )
@@ -310,48 +310,56 @@ final class OrientationCubeData {
         let position = face.normal * offset
         let halfSize = size / 2.0
 
-        // Define right and up vectors for each face to ensure text is upright and readable
+        // Define right and up vectors for each face
+        // These vectors are chosen so that right × up = face.normal (outward facing)
+        // Z-up coordinate system: X right, Y back, Z up
         let (right, up): (SIMD3<Float>, SIMD3<Float>) = {
             switch face {
-            case .top:
-                // Was correct before - reverting
-                return (SIMD3(1, 0, 0), SIMD3(0, 0, 1))
-            case .bottom:
-                // Rotated 180deg - flip only up vector (not right, to avoid mirroring)
-                return (SIMD3(1, 0, 0), SIMD3(0, 0, -1))
-            case .front:
-                // Vertically mirrored - flip up vector
-                return (SIMD3(1, 0, 0), SIMD3(0, -1, 0))
-            case .back:
-                // Rotated 180deg - flip both vectors
-                return (SIMD3(-1, 0, 0), SIMD3(0, -1, 0))
-            case .left:
-                // Horizontally mirrored - flip right vector
-                return (SIMD3(0, 0, 1), SIMD3(0, -1, 0))
-            case .right:
-                // Vertically mirrored - flip up vector
-                return (SIMD3(0, 0, -1), SIMD3(0, -1, 0))
+            case .top:    return (SIMD3(1, 0, 0), SIMD3(0, 1, 0))   // right × up = +Z
+            case .bottom: return (SIMD3(1, 0, 0), SIMD3(0, -1, 0))  // right × up = -Z
+            case .front:  return (SIMD3(1, 0, 0), SIMD3(0, 0, 1))   // right × up = -Y
+            case .back:   return (SIMD3(-1, 0, 0), SIMD3(0, 0, 1))  // right × up = +Y
+            case .left:   return (SIMD3(0, -1, 0), SIMD3(0, 0, 1))  // right × up = -X
+            case .right:  return (SIMD3(0, 1, 0), SIMD3(0, 0, 1))   // right × up = +X
+            }
+        }()
+
+        // Texture coordinate adjustments per face to correct text orientation
+        let (flipU, flipV): (Bool, Bool) = {
+            switch face {
+            case .top:    return (true, false)
+            case .bottom: return (true, false)
+            case .front:  return (false, true)
+            case .back:   return (false, true)
+            case .left:   return (false, true)
+            case .right:  return (false, true)
             }
         }()
 
         // Create quad vertices
-        let v0 = position - right * halfSize - up * halfSize
-        let v1 = position + right * halfSize - up * halfSize
-        let v2 = position + right * halfSize + up * halfSize
-        let v3 = position - right * halfSize + up * halfSize
+        let v0 = position - right * halfSize - up * halfSize  // bottom-left
+        let v1 = position + right * halfSize - up * halfSize  // bottom-right
+        let v2 = position + right * halfSize + up * halfSize  // top-right
+        let v3 = position - right * halfSize + up * halfSize  // top-left
 
         let color = SIMD4<Float>(1, 1, 1, 1)
         let normal = face.normal
 
+        // Calculate texture coordinates with flipping
+        let u0: Float = flipU ? 1 : 0
+        let u1: Float = flipU ? 0 : 1
+        let v0Val: Float = flipV ? 0 : 1
+        let v1Val: Float = flipV ? 1 : 0
+
         return [
             // Triangle 1
-            VertexIn(position: v0, normal: normal, color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: v1, normal: normal, color: color, texCoord: SIMD2(1, 1)),
-            VertexIn(position: v2, normal: normal, color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: v0, normal: normal, color: color, texCoord: SIMD2(u0, v0Val)),
+            VertexIn(position: v1, normal: normal, color: color, texCoord: SIMD2(u1, v0Val)),
+            VertexIn(position: v2, normal: normal, color: color, texCoord: SIMD2(u1, v1Val)),
             // Triangle 2
-            VertexIn(position: v0, normal: normal, color: color, texCoord: SIMD2(0, 1)),
-            VertexIn(position: v2, normal: normal, color: color, texCoord: SIMD2(1, 0)),
-            VertexIn(position: v3, normal: normal, color: color, texCoord: SIMD2(0, 0))
+            VertexIn(position: v0, normal: normal, color: color, texCoord: SIMD2(u0, v0Val)),
+            VertexIn(position: v2, normal: normal, color: color, texCoord: SIMD2(u1, v1Val)),
+            VertexIn(position: v3, normal: normal, color: color, texCoord: SIMD2(u0, v1Val))
         ]
     }
 
@@ -443,9 +451,9 @@ final class OrientationCubeData {
         let axisExtension: Float = 0.08  // How far axes extend beyond the cube
         let segments = 8
 
-        // Define axis endpoints - X and Y at front, Z going back
-        // Axes now extend beyond the cube edges
-        let origin = SIMD3<Float>(-s, -s, s)  // Front-left-bottom corner
+        // Define axis endpoints for Z-up coordinate system
+        // Axes meet at front-left-bottom corner and extend beyond cube edges
+        let origin = SIMD3<Float>(-s, -s, -s)  // Front-left-bottom corner (X-, Y-, Z-)
         struct AxisLine {
             let start: SIMD3<Float>
             let end: SIMD3<Float>
@@ -453,12 +461,12 @@ final class OrientationCubeData {
         }
 
         let axisLines = [
-            // X axis: horizontal line at bottom of front face (Red) - extends beyond cube
-            AxisLine(start: origin, end: SIMD3(s + axisExtension, -s, s), color: Axis.x.color),
-            // Y axis: vertical line at front-left corner (Green) - extends beyond cube
-            AxisLine(start: origin, end: SIMD3(-s, s + axisExtension, s), color: Axis.y.color),
-            // Z axis: line from front to back at bottom-left (Blue) - extends beyond cube
-            AxisLine(start: origin, end: SIMD3(-s, -s, -s - axisExtension), color: Axis.z.color)
+            // X axis: horizontal line to the right (Red)
+            AxisLine(start: origin, end: SIMD3(s + axisExtension, -s, -s), color: Axis.x.color),
+            // Y axis: horizontal line to the back (Green)
+            AxisLine(start: origin, end: SIMD3(-s, s + axisExtension, -s), color: Axis.y.color),
+            // Z axis: vertical line upward (Blue)
+            AxisLine(start: origin, end: SIMD3(-s, -s, s + axisExtension), color: Axis.z.color)
         ]
 
         var allVertices: [VertexIn] = []
@@ -602,18 +610,19 @@ final class OrientationCubeData {
                 continue
             }
 
-            // Position label at end of axis line (axes meet at front-left-bottom corner)
+            // Position label at end of axis line (Z-up coordinate system)
+            // Axes meet at front-left-bottom corner (-s, -s, -s)
             let position: SIMD3<Float> = {
                 switch axis {
                 case .x:
-                    // At right end of X axis (front-bottom edge)
-                    return SIMD3(s + labelOffset, -s, s)
+                    // At right end of X axis
+                    return SIMD3(s + labelOffset, -s, -s)
                 case .y:
-                    // At top end of Y axis (front-left edge)
-                    return SIMD3(-s, s + labelOffset, s)
+                    // At back end of Y axis
+                    return SIMD3(-s, s + labelOffset, -s)
                 case .z:
-                    // At back end of Z axis (back-left-bottom corner)
-                    return SIMD3(-s, -s, -s - labelOffset)
+                    // At top end of Z axis
+                    return SIMD3(-s, -s, s + labelOffset)
                 }
             }()
 
@@ -728,53 +737,53 @@ final class OrientationCubeData {
             let vertexOffset = textVertices.count
             textureData.append((texture: texture, vertexOffset: vertexOffset))
 
-            // Calculate position at bottom center of face
+            // Calculate position at bottom center of face (Z-up coordinate system)
             // Offset to position shortcuts in front of face labels (which are at 0.51)
             let (position, right, up): (SIMD3<Float>, SIMD3<Float>, SIMD3<Float>) = {
                 let faceOffset = offset
                 let cubeOffset: Float = 0.015  // Enough to be in front of face labels at 0.51
                 switch face {
                 case .top:
-                    // Top face - bottom center (fix mirrored + rotated 180°)
-                    return (
-                        SIMD3(0, size * 0.5 + cubeOffset, faceOffset),
-                        SIMD3(1, 0, 0),      // Keep right same
-                        SIMD3(0, 0, 1)       // Flip up for combined fix
-                    )
-                case .bottom:
-                    // Bottom face - bottom center (fix mirrored + rotated 180°)
-                    return (
-                        SIMD3(0, -size * 0.5 - cubeOffset, -faceOffset),
-                        SIMD3(1, 0, 0),      // Keep right same
-                        SIMD3(0, 0, -1)      // Flip up for combined fix
-                    )
-                case .front:
-                    // Front face - bottom center (fix mirroring)
+                    // Z+ face - shortcut at bottom (toward -Y)
                     return (
                         SIMD3(0, -faceOffset, size * 0.5 + cubeOffset),
-                        SIMD3(1, 0, 0),   // Flipped right vector to fix mirror
-                        SIMD3(0, -1, 0)
-                    )
-                case .back:
-                    // Back face - bottom center (fix mirroring)
-                    return (
-                        SIMD3(0, -faceOffset, -size * 0.5 - cubeOffset),
-                        SIMD3(-1, 0, 0),  // Flipped right vector to fix mirror
-                        SIMD3(0, -1, 0)
-                    )
-                case .left:
-                    // Left face - bottom center (already correct)
-                    return (
-                        SIMD3(-size * 0.5 - cubeOffset, -faceOffset, 0),
-                        SIMD3(0, 0, 1),
+                        SIMD3(1, 0, 0),
                         SIMD3(0, 1, 0)
                     )
-                case .right:
-                    // Right face - bottom center (fix 180° rotation)
+                case .bottom:
+                    // Z- face - shortcut at bottom
                     return (
-                        SIMD3(size * 0.5 + cubeOffset, -faceOffset, 0),
-                        SIMD3(0, 0, -1),  // Flipped for 180° rotation
-                        SIMD3(0, -1, 0)   // Flipped for 180° rotation
+                        SIMD3(0, faceOffset, -size * 0.5 - cubeOffset),
+                        SIMD3(1, 0, 0),
+                        SIMD3(0, -1, 0)
+                    )
+                case .front:
+                    // Y- face (toward viewer) - shortcut at bottom (low Z)
+                    return (
+                        SIMD3(0, -size * 0.5 - cubeOffset, -faceOffset),
+                        SIMD3(1, 0, 0),
+                        SIMD3(0, 0, 1)
+                    )
+                case .back:
+                    // Y+ face (away from viewer) - shortcut at bottom
+                    return (
+                        SIMD3(0, size * 0.5 + cubeOffset, -faceOffset),
+                        SIMD3(-1, 0, 0),
+                        SIMD3(0, 0, 1)
+                    )
+                case .left:
+                    // X- face - shortcut at bottom
+                    return (
+                        SIMD3(-size * 0.5 - cubeOffset, 0, -faceOffset),
+                        SIMD3(0, -1, 0),
+                        SIMD3(0, 0, 1)
+                    )
+                case .right:
+                    // X+ face - shortcut at bottom
+                    return (
+                        SIMD3(size * 0.5 + cubeOffset, 0, -faceOffset),
+                        SIMD3(0, 1, 0),
+                        SIMD3(0, 0, 1)
                     )
                 }
             }()

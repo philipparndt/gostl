@@ -11,7 +11,7 @@ final class GridData {
     let dimensionLinesBuffer: MTLBuffer?
     let dimensionLinesCount: Int
 
-    /// Grid bounds information for label rendering
+    /// Grid bounds information for label rendering (Z-up coordinate system)
     struct GridBounds {
         let minX: Float
         let maxX: Float
@@ -19,7 +19,7 @@ final class GridData {
         let maxY: Float
         let minZ: Float
         let maxZ: Float
-        let bottomY: Float
+        let bottomZ: Float  // Z coordinate of bottom grid plane
         let bboxMinX: Float
         let bboxMaxX: Float
         let bboxMinY: Float
@@ -36,12 +36,12 @@ final class GridData {
         self.mode = .bottom
         self.bounds = GridBounds(
             minX: -size/2, maxX: size/2,
-            minY: 0, maxY: size/2,
-            minZ: -size/2, maxZ: size/2,
-            bottomY: 0,
+            minY: -size/2, maxY: size/2,
+            minZ: 0, maxZ: size/2,
+            bottomZ: 0,
             bboxMinX: -size/2, bboxMaxX: size/2,
-            bboxMinY: 0, bboxMaxY: size/2,
-            bboxMinZ: -size/2, bboxMaxZ: size/2
+            bboxMinY: -size/2, bboxMaxY: size/2,
+            bboxMinZ: 0, bboxMaxZ: size/2
         )
         self.dimensionLinesBuffer = nil
         self.dimensionLinesCount = 0
@@ -89,7 +89,7 @@ final class GridData {
             minX: minX, maxX: maxX,
             minY: minY, maxY: maxY,
             minZ: minZ, maxZ: maxZ,
-            bottomY: Float(boundingBox.min.y),
+            bottomZ: Float(boundingBox.min.z),
             bboxMinX: Float(boundingBox.min.x),
             bboxMaxX: Float(boundingBox.max.x),
             bboxMinY: Float(boundingBox.min.y),
@@ -98,34 +98,34 @@ final class GridData {
             bboxMaxZ: Float(boundingBox.max.z)
         )
 
-        // Generate grid vertices based on mode
+        // Generate grid vertices based on mode (Z-up coordinate system)
         var vertices: [VertexIn] = []
-        let bottomY = Float(boundingBox.min.y)
+        let bottomZ = Float(boundingBox.min.z)
 
-        // Always draw bottom grid (XZ plane)
-        GridData.addXZPlane(
+        // Always draw bottom grid (XY plane at Z = bottomZ)
+        GridData.addXYPlaneBottom(
             &vertices,
             minX: minX, maxX: maxX,
-            minZ: minZ, maxZ: maxZ,
-            y: bottomY,
+            minY: minY, maxY: maxY,
+            z: bottomZ,
             spacing: spacing,
             mode: mode
         )
 
         // Add additional planes for allSides and oneMM modes
         if mode == .allSides || mode == .oneMM {
-            // Back wall (XY plane at min Z)
-            GridData.addXYPlane(
+            // Back wall (XZ plane at max Y)
+            GridData.addXZPlaneBack(
                 &vertices,
                 minX: minX, maxX: maxX,
-                minY: minY, maxY: maxY,
-                z: minZ,
+                minZ: minZ, maxZ: maxZ,
+                y: maxY,
                 spacing: spacing,
                 mode: mode
             )
 
             // Left wall (YZ plane at min X)
-            GridData.addYZPlane(
+            GridData.addYZPlaneLeft(
                 &vertices,
                 minY: minY, maxY: maxY,
                 minZ: minZ, maxZ: maxZ,
@@ -148,7 +148,7 @@ final class GridData {
         let dimensionVertices = GridData.createDimensionLines(
             bboxMin: SIMD3(Float(boundingBox.min.x), Float(boundingBox.min.y), Float(boundingBox.min.z)),
             bboxMax: SIMD3(Float(boundingBox.max.x), Float(boundingBox.max.y), Float(boundingBox.max.z)),
-            bottomY: bottomY
+            bottomZ: bottomZ
         )
         self.dimensionLinesCount = dimensionVertices.count
 
@@ -162,6 +162,7 @@ final class GridData {
 
     // MARK: - Grid Generation
 
+    /// Create simple grid on XY plane (Z-up coordinate system)
     private static func createSimpleGrid(size: Float, spacing: Float) -> [VertexIn] {
         var vertices: [VertexIn] = []
         let halfSize = size / 2.0
@@ -170,22 +171,24 @@ final class GridData {
         let majorColor = SIMD4<Float>(0.3, 0.3, 0.3, 1.0)
         let minorColor = SIMD4<Float>(0.2, 0.2, 0.2, 1.0)
 
+        // Lines parallel to X axis (running along Y)
         for i in -lineCount...lineCount {
-            let z = Float(i) * spacing
+            let y = Float(i) * spacing
             let isMajorLine = i % 5 == 0
             let color = isMajorLine ? majorColor : minorColor
 
-            vertices.append(VertexIn(position: SIMD3(-halfSize, 0, z), normal: SIMD3(0, 1, 0), color: color))
-            vertices.append(VertexIn(position: SIMD3(halfSize, 0, z), normal: SIMD3(0, 1, 0), color: color))
+            vertices.append(VertexIn(position: SIMD3(-halfSize, y, 0), normal: SIMD3(0, 0, 1), color: color))
+            vertices.append(VertexIn(position: SIMD3(halfSize, y, 0), normal: SIMD3(0, 0, 1), color: color))
         }
 
+        // Lines parallel to Y axis (running along X)
         for i in -lineCount...lineCount {
             let x = Float(i) * spacing
             let isMajorLine = i % 5 == 0
             let color = isMajorLine ? majorColor : minorColor
 
-            vertices.append(VertexIn(position: SIMD3(x, 0, -halfSize), normal: SIMD3(0, 1, 0), color: color))
-            vertices.append(VertexIn(position: SIMD3(x, 0, halfSize), normal: SIMD3(0, 1, 0), color: color))
+            vertices.append(VertexIn(position: SIMD3(x, -halfSize, 0), normal: SIMD3(0, 0, 1), color: color))
+            vertices.append(VertexIn(position: SIMD3(x, halfSize, 0), normal: SIMD3(0, 0, 1), color: color))
         }
 
         return vertices
@@ -224,34 +227,8 @@ final class GridData {
         return gridColor
     }
 
-    private static func addXZPlane(
-        _ vertices: inout [VertexIn],
-        minX: Float, maxX: Float,
-        minZ: Float, maxZ: Float,
-        y: Float,
-        spacing: Float,
-        mode: GridMode
-    ) {
-        // Lines parallel to X axis (running along Z)
-        var z = minZ
-        while z <= maxZ {
-            let color = getLineColor(value: z, spacing: spacing, mode: mode)
-            vertices.append(VertexIn(position: SIMD3(minX, y, z), normal: SIMD3(0, 1, 0), color: color))
-            vertices.append(VertexIn(position: SIMD3(maxX, y, z), normal: SIMD3(0, 1, 0), color: color))
-            z += spacing
-        }
-
-        // Lines parallel to Z axis (running along X)
-        var x = minX
-        while x <= maxX {
-            let color = getLineColor(value: x, spacing: spacing, mode: mode)
-            vertices.append(VertexIn(position: SIMD3(x, y, minZ), normal: SIMD3(0, 1, 0), color: color))
-            vertices.append(VertexIn(position: SIMD3(x, y, maxZ), normal: SIMD3(0, 1, 0), color: color))
-            x += spacing
-        }
-    }
-
-    private static func addXYPlane(
+    /// Bottom grid: XY plane at given Z (Z-up coordinate system)
+    private static func addXYPlaneBottom(
         _ vertices: inout [VertexIn],
         minX: Float, maxX: Float,
         minY: Float, maxY: Float,
@@ -278,7 +255,36 @@ final class GridData {
         }
     }
 
-    private static func addYZPlane(
+    /// Back wall: XZ plane at given Y (Z-up coordinate system)
+    private static func addXZPlaneBack(
+        _ vertices: inout [VertexIn],
+        minX: Float, maxX: Float,
+        minZ: Float, maxZ: Float,
+        y: Float,
+        spacing: Float,
+        mode: GridMode
+    ) {
+        // Lines parallel to X axis (running along Z)
+        var z = minZ
+        while z <= maxZ {
+            let color = getLineColor(value: z, spacing: spacing, mode: mode)
+            vertices.append(VertexIn(position: SIMD3(minX, y, z), normal: SIMD3(0, -1, 0), color: color))
+            vertices.append(VertexIn(position: SIMD3(maxX, y, z), normal: SIMD3(0, -1, 0), color: color))
+            z += spacing
+        }
+
+        // Lines parallel to Z axis (running along X)
+        var x = minX
+        while x <= maxX {
+            let color = getLineColor(value: x, spacing: spacing, mode: mode)
+            vertices.append(VertexIn(position: SIMD3(x, y, minZ), normal: SIMD3(0, -1, 0), color: color))
+            vertices.append(VertexIn(position: SIMD3(x, y, maxZ), normal: SIMD3(0, -1, 0), color: color))
+            x += spacing
+        }
+    }
+
+    /// Left wall: YZ plane at given X (Z-up coordinate system)
+    private static func addYZPlaneLeft(
         _ vertices: inout [VertexIn],
         minY: Float, maxY: Float,
         minZ: Float, maxZ: Float,
@@ -327,34 +333,35 @@ final class GridData {
         return bestSpacing
     }
 
+    /// Create dimension marker lines (Z-up coordinate system)
     private static func createDimensionLines(
         bboxMin: SIMD3<Float>,
         bboxMax: SIMD3<Float>,
-        bottomY: Float
+        bottomZ: Float
     ) -> [VertexIn] {
         var vertices: [VertexIn] = []
         let dimColor = SIMD4<Float>(255.0/255.0, 200.0/255.0, 100.0/255.0, 1.0) // Orange
         let markerSize: Float = 3.0
 
-        // X axis indicator - simple marker at max X
-        let xPos = SIMD3(bboxMax.x, bottomY, bboxMax.z + 2)
-        vertices.append(VertexIn(position: SIMD3(xPos.x, xPos.y - markerSize, xPos.z), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(xPos.x, xPos.y + markerSize, xPos.z), normal: SIMD3(0, 1, 0), color: dimColor))
+        // X axis indicator - simple marker at max X (front edge)
+        let xPos = SIMD3(bboxMax.x, bboxMin.y - 2, bottomZ)
+        vertices.append(VertexIn(position: SIMD3(xPos.x, xPos.y, xPos.z - markerSize), normal: SIMD3(0, 0, 1), color: dimColor))
+        vertices.append(VertexIn(position: SIMD3(xPos.x, xPos.y, xPos.z + markerSize), normal: SIMD3(0, 0, 1), color: dimColor))
 
-        // Z axis indicator - simple marker at max Z
-        let zPos = SIMD3(bboxMin.x - 2, bottomY, bboxMax.z)
-        vertices.append(VertexIn(position: SIMD3(zPos.x, zPos.y - markerSize, zPos.z), normal: SIMD3(0, 1, 0), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(zPos.x, zPos.y + markerSize, zPos.z), normal: SIMD3(0, 1, 0), color: dimColor))
+        // Y axis indicator - simple marker at max Y (left edge)
+        let yPos = SIMD3(bboxMin.x - 2, bboxMax.y, bottomZ)
+        vertices.append(VertexIn(position: SIMD3(yPos.x, yPos.y, yPos.z - markerSize), normal: SIMD3(0, 0, 1), color: dimColor))
+        vertices.append(VertexIn(position: SIMD3(yPos.x, yPos.y, yPos.z + markerSize), normal: SIMD3(0, 0, 1), color: dimColor))
 
-        // Y axis indicator - simple marker at max Y
-        let yPos = SIMD3(bboxMin.x - 2, bboxMax.y, bboxMin.z - 2)
-        vertices.append(VertexIn(position: SIMD3(yPos.x - markerSize, yPos.y, yPos.z), normal: SIMD3(0, 0, 1), color: dimColor))
-        vertices.append(VertexIn(position: SIMD3(yPos.x + markerSize, yPos.y, yPos.z), normal: SIMD3(0, 0, 1), color: dimColor))
+        // Z axis indicator - simple marker at max Z (vertical)
+        let zPos = SIMD3(bboxMin.x - 2, bboxMax.y + 2, bboxMax.z)
+        vertices.append(VertexIn(position: SIMD3(zPos.x - markerSize, zPos.y, zPos.z), normal: SIMD3(0, -1, 0), color: dimColor))
+        vertices.append(VertexIn(position: SIMD3(zPos.x + markerSize, zPos.y, zPos.z), normal: SIMD3(0, -1, 0), color: dimColor))
 
         return vertices
     }
 
-    /// Generate grid label data for text rendering
+    /// Generate grid label data for text rendering (Z-up coordinate system)
     func generateGridLabels() -> [(text: String, position: SIMD3<Float>, color: SIMD4<Float>, size: Float, orientation: TextOrientation)] {
         var labels: [(String, SIMD3<Float>, SIMD4<Float>, Float, TextOrientation)] = []
         let labelColor = SIMD4<Float>(200.0/255.0, 200.0/255.0, 200.0/255.0, 1.0) // White
@@ -363,43 +370,43 @@ final class GridData {
         // Always show labels at fixed 10-unit intervals
         let labelSpacing: Float = 10.0
 
-        // X labels along bottom edge (front)
+        // X labels along front edge (at minY)
         var x = ceil(bounds.minX / labelSpacing) * labelSpacing
         while x <= bounds.maxX {
             let text = String(format: "%.0f", x)
-            let pos = SIMD3(x, bounds.bottomY, bounds.maxZ + 2)
+            let pos = SIMD3(x, bounds.minY - 2, bounds.bottomZ)
             labels.append((text, pos, labelColor, labelSize, .horizontal))
             x += labelSpacing
         }
 
-        // Z labels along bottom edge (skip 0)
-        var z = ceil(bounds.minZ / labelSpacing) * labelSpacing
-        while z <= bounds.maxZ {
-            if abs(z) > 0.001 {
-                let text = String(format: "%.0f", z)
-                let pos = SIMD3(bounds.minX - 2, bounds.bottomY, z)
+        // Y labels along left edge (skip 0)
+        var y = ceil(bounds.minY / labelSpacing) * labelSpacing
+        while y <= bounds.maxY {
+            if abs(y) > 0.001 {
+                let text = String(format: "%.0f", y)
+                let pos = SIMD3(bounds.minX - 2, y, bounds.bottomZ)
                 labels.append((text, pos, labelColor, labelSize, .horizontal))
             }
-            z += labelSpacing
+            y += labelSpacing
         }
 
-        // Y labels (only in allSides and oneMM modes, skip 0)
+        // Z labels (vertical, only in allSides and oneMM modes, skip 0)
         if mode == .allSides || mode == .oneMM {
-            var y = ceil(bounds.minY / labelSpacing) * labelSpacing
-            while y <= bounds.maxY {
-                if abs(y) > 0.001 {
-                    let text = String(format: "%.0f", y)
-                    let pos = SIMD3(bounds.minX - 2, y, bounds.minZ - 2)
-                    labels.append((text, pos, labelColor, labelSize, .verticalXY))
+            var z = ceil(bounds.minZ / labelSpacing) * labelSpacing
+            while z <= bounds.maxZ {
+                if abs(z) > 0.001 {
+                    let text = String(format: "%.0f", z)
+                    let pos = SIMD3(bounds.minX - 2, bounds.maxY + 2, z)
+                    labels.append((text, pos, labelColor, labelSize, .verticalYZ))
                 }
-                y += labelSpacing
+                z += labelSpacing
             }
         }
 
         return labels
     }
 
-    /// Generate dimension label data for text rendering
+    /// Generate dimension label data for text rendering (Z-up coordinate system)
     func generateDimensionLabels() -> [(text: String, position: SIMD3<Float>, color: SIMD4<Float>, size: Float, orientation: TextOrientation)] {
         var labels: [(String, SIMD3<Float>, SIMD4<Float>, Float, TextOrientation)] = []
         let dimColor = SIMD4<Float>(255.0/255.0, 200.0/255.0, 100.0/255.0, 1.0) // Orange
@@ -409,17 +416,17 @@ final class GridData {
         let sizeY = bounds.bboxMaxY - bounds.bboxMinY
         let sizeZ = bounds.bboxMaxZ - bounds.bboxMinZ
 
-        // X dimension label - positioned near the X marker
+        // X dimension label - positioned near the X marker (front edge)
         let xText = String(format: "X: %.1f mm", sizeX)
-        labels.append((xText, SIMD3(bounds.bboxMaxX, bounds.bottomY, bounds.bboxMaxZ + 2), dimColor, labelSize, .horizontal))
+        labels.append((xText, SIMD3(bounds.bboxMaxX, bounds.bboxMinY - 2, bounds.bottomZ), dimColor, labelSize, .horizontal))
 
-        // Z dimension label - positioned near the Z marker
-        let zText = String(format: "Z: %.1f mm", sizeZ)
-        labels.append((zText, SIMD3(bounds.bboxMinX - 2, bounds.bottomY, bounds.bboxMaxZ), dimColor, labelSize, .horizontal))
-
-        // Y dimension label - positioned near the Y marker, offset up by label height
+        // Y dimension label - positioned near the Y marker (left edge)
         let yText = String(format: "Y: %.1f mm", sizeY)
-        labels.append((yText, SIMD3(bounds.bboxMinX - 2, bounds.bboxMaxY + labelSize * 0.6, bounds.bboxMinZ - 2), dimColor, labelSize, .verticalXY))
+        labels.append((yText, SIMD3(bounds.bboxMinX - 2, bounds.bboxMaxY, bounds.bottomZ), dimColor, labelSize, .horizontal))
+
+        // Z dimension label - positioned near the Z marker (vertical)
+        let zText = String(format: "Z: %.1f mm", sizeZ)
+        labels.append((zText, SIMD3(bounds.bboxMinX - 2, bounds.bboxMaxY + 2, bounds.bboxMaxZ + labelSize * 0.6), dimColor, labelSize, .verticalYZ))
 
         return labels
     }
