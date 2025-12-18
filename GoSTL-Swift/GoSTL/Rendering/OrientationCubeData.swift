@@ -47,14 +47,8 @@ enum CubeFace: Int, CaseIterable {
     }
 
     var hoverColor: SIMD4<Float> {
-        // Brighter version of base color
-        let base = baseColor
-        return SIMD4(
-            min(base.x * 1.5, 1.0),
-            min(base.y * 1.5, 1.0),
-            min(base.z * 1.5, 1.0),
-            base.w
-        )
+        // Distinct blue-tinted highlight for visibility
+        return SIMD4(0.3, 0.5, 0.7, 1.0)
     }
 
     var cameraPreset: CameraPreset {

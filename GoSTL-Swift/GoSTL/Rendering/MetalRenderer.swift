@@ -1037,18 +1037,24 @@ final class MetalRenderer {
             vertices.append(VertexIn(position: v3, normal: normal, color: color))
         }
 
-        // Generate all faces with appropriate colors
-        addQuad(v0: SIMD3(-s, s, -s), v1: SIMD3(s, s, -s), v2: SIMD3(s, s, s), v3: SIMD3(-s, s, s),
-                normal: CubeFace.top.normal, face: .top)
-        addQuad(v0: SIMD3(-s, -s, s), v1: SIMD3(s, -s, s), v2: SIMD3(s, -s, -s), v3: SIMD3(-s, -s, -s),
-                normal: CubeFace.bottom.normal, face: .bottom)
+        // Generate all faces with appropriate colors (Z-up coordinate system)
+        // Top face (Z+)
         addQuad(v0: SIMD3(-s, -s, s), v1: SIMD3(s, -s, s), v2: SIMD3(s, s, s), v3: SIMD3(-s, s, s),
+                normal: CubeFace.top.normal, face: .top)
+        // Bottom face (Z-)
+        addQuad(v0: SIMD3(-s, s, -s), v1: SIMD3(s, s, -s), v2: SIMD3(s, -s, -s), v3: SIMD3(-s, -s, -s),
+                normal: CubeFace.bottom.normal, face: .bottom)
+        // Front face (Y-)
+        addQuad(v0: SIMD3(-s, -s, -s), v1: SIMD3(s, -s, -s), v2: SIMD3(s, -s, s), v3: SIMD3(-s, -s, s),
                 normal: CubeFace.front.normal, face: .front)
-        addQuad(v0: SIMD3(s, -s, -s), v1: SIMD3(-s, -s, -s), v2: SIMD3(-s, s, -s), v3: SIMD3(s, s, -s),
+        // Back face (Y+)
+        addQuad(v0: SIMD3(s, s, -s), v1: SIMD3(-s, s, -s), v2: SIMD3(-s, s, s), v3: SIMD3(s, s, s),
                 normal: CubeFace.back.normal, face: .back)
-        addQuad(v0: SIMD3(-s, -s, -s), v1: SIMD3(-s, -s, s), v2: SIMD3(-s, s, s), v3: SIMD3(-s, s, -s),
+        // Left face (X-)
+        addQuad(v0: SIMD3(-s, s, -s), v1: SIMD3(-s, -s, -s), v2: SIMD3(-s, -s, s), v3: SIMD3(-s, s, s),
                 normal: CubeFace.left.normal, face: .left)
-        addQuad(v0: SIMD3(s, -s, s), v1: SIMD3(s, -s, -s), v2: SIMD3(s, s, -s), v3: SIMD3(s, s, s),
+        // Right face (X+)
+        addQuad(v0: SIMD3(s, -s, -s), v1: SIMD3(s, s, -s), v2: SIMD3(s, s, s), v3: SIMD3(s, -s, s),
                 normal: CubeFace.right.normal, face: .right)
 
         return vertices
