@@ -744,16 +744,16 @@ final class OrientationCubeData {
                 let cubeOffset: Float = 0.015  // Enough to be in front of face labels at 0.51
                 switch face {
                 case .top:
-                    // Z+ face - shortcut at bottom (toward -Y)
+                    // Z+ face - shortcut below label (toward +Y)
                     return (
-                        SIMD3(0, -faceOffset, size * 0.5 + cubeOffset),
+                        SIMD3(0, faceOffset, size * 0.5 + cubeOffset),
                         SIMD3(1, 0, 0),
                         SIMD3(0, 1, 0)
                     )
                 case .bottom:
-                    // Z- face - shortcut at bottom
+                    // Z- face - shortcut below label (toward -Y)
                     return (
-                        SIMD3(0, faceOffset, -size * 0.5 - cubeOffset),
+                        SIMD3(0, -faceOffset, -size * 0.5 - cubeOffset),
                         SIMD3(1, 0, 0),
                         SIMD3(0, -1, 0)
                     )
@@ -790,6 +790,23 @@ final class OrientationCubeData {
 
             let whiteColor = SIMD4<Float>(1, 1, 1, 1)
 
+            // Texture coordinate adjustments per face to correct text orientation
+            let (flipU, flipV): (Bool, Bool) = {
+                switch face {
+                case .top:    return (true, false)
+                case .bottom: return (true, false)
+                case .front:  return (false, true)
+                case .back:   return (false, true)
+                case .left:   return (false, true)
+                case .right:  return (false, true)
+                }
+            }()
+
+            let u0: Float = flipU ? 1 : 0
+            let u1: Float = flipU ? 0 : 1
+            let v0Val: Float = flipV ? 0 : 1
+            let v1Val: Float = flipV ? 1 : 0
+
             // Create background quad - portrait orientation (taller than wide) for single digit shortcuts
             let bgHalfWidth = shortcutSize / 3.0 + backgroundPadding  // Narrower
             let bgHalfHeight = shortcutSize / 2.2 + backgroundPadding  // Slightly reduced height
@@ -798,29 +815,29 @@ final class OrientationCubeData {
             let bgV2 = position + right * bgHalfWidth + up * bgHalfHeight
             let bgV3 = position - right * bgHalfWidth + up * bgHalfHeight
             backgroundVertices.append(contentsOf: [
-                VertexIn(position: bgV0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),  // bottom-left
-                VertexIn(position: bgV1, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 1)),  // bottom-right
-                VertexIn(position: bgV2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),  // top-right
-                VertexIn(position: bgV0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),  // bottom-left
-                VertexIn(position: bgV2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),  // top-right
-                VertexIn(position: bgV3, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 0))   // top-left
+                VertexIn(position: bgV0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),
+                VertexIn(position: bgV1, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 1)),
+                VertexIn(position: bgV2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),
+                VertexIn(position: bgV0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),
+                VertexIn(position: bgV2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),
+                VertexIn(position: bgV3, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 0))
             ])
 
             // Create text quad - same portrait orientation as background
             let halfWidth = shortcutSize / 3.0  // Narrower
             let halfHeight = shortcutSize / 2.2  // Slightly reduced height
-            let v0 = position - right * halfWidth - up * halfHeight + face.normal * depthOffset
-            let v1 = position + right * halfWidth - up * halfHeight + face.normal * depthOffset
-            let v2 = position + right * halfWidth + up * halfHeight + face.normal * depthOffset
-            let v3 = position - right * halfWidth + up * halfHeight + face.normal * depthOffset
+            let tV0 = position - right * halfWidth - up * halfHeight + face.normal * depthOffset
+            let tV1 = position + right * halfWidth - up * halfHeight + face.normal * depthOffset
+            let tV2 = position + right * halfWidth + up * halfHeight + face.normal * depthOffset
+            let tV3 = position - right * halfWidth + up * halfHeight + face.normal * depthOffset
 
             textVertices.append(contentsOf: [
-                VertexIn(position: v0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),  // bottom-left
-                VertexIn(position: v1, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 1)),  // bottom-right
-                VertexIn(position: v2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),  // top-right
-                VertexIn(position: v0, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 1)),  // bottom-left
-                VertexIn(position: v2, normal: face.normal, color: whiteColor, texCoord: SIMD2(1, 0)),  // top-right
-                VertexIn(position: v3, normal: face.normal, color: whiteColor, texCoord: SIMD2(0, 0))   // top-left
+                VertexIn(position: tV0, normal: face.normal, color: whiteColor, texCoord: SIMD2(u0, v0Val)),
+                VertexIn(position: tV1, normal: face.normal, color: whiteColor, texCoord: SIMD2(u1, v0Val)),
+                VertexIn(position: tV2, normal: face.normal, color: whiteColor, texCoord: SIMD2(u1, v1Val)),
+                VertexIn(position: tV0, normal: face.normal, color: whiteColor, texCoord: SIMD2(u0, v0Val)),
+                VertexIn(position: tV2, normal: face.normal, color: whiteColor, texCoord: SIMD2(u1, v1Val)),
+                VertexIn(position: tV3, normal: face.normal, color: whiteColor, texCoord: SIMD2(u0, v1Val))
             ])
         }
 
