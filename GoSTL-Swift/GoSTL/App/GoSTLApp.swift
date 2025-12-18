@@ -36,6 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         configureAllWindows()
 
         // Observe window changes to reapply title bar configuration
+        // Only observe window focus changes, not resize/update which can cause loops
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(windowDidChange),
@@ -48,32 +49,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWindow.didBecomeKeyNotification,
             object: nil
         )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(windowDidChange),
-            name: NSWindow.didResizeNotification,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(windowDidChange),
-            name: NSWindow.didUpdateNotification,
-            object: nil
-        )
     }
 
     @objc private func windowDidChange(_ notification: Notification) {
-        // Apply immediately and again after a short delay to catch post-animation state
         configureAllWindows()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
-            configureAllWindows()
+    }
+
+    /// Handle files opened from Finder (double-click, Open With, drag to dock icon)
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            let ext = url.pathExtension.lowercased()
+            guard ["stl", "3mf", "scad", "yaml", "yml"].contains(ext) else { continue }
+
+            // Post notification to load the file
+            NotificationCenter.default.post(
+                name: NSNotification.Name("LoadSTLFile"),
+                object: url
+            )
         }
     }
 
     private func configureAllWindows() {
-        for window in NSApp.windows where window.tabbingIdentifier == "GoSTLWindow" || window.className.contains("NSWindow") {
-            window.titlebarSeparatorStyle = .none
-            window.titlebarAppearsTransparent = true
+        // Only configure our app windows, not system panels (NSOpenPanel, NSSavePanel, etc.)
+        for window in NSApp.windows where window.tabbingIdentifier == "GoSTLWindow" {
+            // Only modify if needed to avoid triggering additional notifications
+            if window.titlebarSeparatorStyle != .none {
+                window.titlebarSeparatorStyle = .none
+            }
+            if !window.titlebarAppearsTransparent {
+                window.titlebarAppearsTransparent = true
+            }
             if !window.styleMask.contains(.fullSizeContentView) {
                 window.styleMask.insert(.fullSizeContentView)
             }
@@ -103,11 +108,6 @@ struct GoSTLApp: App {
         .windowToolbarStyle(.unified)
         .defaultSize(width: 1400, height: 900)
         .defaultPosition(.center)
-        .onChange(of: NSApp.windows) { _, _ in
-            // Save window state and reapply window configuration when windows change
-            saveCurrentWindowState()
-            configureWindowForTabbing()
-        }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Tab") {
@@ -431,10 +431,10 @@ struct GoSTLApp: App {
             guard response == .OK, let url = panel.url else { return }
 
             // Add to recent documents
-            recentDocuments.addDocument(url)
+            RecentDocuments.shared.addDocument(url)
 
             // Create new window for this file
-            openNewWindow(for: url)
+            self.openNewWindow(for: url)
         }
     }
 
@@ -517,7 +517,7 @@ struct GoSTLApp: App {
     private func openRecentFile(_ url: URL) {
         // Check if file still exists
         guard FileManager.default.fileExists(atPath: url.path) else {
-            recentDocuments.removeDocument(url)
+            RecentDocuments.shared.removeDocument(url)
             print("ERROR: File no longer exists: \(url.path)")
             return
         }
@@ -602,13 +602,18 @@ struct GoSTLApp: App {
 
     private func configureWindowForTabbing() {
         DispatchQueue.main.async {
-            // Configure all windows to support tabbing and title bar appearance
-            for window in NSApp.windows {
-                window.tabbingMode = .preferred
-                window.tabbingIdentifier = "GoSTLWindow"
-                window.titlebarSeparatorStyle = .none
-                window.titlebarAppearsTransparent = true
-                // Add fullSizeContentView if not already present
+            // Configure only our app windows, not system panels (NSOpenPanel, NSSavePanel, etc.)
+            for window in NSApp.windows where window.tabbingIdentifier == "GoSTLWindow" {
+                // Only modify if needed to avoid triggering additional notifications
+                if window.tabbingMode != .preferred {
+                    window.tabbingMode = .preferred
+                }
+                if window.titlebarSeparatorStyle != .none {
+                    window.titlebarSeparatorStyle = .none
+                }
+                if !window.titlebarAppearsTransparent {
+                    window.titlebarAppearsTransparent = true
+                }
                 if !window.styleMask.contains(.fullSizeContentView) {
                     window.styleMask.insert(.fullSizeContentView)
                 }

@@ -166,32 +166,6 @@ struct ContentView: View {
                 setupInitialState(loadTestCube: true)
             }
         }
-        .onOpenURL { url in
-            // Handle files opened via Finder (double-click, Open With, etc.)
-            let ext = url.pathExtension.lowercased()
-            guard ["stl", "3mf", "scad", "yaml", "yml"].contains(ext) else { return }
-
-            guard let device = MTLCreateSystemDefaultDevice() else { return }
-
-            appState.isLoading = true
-            Task { @MainActor in
-                do {
-                    try appState.loadFile(url, device: device)
-                    windowTitle = url.lastPathComponent
-
-                    if let window = NSApp.keyWindow {
-                        window.representedURL = url
-                        window.title = url.lastPathComponent
-                    }
-
-                    RecentDocuments.shared.addDocument(url)
-                    try? appState.setupFileWatcher()
-                } catch {
-                    print("ERROR: Failed to load file: \(error)")
-                    appState.isLoading = false
-                }
-            }
-        }
         .onChange(of: appState.slicingState.bounds) { _, _ in
             updateSlicedMesh()
         }
@@ -302,8 +276,38 @@ struct ContentView: View {
     }
 
     private func setupNotifications() {
-        // Set up menu command notifications (reload, etc.)
-        // File loading is handled via onOpenURL modifier
+        // Handle LoadSTLFile notification from menu File > Open when loading into existing empty window
+        let appStateRef = appState
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("LoadSTLFile"),
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let url = notification.object as? URL,
+                  let device = MTLCreateSystemDefaultDevice() else { return }
+
+            appStateRef.isLoading = true
+            Task { @MainActor in
+                do {
+                    try appStateRef.loadFile(url, device: device)
+
+                    // Update window title and representedURL
+                    if let window = NSApp.keyWindow {
+                        window.title = url.lastPathComponent
+                        window.representedURL = url
+                    }
+
+                    // Add to recent documents
+                    RecentDocuments.shared.addDocument(url)
+
+                    // Set up file watching for auto-reload
+                    try? appStateRef.setupFileWatcher()
+                } catch {
+                    print("ERROR: Failed to load file: \(error)")
+                    appStateRef.isLoading = false
+                }
+            }
+        }
     }
 
     private func reloadModel() {

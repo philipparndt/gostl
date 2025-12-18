@@ -49,7 +49,8 @@ enum WireframeMode: Int, CaseIterable {
 
 @Observable
 final class AppState: @unchecked Sendable {
-    /// Notification observer tokens for cleanup
+    /// Notification observer tokens for cleanup (not observed by SwiftUI)
+    @ObservationIgnored
     private var notificationObservers: [Any] = []
 
     /// Clear color for the background (dark blue matching Go version: RGB 15, 18, 25)
