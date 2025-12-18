@@ -1,22 +1,33 @@
 import Foundation
 
-/// Watches files for changes and triggers callbacks with debouncing
+/// File metadata used to detect changes (modification time + size)
+private struct FileFingerprint: Equatable {
+    let modificationDate: Date
+    let size: UInt64
+
+    init?(url: URL) {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let modDate = attrs[.modificationDate] as? Date,
+              let fileSize = attrs[.size] as? UInt64 else {
+            return nil
+        }
+        self.modificationDate = modDate
+        self.size = fileSize
+    }
+}
+
+/// Watches files for changes using file system metadata to detect actual changes
 class FileWatcher {
     private var sources: [DispatchSourceFileSystemObject] = []
     private var fileDescriptors: [Int32] = []
-    private let debounceInterval: TimeInterval
     private let queue = DispatchQueue(label: "com.gostl.filewatcher")
-    private var debounceTimers: [String: DispatchWorkItem] = [:]
     private var callback: ((URL) -> Void)?
+    private var fileFingerprints: [String: FileFingerprint] = [:]
 
     /// Whether the watcher is paused (ignores events)
     var isPaused: Bool = false
 
-    /// Initialize a file watcher with debounce interval
-    /// - Parameter debounceInterval: Time to wait before triggering callback (in seconds)
-    init(debounceInterval: TimeInterval = 0.5) {
-        self.debounceInterval = debounceInterval
-    }
+    init() {}
 
     /// Start watching files for changes
     /// - Parameters:
@@ -28,6 +39,13 @@ class FileWatcher {
         stop()
 
         self.callback = callback
+
+        // Store initial fingerprints
+        for fileURL in files {
+            if let fingerprint = FileFingerprint(url: fileURL) {
+                fileFingerprints[fileURL.path] = fingerprint
+            }
+        }
 
         for fileURL in files {
             let path = fileURL.path
@@ -42,14 +60,22 @@ class FileWatcher {
             fileDescriptors.append(fd)
 
             // Create dispatch source to monitor file changes
+            // Include .delete and .rename to handle atomic save (editors save to temp then rename)
             let source = DispatchSource.makeFileSystemObjectSource(
                 fileDescriptor: fd,
-                eventMask: [.write, .extend, .attrib],
+                eventMask: [.write, .extend, .attrib, .delete, .rename],
                 queue: queue
             )
 
             source.setEventHandler { [weak self] in
-                self?.handleFileChange(fileURL: fileURL)
+                guard let self = self else { return }
+                let event = source.data
+                // If file was deleted or renamed (atomic save), re-establish watch
+                if event.contains(.delete) || event.contains(.rename) {
+                    self.handleFileReplaced(fileURL: fileURL, oldSource: source, oldFd: fd)
+                } else {
+                    self.handleFileChange(fileURL: fileURL)
+                }
             }
 
             source.setCancelHandler {
@@ -66,7 +92,67 @@ class FileWatcher {
         }
     }
 
-    /// Handle file change event with debouncing
+    /// Handle file being replaced (atomic save: delete/rename)
+    /// Re-establishes the watch on the new file
+    private func handleFileReplaced(fileURL: URL, oldSource: DispatchSourceFileSystemObject, oldFd: Int32) {
+        // Cancel old source (this will close the old fd via setCancelHandler)
+        oldSource.cancel()
+
+        // Remove old source and fd from tracking
+        if let sourceIndex = sources.firstIndex(where: { $0 === oldSource }) {
+            sources.remove(at: sourceIndex)
+        }
+        if let fdIndex = fileDescriptors.firstIndex(of: oldFd) {
+            fileDescriptors.remove(at: fdIndex)
+        }
+
+        // Wait briefly for the editor to complete the atomic rename
+        queue.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+
+            let path = fileURL.path
+
+            // Re-open file descriptor for the new file
+            let newFd = open(path, O_EVTONLY)
+            guard newFd >= 0 else {
+                print("ERROR: Failed to re-open file for watching after replace: \(path)")
+                // Still trigger the callback since the file did change
+                self.handleFileChange(fileURL: fileURL)
+                return
+            }
+
+            self.fileDescriptors.append(newFd)
+
+            // Create new dispatch source
+            let newSource = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: newFd,
+                eventMask: [.write, .extend, .attrib, .delete, .rename],
+                queue: self.queue
+            )
+
+            newSource.setEventHandler { [weak self] in
+                guard let self = self else { return }
+                let event = newSource.data
+                if event.contains(.delete) || event.contains(.rename) {
+                    self.handleFileReplaced(fileURL: fileURL, oldSource: newSource, oldFd: newFd)
+                } else {
+                    self.handleFileChange(fileURL: fileURL)
+                }
+            }
+
+            newSource.setCancelHandler {
+                close(newFd)
+            }
+
+            newSource.resume()
+            self.sources.append(newSource)
+
+            // Trigger the change callback (fingerprint comparison happens there)
+            self.handleFileChange(fileURL: fileURL)
+        }
+    }
+
+    /// Handle file change event - only triggers callback if file metadata changed
     private func handleFileChange(fileURL: URL) {
         // Ignore events while paused
         if isPaused {
@@ -75,33 +161,23 @@ class FileWatcher {
 
         let path = fileURL.path
 
-        // Cancel existing timer for this file if any
-        if let existingTimer = debounceTimers[path] {
-            existingTimer.cancel()
-            debounceTimers[path] = nil
+        // Get new fingerprint
+        guard let newFingerprint = FileFingerprint(url: fileURL) else {
+            print("Could not read file metadata: \(fileURL.lastPathComponent)")
+            return
         }
 
-        // Create new debounced callback
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-
-            // Remove from timers dict
-            self.debounceTimers[path] = nil
-
-            // Check pause state at execution time
-            guard !self.isPaused else {
-                print("File changed but watcher is paused: \(fileURL.lastPathComponent)")
-                return
-            }
-
-            print("File changed: \(fileURL.lastPathComponent)")
-            self.callback?(fileURL)
+        // Check if fingerprint changed
+        let oldFingerprint = fileFingerprints[path]
+        if oldFingerprint == newFingerprint {
+            return
         }
 
-        debounceTimers[path] = workItem
+        // Update stored fingerprint
+        fileFingerprints[path] = newFingerprint
 
-        // Schedule callback after debounce interval
-        queue.asyncAfter(deadline: .now() + debounceInterval, execute: workItem)
+        print("File changed: \(fileURL.lastPathComponent)")
+        callback?(fileURL)
     }
 
     /// Stop watching all files
@@ -112,12 +188,7 @@ class FileWatcher {
         }
         sources.removeAll()
         fileDescriptors.removeAll()
-
-        // Cancel all pending timers
-        for (_, timer) in debounceTimers {
-            timer.cancel()
-        }
-        debounceTimers.removeAll()
+        fileFingerprints.removeAll()
     }
 
     deinit {

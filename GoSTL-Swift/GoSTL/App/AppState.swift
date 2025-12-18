@@ -166,7 +166,6 @@ final class AppState: @unchecked Sendable {
     var isLoading: Bool = false
     var loadError: Error?
     var loadErrorID: UUID?
-    private var lastReloadTime: Date?
 
     /// Whether the current file is empty (produces no geometry)
     var isEmptyFile: Bool = false
@@ -1104,7 +1103,7 @@ final class AppState: @unchecked Sendable {
             return
         }
 
-        let watcher = FileWatcher(debounceInterval: 1.0)
+        let watcher = FileWatcher()
         var filesToWatch: [URL] = []
 
         if isGo3mf {
@@ -1147,19 +1146,6 @@ final class AppState: @unchecked Sendable {
         // If already loading, skip - the file watcher will trigger again if needed
         if isLoading {
             print("Reload requested but already loading - skipping")
-            return
-        }
-
-        // Cooldown period after last reload to prevent rapid re-triggers
-        if let lastReload = lastReloadTime, Date().timeIntervalSince(lastReload) < 1.0 {
-            let remainingCooldown = 1.0 - Date().timeIntervalSince(lastReload)
-            print("Reload delayed - cooldown period (\(String(format: "%.1f", remainingCooldown))s remaining)")
-            // Schedule a retry after remaining cooldown
-            DispatchQueue.main.asyncAfter(deadline: .now() + remainingCooldown + 0.1) { [weak self] in
-                guard let self = self else { return }
-                print("Cooldown expired, triggering reload...")
-                self.reloadRequestId += 1  // This will trigger the onChange observer
-            }
             return
         }
 
@@ -1251,7 +1237,6 @@ final class AppState: @unchecked Sendable {
                         self.isLoading = false
                         self.loadError = nil
                         self.loadErrorID = nil
-                        self.lastReloadTime = Date()
 
                         // Resume file watcher
                         self.fileWatcher?.isPaused = false
