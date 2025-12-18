@@ -19,6 +19,7 @@ Feature: Keyboard Shortcuts
       | Cmd+O        | the file open dialog opens       |
       | Cmd+S        | the model is saved (if modified) |
       | Cmd+Shift+S  | the save as dialog opens         |
+      | Cmd+R        | the current file is reloaded     |
 
   @camera
   Scenario Outline: Camera preset shortcuts
@@ -33,8 +34,8 @@ Feature: Keyboard Shortcuts
       | Cmd+4    | right view          |
       | Cmd+5    | top view            |
       | Cmd+6    | bottom view         |
+      | Cmd+0    | reset view          |
       | 7        | home/isometric view |
-      | Cmd+R    | reset view          |
       | F        | frame model in view |
 
   @view

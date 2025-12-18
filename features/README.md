@@ -114,13 +114,14 @@ Features use tags for categorization:
 | Cmd+O | Open file |
 | Cmd+S | Save file (if modified) |
 | Cmd+Shift+S | Save As... |
+| Cmd+R | Reload current file |
 
 ### Camera
 | Shortcut | Action |
 |----------|--------|
 | Cmd+1-6 | Front/Back/Left/Right/Top/Bottom view |
+| Cmd+0 | Reset view |
 | 7 | Home/isometric view |
-| Cmd+R | Reset view |
 | F | Frame model |
 | ESC | Reset view (when nothing else active) |
 

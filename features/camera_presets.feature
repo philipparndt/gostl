@@ -47,9 +47,9 @@ Feature: Camera Presets
     Then the camera should move to the default isometric view
     And the model should be visible from an angled perspective
 
-  Scenario: Reset view with Cmd+R
+  Scenario: Reset view with Cmd+0
     Given I have rotated and zoomed the camera
-    When I press Cmd+R
+    When I press Cmd+0
     Then the camera should return to the default position
     And the model should be framed in view
 

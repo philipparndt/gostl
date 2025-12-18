@@ -278,6 +278,14 @@ final class AppState: @unchecked Sendable {
             self?.camera.reset()
         }
 
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ReloadModel"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reloadRequestId += 1
+        }
+
         // Tools menu notifications
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("StartMeasurement"),

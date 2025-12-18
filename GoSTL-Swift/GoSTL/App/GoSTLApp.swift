@@ -5,6 +5,10 @@ import AppKit
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var commandLineFileURL: URL?
+    /// URLs opened via Finder before ContentView was ready
+    static var pendingOpenURLs: [URL] = []
+    /// Whether the main window is ready to receive file open notifications
+    static var isReadyForFiles: Bool = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Parse command line arguments before windows are created
@@ -12,7 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if arg.hasPrefix("-") { continue }
             let url = URL(fileURLWithPath: arg)
             let ext = url.pathExtension.lowercased()
-            if (ext == "stl" || ext == "scad") && FileManager.default.fileExists(atPath: url.path) {
+            if ["stl", "3mf", "scad", "yaml", "yml"].contains(ext) && FileManager.default.fileExists(atPath: url.path) {
                 AppDelegate.commandLineFileURL = url
                 break
             }
@@ -60,6 +64,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWindow.didUpdateNotification,
             object: nil
         )
+    }
+
+    /// Handle files opened via Finder (double-click, "Open With", file associations)
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            let ext = url.pathExtension.lowercased()
+            guard ["stl", "3mf", "scad", "yaml", "yml"].contains(ext) else { continue }
+
+            if AppDelegate.isReadyForFiles {
+                // ContentView is ready, post notification immediately
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("LoadSTLFile"),
+                    object: url
+                )
+            } else {
+                // ContentView not ready yet, queue for later
+                AppDelegate.pendingOpenURLs.append(url)
+            }
+        }
+    }
+
+    /// Called by ContentView when it's ready to receive files
+    static func markReadyForFiles() {
+        isReadyForFiles = true
+        // Process any pending URLs
+        for url in pendingOpenURLs {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("LoadSTLFile"),
+                object: url
+            )
+        }
+        pendingOpenURLs.removeAll()
     }
 
     @objc private func windowDidChange(_ notification: Notification) {
@@ -152,6 +188,14 @@ struct GoSTLApp: App {
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
                 .disabled(appState?.model == nil)
+
+                Divider()
+
+                Button("Reload") {
+                    NotificationCenter.default.post(name: NSNotification.Name("ReloadModel"), object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(appState?.sourceFileURL == nil)
             }
 
             // Add items to the system View menu
@@ -306,7 +350,7 @@ struct GoSTLApp: App {
                     Button("Reset View") {
                         NotificationCenter.default.post(name: NSNotification.Name("ResetCamera"), object: nil)
                     }
-                    .keyboardShortcut("r", modifiers: .command)
+                    .keyboardShortcut("0", modifiers: .command)
                 }
             }
 

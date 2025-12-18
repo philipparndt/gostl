@@ -13,6 +13,7 @@ Feature: Application Menus
     And I should see "Open..." with shortcut Cmd+O
     And I should see "Open Recent" as a submenu
     And "Open Recent" should have "Clear Menu" option
+    And I should see "Reload" with shortcut Cmd+R
 
   Scenario: View menu structure
     When I open the View menu
@@ -35,7 +36,7 @@ Feature: Application Menus
     And I should see "Right" with Cmd+4
     And I should see "Top" with Cmd+5
     And I should see "Bottom" with Cmd+6
-    And I should see "Reset View" with Cmd+R
+    And I should see "Reset View" with Cmd+0
 
   Scenario: Tools menu structure
     When I open the Tools menu

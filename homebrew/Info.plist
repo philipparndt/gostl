@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>GoSTL</string>
+
+  <key>CFBundleIdentifier</key>
+  <string>com.gostl.viewer</string>
+
+  <key>CFBundleName</key>
+  <string>GoSTL</string>
+
+  <key>CFBundleDisplayName</key>
+  <string>GoSTL</string>
+
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+
+  <key>CFBundleVersion</key>
+  <string>VERSION_PLACEHOLDER</string>
+
+  <key>CFBundleShortVersionString</key>
+  <string>VERSION_PLACEHOLDER</string>
+
+  <key>LSMinimumSystemVersion</key>
+  <string>13.0</string>
+
+  <key>NSHighResolutionCapable</key>
+  <true/>
+
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>STL File</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Default</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>stl</string>
+        <string>STL</string>
+      </array>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.standard-tesselated-geometry-format</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>3MF File</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Default</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>3mf</string>
+        <string>3MF</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>OpenSCAD File</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Default</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>scad</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>YAML File</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>yaml</string>
+        <string>yml</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

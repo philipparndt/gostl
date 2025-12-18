@@ -146,13 +146,23 @@ struct ContentView: View {
         .navigationTitle(windowTitle)
         .focusedSceneValue(\.appState, appState)
         .onAppear {
-            if let fileURL = fileURL {
-                loadFileOnStartup(fileURL)
-            } else {
-                // Don't load test cube - wait for file restoration or user action
-                setupInitialState()
-            }
+            // Set up notifications first so we can receive file open events
             setupNotifications()
+
+            if let fileURL = fileURL {
+                // File passed via command line
+                loadFileOnStartup(fileURL)
+            } else if !AppDelegate.pendingOpenURLs.isEmpty {
+                // File opened via Finder - will be loaded via notification
+                setupInitialState(loadTestCube: false)
+            } else {
+                // No file - show test cube
+                setupInitialState(loadTestCube: true)
+            }
+
+            // Signal that we're ready to receive file open notifications
+            // This will process any pending URLs from Finder
+            AppDelegate.markReadyForFiles()
         }
         .onChange(of: appState.slicingState.bounds) { _, _ in
             updateSlicedMesh()
@@ -263,7 +273,7 @@ struct ContentView: View {
                 print("ERROR: Failed to load file on startup: \(error)")
                 handleLoadError(error, isAutoReload: false)
                 // Fall back to test cube
-                loadTestModel()
+                setupInitialState(loadTestCube: true)
             }
         }
     }
@@ -347,40 +357,24 @@ struct ContentView: View {
         }
     }
 
-    private func setupInitialState() {
-        // No file provided - show the example test cube
-        loadTestModel()
-    }
-
-    private func loadTestModel() {
-        // Create a test cube to verify rendering works
+    private func setupInitialState(loadTestCube: Bool = true) {
         guard let device = MTLCreateSystemDefaultDevice() else {
             print("ERROR: Metal device not available")
             return
         }
 
         do {
-            // Initialize grid
+            // Initialize rendering components
             try appState.initializeGrid(device: device)
-            print("Grid initialized")
-
-            // Initialize measurements
             appState.initializeMeasurements(device: device)
-            print("Measurements initialized")
-
-            // Initialize orientation cube
             appState.initializeOrientationCube(device: device)
-            print("Orientation cube initialized")
 
-            // Load test cube
-            let testCube = createTestCube()
-            try appState.loadModel(testCube, device: device)
-            appState.modelInfo = ModelInfo(fileName: "test_cube.stl", model: testCube)
-            print("Test cube loaded: \(testCube.triangleCount) triangles")
-            if let wireframeData = appState.wireframeData {
-                print("Wireframe data created: \(wireframeData.instanceCount) edges")
-            } else {
-                print("WARNING: No wireframe data created")
+            // Optionally load test cube (skip if expecting file via notification)
+            if loadTestCube {
+                let testCube = createTestCube()
+                try appState.loadModel(testCube, device: device)
+                appState.modelInfo = ModelInfo(fileName: "test_cube.stl", model: testCube)
+                print("Test cube loaded: \(testCube.triangleCount) triangles")
             }
         } catch {
             print("ERROR: Failed to initialize scene: \(error)")
