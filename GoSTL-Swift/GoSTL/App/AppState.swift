@@ -49,6 +49,9 @@ enum WireframeMode: Int, CaseIterable {
 
 @Observable
 final class AppState: @unchecked Sendable {
+    /// Notification observer tokens for cleanup
+    private var notificationObservers: [Any] = []
+
     /// Clear color for the background (dark blue matching Go version: RGB 15, 18, 25)
     var clearColor: SIMD4<Float> = SIMD4(0.059, 0.071, 0.098, 1.0)
 
@@ -188,10 +191,22 @@ final class AppState: @unchecked Sendable {
         setupNotifications()
     }
 
+    deinit {
+        // Remove all notification observers
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        notificationObservers.removeAll()
+
+        // Stop the file watcher
+        fileWatcher?.stop()
+        fileWatcher = nil
+    }
+
     /// Set up notification observers for menu commands
     private func setupNotifications() {
         // View menu notifications
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("CycleWireframeMode"),
             object: nil,
             queue: .main
@@ -202,9 +217,9 @@ final class AppState: @unchecked Sendable {
                     try? self.updateWireframe(device: device)
                 }
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("SetWireframeMode"),
             object: nil,
             queue: .main
@@ -215,17 +230,17 @@ final class AppState: @unchecked Sendable {
                     try? self.updateWireframe(device: device)
                 }
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("ToggleInfoPanel"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.showModelInfo.toggle()
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("SetGridMode"),
             object: nil,
             queue: .main
@@ -236,9 +251,9 @@ final class AppState: @unchecked Sendable {
                     try? self.updateGrid(device: device)
                 }
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("CycleGridMode"),
             object: nil,
             queue: .main
@@ -249,17 +264,17 @@ final class AppState: @unchecked Sendable {
                     try? self.updateGrid(device: device)
                 }
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("ToggleSlicing"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.slicingState.toggleVisibility()
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("SetCameraPreset"),
             object: nil,
             queue: .main
@@ -267,26 +282,26 @@ final class AppState: @unchecked Sendable {
             if let preset = notification.object as? CameraPreset {
                 self?.camera.setPreset(preset)
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("ResetCamera"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.camera.reset()
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("ReloadModel"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.reloadRequestId += 1
-        }
+        })
 
         // Tools menu notifications
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("StartMeasurement"),
             object: nil,
             queue: .main
@@ -294,33 +309,33 @@ final class AppState: @unchecked Sendable {
             if let type = notification.object as? MeasurementType {
                 self?.measurementSystem.startMeasurement(type: type)
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("ClearMeasurements"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.measurementSystem.clearAll()
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("CopyMeasurementsAsOpenSCAD"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.copyMeasurementsAsOpenSCAD(closeMesh: false)
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("CopyMeasurementsAsOpenSCADClosed"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.copyMeasurementsAsOpenSCAD(closeMesh: true)
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("CycleMaterial"),
             object: nil,
             queue: .main
@@ -329,17 +344,17 @@ final class AppState: @unchecked Sendable {
                 modelInfo.cycleMaterial()
                 self.modelInfo = modelInfo
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("OpenWithGo3mf"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             openWithGo3mf(sourceFileURL: self?.sourceFileURL)
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("SetBuildPlate"),
             object: nil,
             queue: .main
@@ -350,9 +365,9 @@ final class AppState: @unchecked Sendable {
                     self.updateBuildPlate(device: device)
                 }
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("CycleBuildPlate"),
             object: nil,
             queue: .main
@@ -363,9 +378,9 @@ final class AppState: @unchecked Sendable {
                     self.updateBuildPlate(device: device)
                 }
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("ToggleBuildPlateOrientation"),
             object: nil,
             queue: .main
@@ -376,18 +391,18 @@ final class AppState: @unchecked Sendable {
                     self.updateBuildPlate(device: device)
                 }
             }
-        }
+        })
 
         // Leveling notifications
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("StartLeveling"),
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.levelingState.startLeveling()
-        }
+        })
 
-        NotificationCenter.default.addObserver(
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("UndoLeveling"),
             object: nil,
             queue: .main
@@ -395,7 +410,7 @@ final class AppState: @unchecked Sendable {
             if let device = MTLCreateSystemDefaultDevice() {
                 try? self?.undoLeveling(device: device)
             }
-        }
+        })
     }
 
     /// Cycle to the next grid mode
