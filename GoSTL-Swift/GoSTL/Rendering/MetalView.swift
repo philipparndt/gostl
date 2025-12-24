@@ -9,9 +9,11 @@ struct MetalView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> InteractiveMTKView {
+        print("DEBUG: MetalView.makeNSView called")
         guard let device = MTLCreateSystemDefaultDevice() else {
             fatalError("Metal is not supported on this device")
         }
+        print("DEBUG: Metal device created: \(device.name)")
 
         let mtkView = InteractiveMTKView()
         mtkView.device = device
@@ -32,6 +34,7 @@ struct MetalView: NSViewRepresentable {
         // Set up input handling
         mtkView.coordinator = context.coordinator
         context.coordinator.setupRenderer(device: device)
+        print("DEBUG: MetalView.makeNSView complete, mtkView frame: \(mtkView.frame)")
 
         return mtkView
     }

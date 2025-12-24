@@ -1,79 +1,133 @@
 import SwiftUI
 import AppKit
 
-/// Manages pending file opens for the app
-/// Handles files from Finder, command line, and File > Open
+/// Manages file opens during app launch with proper synchronization
 @MainActor
-final class FileOpenManager {
-    static let shared = FileOpenManager()
+final class FileOpenCoordinator {
+    static let shared = FileOpenCoordinator()
 
-    /// Queue of files to open (from Finder double-click before app is ready)
+    /// Files queued during launch (before first window ready)
     private var pendingFiles: [URL] = []
 
-    /// Whether the first window has finished initializing
+    /// Whether app launch is complete (applicationDidFinishLaunching called)
+    private var launchComplete = false
+
+    /// Whether the first window has claimed files
     private var firstWindowReady = false
 
-    /// Lock for thread safety
-    private let lock = NSLock()
+    /// Whether we're expecting files from Finder (detected via Apple Events)
+    private var expectingFinderFiles = false
+
+    /// Continuation for waiting on launch completion
+    private var waitContinuation: CheckedContinuation<URL?, Never>?
 
     private init() {}
 
-    /// Queue a file to be opened (called from AppDelegate)
-    func queueFile(_ url: URL) {
-        lock.lock()
-        defer { lock.unlock() }
+    /// Called early in launch to indicate we're being opened with files
+    func setExpectingFiles() {
+        print("DEBUG: setExpectingFiles called")
+        expectingFinderFiles = true
+    }
 
-        if firstWindowReady {
-            // App is already running - create new window directly
-            createNewWindow(for: url)
-        } else {
-            // App is launching - queue for first window to pick up
-            pendingFiles.append(url)
+    /// Called from applicationDidFinishLaunching
+    func markLaunchComplete() {
+        print("DEBUG: markLaunchComplete, pendingFiles=\(pendingFiles.count), expectingFinderFiles=\(expectingFinderFiles)")
+        launchComplete = true
+
+        // If ContentView is waiting, resolve with pending file or nil
+        if let continuation = waitContinuation {
+            let file = pendingFiles.isEmpty ? nil : pendingFiles.removeFirst()
+            print("DEBUG: Resolving waiting continuation with: \(file?.lastPathComponent ?? "nil")")
+            continuation.resume(returning: file)
+            waitContinuation = nil
+            firstWindowReady = true
         }
     }
 
-    /// Called by the first ContentView when it's ready
-    /// Returns the first pending file (if any) for the first window to load
-    func claimPendingFileForFirstWindow() -> URL? {
-        lock.lock()
-        defer { lock.unlock() }
+    /// Called from application(_:open:) when Finder opens files
+    func addFile(_ url: URL) {
+        print("DEBUG: addFile(\(url.lastPathComponent)), launchComplete=\(launchComplete), firstWindowReady=\(firstWindowReady)")
 
-        firstWindowReady = true
-
-        // Take the first pending file for this window
-        if !pendingFiles.isEmpty {
-            return pendingFiles.removeFirst()
+        // If someone is waiting for files (during launch), give them this one
+        if let continuation = waitContinuation {
+            print("DEBUG: Resolving waiting continuation with: \(url.lastPathComponent)")
+            continuation.resume(returning: url)
+            waitContinuation = nil
+            firstWindowReady = true
+            return
         }
+
+        // During launch, queue for first window
+        if !launchComplete {
+            pendingFiles.append(url)
+            print("DEBUG: Queued file for launch, pendingFiles=\(pendingFiles.count)")
+            return
+        }
+
+        // App is running - try to load in key window if empty, otherwise create new window
+        if let keyWindow = NSApp.keyWindow,
+           keyWindow.tabbingIdentifier == "GoSTLWindow",
+           keyWindow.representedURL == nil {
+            // Key window is empty - load file there via notification
+            print("DEBUG: Loading in empty key window")
+            NotificationCenter.default.post(
+                name: NSNotification.Name("LoadFileInWindow"),
+                object: url,
+                userInfo: ["windowNumber": keyWindow.windowNumber]
+            )
+        } else {
+            // Create new window
+            print("DEBUG: Creating new window for file")
+            createNewWindow(for: url)
+        }
+    }
+
+    /// Called from ContentView.onAppear to get the initial file (if any)
+    /// Returns immediately if launch is complete, otherwise waits
+    func claimInitialFile() async -> URL? {
+        print("DEBUG: claimInitialFile, launchComplete=\(launchComplete), expectingFinderFiles=\(expectingFinderFiles), pendingFiles=\(pendingFiles.count)")
+
+        // If we already have a pending file, return it immediately
+        if !pendingFiles.isEmpty {
+            firstWindowReady = true
+            let file = pendingFiles.removeFirst()
+            print("DEBUG: Claiming pending file: \(file.lastPathComponent)")
+            return file
+        }
+
+        // If we're expecting files from Finder, wait for them
+        if expectingFinderFiles && !launchComplete {
+            print("DEBUG: Waiting for Finder files...")
+            return await withCheckedContinuation { continuation in
+                self.waitContinuation = continuation
+            }
+        }
+
+        // No files expected or launch complete - return nil
+        firstWindowReady = true
+        print("DEBUG: No pending files, returning nil")
         return nil
     }
 
-    /// Check if there are remaining pending files (for creating additional windows)
-    func hasMorePendingFiles() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return !pendingFiles.isEmpty
+    /// Create a new tab/window for a file (when app is already running)
+    func createNewTab(for url: URL) {
+        print("DEBUG: Creating new tab for \(url.lastPathComponent)")
+        createTab(contentView: ContentView(fileURL: url), title: url.lastPathComponent, representedURL: url)
     }
 
-    /// Create windows for any remaining pending files
-    func createWindowsForRemainingFiles() {
-        lock.lock()
-        let files = pendingFiles
-        pendingFiles.removeAll()
-        lock.unlock()
-
-        for url in files {
-            createNewWindow(for: url)
-        }
+    /// Create an empty tab
+    func createEmptyTab(title: String) {
+        print("DEBUG: Creating empty tab: \(title)")
+        createTab(contentView: ContentView(fileURL: nil), title: title, representedURL: nil)
     }
 
-    /// Create a new window with the given file URL
-    private func createNewWindow(for url: URL) {
-        let contentView = ContentView(fileURL: url)
+    /// Internal helper to create a tab with given content
+    private func createTab(contentView: ContentView, title: String, representedURL: URL?) {
         let hostingController = NSHostingController(rootView: contentView)
 
         let window = NSWindow(contentViewController: hostingController)
-        window.title = url.lastPathComponent
-        window.representedURL = url
+        window.title = title
+        window.representedURL = representedURL
         window.setContentSize(NSSize(width: 1400, height: 900))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.tabbingMode = .preferred
@@ -81,92 +135,110 @@ final class FileOpenManager {
         window.titlebarSeparatorStyle = .none
         window.titlebarAppearsTransparent = true
 
-        // Show the window
-        window.makeKeyAndOrderFront(nil)
-
-        // Add to existing tab group if tab bar is visible
-        if let mainWindow = NSApp.mainWindow,
-           mainWindow != window,
-           mainWindow.tabbingIdentifier == "GoSTLWindow" {
-            mainWindow.addTabbedWindow(window, ordered: .above)
+        // Find an existing GoSTL window to add this as a tab
+        var existingWindow: NSWindow? = nil
+        for w in NSApp.windows {
+            if w.tabbingIdentifier == "GoSTLWindow" && w.isVisible && w != window {
+                existingWindow = w
+                break
+            }
         }
+
+        if let existingWindow = existingWindow {
+            // Add as a tab to existing window
+            print("DEBUG: Adding as tab to existing window")
+            existingWindow.addTabbedWindow(window, ordered: .above)
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            // No existing window - just show the new window
+            print("DEBUG: No existing window found, showing as new window")
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    // Legacy wrapper for compatibility
+    private func createNewWindow(for url: URL) {
+        createNewTab(for: url)
     }
 }
 
-/// Application delegate for handling command line arguments and app lifecycle
+/// Application delegate
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var commandLineFileURL: URL?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // Parse command line arguments before windows are created
+        print("DEBUG: applicationWillFinishLaunching")
+
+        // Check if we're being launched to open files via Apple Events
+        // This happens before application(_:open:) is called
+        if let appleEvent = NSAppleEventManager.shared().currentAppleEvent,
+           appleEvent.eventClass == AEEventClass(kCoreEventClass),
+           appleEvent.eventID == AEEventID(kAEOpenDocuments) {
+            print("DEBUG: Detected open-documents Apple Event")
+            FileOpenCoordinator.shared.setExpectingFiles()
+        }
+
+        // Parse command line arguments
         for arg in CommandLine.arguments.dropFirst() {
             if arg.hasPrefix("-") { continue }
             let url = URL(fileURLWithPath: arg)
             let ext = url.pathExtension.lowercased()
             if ["stl", "3mf", "scad", "yaml", "yml"].contains(ext) && FileManager.default.fileExists(atPath: url.path) {
                 AppDelegate.commandLineFileURL = url
+                print("DEBUG: Command line file: \(url.lastPathComponent)")
                 break
             }
         }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Activate the app
+        print("DEBUG: applicationDidFinishLaunching")
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first?.makeKeyAndOrderFront(nil)
-
-        // Set initial window title if no file was opened
-        if AppDelegate.commandLineFileURL == nil,
-           let window = NSApp.windows.first,
-           window.representedURL == nil {
-            window.title = "Empty 1"
-        }
-
-        // Configure initial window
         configureAllWindows()
 
-        // Observe window changes to reapply title bar configuration
+        // Defer launch completion to allow application(_:open:) to be processed first
+        // Use nested async to ensure we're after any pending Apple Events
+        DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                print("DEBUG: Deferred markLaunchComplete")
+                FileOpenCoordinator.shared.markLaunchComplete()
+            }
+        }
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(windowDidChange),
             name: NSWindow.didBecomeMainNotification,
             object: nil
         )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(windowDidChange),
-            name: NSWindow.didBecomeKeyNotification,
-            object: nil
-        )
-
-        // After a brief delay, create windows for any remaining pending files
-        // (files opened via Finder that weren't claimed by the first window)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            FileOpenManager.shared.createWindowsForRemainingFiles()
-        }
     }
 
     @objc private func windowDidChange(_ notification: Notification) {
         configureAllWindows()
     }
 
-    /// Handle files opened from Finder (double-click, Open With, drag to dock icon)
+    /// Handle files opened from Finder
     func application(_ application: NSApplication, open urls: [URL]) {
+        print("DEBUG: application(_:open:) called with \(urls.count) files")
         for url in urls {
             let ext = url.pathExtension.lowercased()
             guard ["stl", "3mf", "scad", "yaml", "yml"].contains(ext) else { continue }
-
-            // Queue the file for opening
-            FileOpenManager.shared.queueFile(url)
+            FileOpenCoordinator.shared.addFile(url)
         }
     }
 
     private func configureAllWindows() {
-        // Only configure our app windows, not system panels (NSOpenPanel, NSSavePanel, etc.)
-        for window in NSApp.windows where window.tabbingIdentifier == "GoSTLWindow" {
-            // Only modify if needed to avoid triggering additional notifications
+        for window in NSApp.windows {
+            // Skip non-standard windows
+            guard !window.isSheet, window.styleMask.contains(.titled) else { continue }
+
+            // Ensure consistent tabbingIdentifier
+            if window.tabbingIdentifier != "GoSTLWindow" {
+                window.tabbingIdentifier = "GoSTLWindow"
+            }
+            window.tabbingMode = .preferred
             if window.titlebarSeparatorStyle != .none {
                 window.titlebarSeparatorStyle = .none
             }
@@ -183,7 +255,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct GoSTLApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var openWindows: [UUID: URL] = [:]
     @FocusedValue(\.appState) private var appState
 
     private var recentDocuments: RecentDocuments {
@@ -195,9 +266,11 @@ struct GoSTLApp: App {
             ContentView(fileURL: AppDelegate.commandLineFileURL)
                 .onAppear {
                     configureWindowForTabbing()
-                    saveCurrentWindowState()
                 }
         }
+        // Prevent SwiftUI from auto-creating windows for external events
+        // We handle file opens manually via application(_:open:)
+        .handlesExternalEvents(matching: [])
         .windowStyle(.automatic)
         .windowToolbarStyle(.unified)
         .defaultSize(width: 1400, height: 900)
@@ -216,7 +289,6 @@ struct GoSTLApp: App {
 
                 Divider()
 
-                // Open Recent submenu
                 Menu("Open Recent") {
                     ForEach(recentDocuments.recentURLs, id: \.self) { url in
                         Button(url.lastPathComponent) {
@@ -256,7 +328,6 @@ struct GoSTLApp: App {
                 .disabled(appState?.sourceFileURL == nil)
             }
 
-            // Add items to the system View menu
             CommandGroup(before: .toolbar) {
                 Toggle("Info Panel", isOn: Binding(
                     get: { appState?.showModelInfo ?? true },
@@ -412,7 +483,6 @@ struct GoSTLApp: App {
                 }
             }
 
-            // Tools menu
             CommandMenu("Tools") {
                 Button("Measure Distance") {
                     NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.distance)
@@ -481,7 +551,6 @@ struct GoSTLApp: App {
                 .keyboardShortcut("o", modifiers: [])
             }
 
-            // Help menu with About
             CommandGroup(replacing: .appInfo) {
                 Button("About GoSTL") {
                     showAboutPanel()
@@ -505,8 +574,6 @@ struct GoSTLApp: App {
         alert.runModal()
     }
 
-    // MARK: - File Operations
-
     private func openFile() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [
@@ -519,31 +586,23 @@ struct GoSTLApp: App {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.message = "Select an STL, 3MF, OpenSCAD, or go3mf YAML file to open"
 
         panel.begin { response in
             guard response == .OK else { return }
-
             for url in panel.urls {
                 RecentDocuments.shared.addDocument(url)
-                self.openNewWindow(for: url)
+                self.openFileInWindowOrNew(url)
             }
         }
     }
 
     private func saveFile() {
         guard let appState = appState else { return }
-
         do {
             try appState.saveModel()
-
-            // Update window title and represented URL
-            if let savedURL = appState.savedFileURL,
-               let window = NSApp.keyWindow {
+            if let savedURL = appState.savedFileURL, let window = NSApp.keyWindow {
                 window.title = savedURL.lastPathComponent
                 window.representedURL = savedURL
-
-                // Add to recent documents
                 recentDocuments.addDocument(savedURL)
             }
         } catch {
@@ -553,26 +612,18 @@ struct GoSTLApp: App {
 
     private func saveFileAs() {
         guard let appState = appState else { return }
-
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.init(filenameExtension: "stl")!]
         panel.nameFieldStringValue = suggestFileName(for: appState)
-        panel.message = "Save STL file"
-        panel.canCreateDirectories = true
 
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-
             do {
                 try appState.saveModelAs(to: url)
-
-                // Update window title and represented URL
                 if let window = NSApp.keyWindow {
                     window.title = url.lastPathComponent
                     window.representedURL = url
                 }
-
-                // Add to recent documents
                 self.recentDocuments.addDocument(url)
             } catch {
                 self.showSaveError(error)
@@ -581,131 +632,67 @@ struct GoSTLApp: App {
     }
 
     private func suggestFileName(for appState: AppState) -> String {
-        // Use saved filename if available
-        if let savedURL = appState.savedFileURL {
-            return savedURL.lastPathComponent
-        }
-
-        // Use source filename, converting extension to .stl if needed
+        if let savedURL = appState.savedFileURL { return savedURL.lastPathComponent }
         if let sourceURL = appState.sourceFileURL {
-            let baseName = sourceURL.deletingPathExtension().lastPathComponent
-            return "\(baseName).stl"
+            return "\(sourceURL.deletingPathExtension().lastPathComponent).stl"
         }
-
-        // Default name
         return "model.stl"
     }
 
     private func showSaveError(_ error: Error) {
-        DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Failed to Save"
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-        }
+        let alert = NSAlert()
+        alert.messageText = "Failed to Save"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     private func openRecentFile(_ url: URL) {
-        // Check if file still exists
         guard FileManager.default.fileExists(atPath: url.path) else {
             RecentDocuments.shared.removeDocument(url)
-            print("ERROR: File no longer exists: \(url.path)")
             return
         }
-
-        // Create new window for this file
-        openNewWindow(for: url)
+        openFileInWindowOrNew(url)
     }
 
-    private func openNewWindow(for url: URL) {
-        DispatchQueue.main.async {
-            // Check if the key window is "empty" (no file loaded, just test cube)
-            if let keyWindow = NSApp.keyWindow,
-               keyWindow.tabbingIdentifier == "GoSTLWindow",
-               keyWindow.representedURL == nil {
-                // Load file into the existing empty window
-                // Post a window-specific notification with the window identifier
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("LoadFileInWindow"),
-                    object: url,
-                    userInfo: ["windowNumber": keyWindow.windowNumber]
-                )
-                return
-            }
-
-            // Create a new window
-            let contentView = ContentView(fileURL: url)
-            let hostingController = NSHostingController(rootView: contentView)
-
-            let window = NSWindow(contentViewController: hostingController)
-            window.title = url.lastPathComponent
-            window.representedURL = url
-            window.setContentSize(NSSize(width: 1400, height: 900))
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-
-            // Configure for tabbing and title bar appearance
-            window.tabbingMode = .preferred
-            window.tabbingIdentifier = "GoSTLWindow"
-            window.titlebarSeparatorStyle = .none
-            window.titlebarAppearsTransparent = true
-
-            // Show the window
-            window.makeKeyAndOrderFront(nil)
-
-            // Add to existing tab group if tab bar is visible
-            if let mainWindow = NSApp.mainWindow,
-               mainWindow != window,
-               mainWindow.tabbingIdentifier == "GoSTLWindow" {
-                mainWindow.addTabbedWindow(window, ordered: .above)
-            }
+    private func openFileInWindowOrNew(_ url: URL) {
+        // If key window is empty, load there
+        if let keyWindow = NSApp.keyWindow,
+           keyWindow.tabbingIdentifier == "GoSTLWindow",
+           keyWindow.representedURL == nil {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("LoadFileInWindow"),
+                object: url,
+                userInfo: ["windowNumber": keyWindow.windowNumber]
+            )
+            return
         }
+        // Create new window
+        FileOpenCoordinator.shared.addFile(url)
     }
 
     private func openNewTab() {
-        DispatchQueue.main.async {
-            // Create a new NSWindow with ContentView (no file URL = test cube)
-            let contentView = ContentView(fileURL: nil)
-            let hostingController = NSHostingController(rootView: contentView)
-
-            let window = NSWindow(contentViewController: hostingController)
-            window.title = self.nextEmptyWindowTitle()
-            window.setContentSize(NSSize(width: 1400, height: 900))
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-
-            // Configure for tabbing and title bar appearance
-            window.tabbingMode = .preferred
-            window.tabbingIdentifier = "GoSTLWindow"
-            window.titlebarSeparatorStyle = .none
-            window.titlebarAppearsTransparent = true
-
-            // Show the window
-            window.makeKeyAndOrderFront(nil)
-
-            // Add to existing tab group if tab bar is visible
-            if let mainWindow = NSApp.mainWindow,
-               mainWindow != window,
-               mainWindow.tabbingIdentifier == "GoSTLWindow" {
-                mainWindow.addTabbedWindow(window, ordered: .above)
-            }
-        }
+        FileOpenCoordinator.shared.createEmptyTab(title: nextEmptyWindowTitle())
     }
 
     private func configureWindowForTabbing() {
         DispatchQueue.main.async {
-            // Configure only our app windows, not system panels (NSOpenPanel, NSSavePanel, etc.)
-            for window in NSApp.windows where window.tabbingIdentifier == "GoSTLWindow" {
-                // Only modify if needed to avoid triggering additional notifications
-                if window.tabbingMode != .preferred {
-                    window.tabbingMode = .preferred
+            // Configure ALL windows to use the same tabbing identifier
+            // This ensures SwiftUI-created windows can tab with manually created ones
+            for window in NSApp.windows {
+                // Skip non-standard windows (panels, sheets, etc.)
+                guard window.isKind(of: NSWindow.self),
+                      !window.isSheet,
+                      window.styleMask.contains(.titled) else { continue }
+
+                // Set consistent tabbingIdentifier for all main windows
+                if window.tabbingIdentifier != "GoSTLWindow" {
+                    window.tabbingIdentifier = "GoSTLWindow"
                 }
-                if window.titlebarSeparatorStyle != .none {
-                    window.titlebarSeparatorStyle = .none
-                }
-                if !window.titlebarAppearsTransparent {
-                    window.titlebarAppearsTransparent = true
-                }
+                window.tabbingMode = .preferred
+                window.titlebarSeparatorStyle = .none
+                window.titlebarAppearsTransparent = true
                 if !window.styleMask.contains(.fullSizeContentView) {
                     window.styleMask.insert(.fullSizeContentView)
                 }
@@ -713,36 +700,17 @@ struct GoSTLApp: App {
         }
     }
 
-    private func saveCurrentWindowState() {
-        DispatchQueue.main.async {
-            // Get all windows with represented files
-            let openFileURLs = NSApp.windows
-                .filter { $0.tabbingIdentifier == "GoSTLWindow" }
-                .compactMap { $0.representedURL }
-
-            // Save to RecentDocuments
-            RecentDocuments.shared.saveOpenWindows(openFileURLs)
-        }
-    }
-
     private func nextEmptyWindowTitle() -> String {
-        // Find existing "Empty N" windows and determine the next number
         let emptyPattern = /^Empty (\d+)$/
         var usedNumbers: Set<Int> = []
-
         for window in NSApp.windows where window.tabbingIdentifier == "GoSTLWindow" {
             if let match = window.title.wholeMatch(of: emptyPattern),
                let number = Int(match.1) {
                 usedNumbers.insert(number)
             }
         }
-
-        // Find the smallest unused number starting from 1
         var nextNumber = 1
-        while usedNumbers.contains(nextNumber) {
-            nextNumber += 1
-        }
-
+        while usedNumbers.contains(nextNumber) { nextNumber += 1 }
         return "Empty \(nextNumber)"
     }
 }

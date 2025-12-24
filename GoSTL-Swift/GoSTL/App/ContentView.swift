@@ -23,6 +23,9 @@ struct ContentView: View {
                 MetalView(appState: appState)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
+                    .onAppear {
+                        print("DEBUG: MetalView appeared, geometry: \(geometry.size)")
+                    }
 
                 // Measurement labels (in 3D space)
                 MeasurementLabelsOverlay(
@@ -150,12 +153,7 @@ struct ContentView: View {
             guard !hasInitialized else { return }
             hasInitialized = true
 
-            // Store window number for notification filtering
-            DispatchQueue.main.async {
-                if let window = NSApp.keyWindow {
-                    self.windowNumber = window.windowNumber
-                }
-            }
+            print("DEBUG: ContentView.onAppear, fileURL=\(fileURL?.lastPathComponent ?? "nil")")
 
             // Initialize rendering components
             if let device = MTLCreateSystemDefaultDevice() {
@@ -163,25 +161,37 @@ struct ContentView: View {
                     try appState.initializeGrid(device: device)
                     appState.initializeMeasurements(device: device)
                     appState.initializeOrientationCube(device: device)
+                    print("DEBUG: Rendering initialized")
                 } catch {
                     print("ERROR: Failed to initialize rendering: \(error)")
                 }
             }
 
-            // Set up window-specific notification handler
-            setupNotifications()
+            // If file was passed directly (command line or new window), load it immediately
+            if let url = fileURL {
+                print("DEBUG: Loading from fileURL parameter: \(url.lastPathComponent)")
+                windowTitle = url.lastPathComponent
+                loadFileOnStartup(url)
+                // Capture window number and set up notifications after a brief delay
+                // to ensure the window is fully initialized
+                DispatchQueue.main.async {
+                    self.captureWindowAndSetupNotifications()
+                }
+                return
+            }
 
-            // Determine which file to load:
-            // 1. File passed via constructor (command line or new window)
-            // 2. Pending file from FileOpenManager (Finder double-click)
-            // 3. No file - show test cube
-            if let fileURL = fileURL {
-                loadFileOnStartup(fileURL)
-            } else if let pendingFile = FileOpenManager.shared.claimPendingFileForFirstWindow() {
-                loadFileOnStartup(pendingFile)
-            } else {
-                // No file - show test cube
-                setupInitialState(loadTestCube: true)
+            // Otherwise, wait for Finder files or show test cube
+            Task { @MainActor in
+                if let pendingFile = await FileOpenCoordinator.shared.claimInitialFile() {
+                    print("DEBUG: Got file from coordinator: \(pendingFile.lastPathComponent)")
+                    windowTitle = pendingFile.lastPathComponent
+                    loadFileOnStartup(pendingFile)
+                } else {
+                    print("DEBUG: No pending files, showing test cube")
+                    setupInitialState(loadTestCube: true)
+                }
+                // Capture window number and set up notifications
+                self.captureWindowAndSetupNotifications()
             }
         }
         .onDisappear {
@@ -285,10 +295,9 @@ struct ContentView: View {
                 try appState.loadFile(url, device: device)
                 windowTitle = url.lastPathComponent
 
-                if let window = NSApp.keyWindow {
-                    window.representedURL = url
-                    window.title = url.lastPathComponent
-                    self.windowNumber = window.windowNumber
+                // Update window title after a short delay to ensure window is ready
+                DispatchQueue.main.async {
+                    self.updateWindowTitle(url.lastPathComponent, representedURL: url)
                 }
 
                 RecentDocuments.shared.addDocument(url)
@@ -301,11 +310,49 @@ struct ContentView: View {
         }
     }
 
+    /// Find and update the window that contains this ContentView
+    private func updateWindowTitle(_ title: String, representedURL: URL?) {
+        // Find window by stored window number, or by checking if it's the key window
+        let window: NSWindow?
+        if windowNumber != 0 {
+            window = NSApp.windows.first { $0.windowNumber == windowNumber }
+        } else {
+            // Fallback: use key window if we don't have a window number yet
+            window = NSApp.keyWindow
+        }
+
+        if let window = window {
+            window.title = title
+            window.representedURL = representedURL
+            if windowNumber == 0 {
+                windowNumber = window.windowNumber
+            }
+            print("DEBUG: Updated window \(window.windowNumber) title to: \(title)")
+        }
+    }
+
+    /// Capture the window number for this ContentView and set up notifications
+    private func captureWindowAndSetupNotifications() {
+        // Try to find our window
+        if let window = NSApp.keyWindow, window.tabbingIdentifier == "GoSTLWindow" {
+            windowNumber = window.windowNumber
+            print("DEBUG: Captured window number: \(windowNumber)")
+        }
+
+        setupNotifications()
+    }
+
     private func setupNotifications() {
         // Handle window-specific LoadFileInWindow notification
         // This is used when File > Open detects an empty window
-        // Capture window number at setup time for thread safety
         let capturedWindowNumber = windowNumber
+        print("DEBUG: Setting up notifications for window \(capturedWindowNumber)")
+
+        // Don't set up notification if we don't have a valid window number
+        guard capturedWindowNumber != 0 else {
+            print("DEBUG: Skipping notification setup - no window number yet")
+            return
+        }
 
         notificationObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("LoadFileInWindow"),
@@ -317,11 +364,17 @@ struct ContentView: View {
 
             // Check if this notification is for our window
             if let targetWindowNumber = notification.userInfo?["windowNumber"] as? Int {
-                // Only respond if we are the target window or if our window number matches
-                guard targetWindowNumber == capturedWindowNumber || capturedWindowNumber == 0 else {
+                // Only respond if we are the target window
+                guard targetWindowNumber == capturedWindowNumber else {
+                    print("DEBUG: Ignoring notification for window \(targetWindowNumber), we are \(capturedWindowNumber)")
                     return
                 }
+            } else {
+                // No target window specified - ignore
+                return
             }
+
+            print("DEBUG: Loading file in window \(capturedWindowNumber): \(url.lastPathComponent)")
 
             // Load file using MainActor to ensure proper thread isolation
             Task { @MainActor in
@@ -334,7 +387,7 @@ struct ContentView: View {
                 do {
                     try appState.loadFile(url, device: device)
 
-                    // Update window properties - find our window by the captured window number
+                    // Update window properties
                     if let window = NSApp.windows.first(where: { $0.windowNumber == capturedWindowNumber }) {
                         window.representedURL = url
                         window.title = url.lastPathComponent

@@ -1,4 +1,12 @@
-.PHONY: build run clean test release
+.PHONY: build run clean test release install-dev restore-release
+
+# Homebrew installation paths
+BREW_PREFIX := $(shell brew --prefix gostl 2>/dev/null)
+BREW_GOSTL := $(BREW_PREFIX)/bin/gostl
+BREW_BACKUP := $(BREW_PREFIX)/bin/gostl.backup
+BREW_APP := $(BREW_PREFIX)/GoSTL.app
+BREW_METALLIB := $(BREW_APP)/GoSTL_GoSTL.bundle/Contents/Resources/default.metallib
+BREW_METALLIB_BACKUP := $(BREW_APP)/GoSTL_GoSTL.bundle/Contents/Resources/default.metallib.backup
 
 # Default target
 all: build
@@ -35,3 +43,52 @@ test: build
 # Clean build artifacts
 clean:
 	rm -rf GoSTL-Swift/.build
+
+# Install dev build over Homebrew version (for testing)
+# Creates a backup of the release version first
+install-dev: build
+	@if [ -z "$(BREW_PREFIX)" ] || [ ! -f "$(BREW_GOSTL)" ]; then \
+		echo "Error: Homebrew GoSTL not found. Install with: brew install gostl"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(BREW_BACKUP)" ]; then \
+		echo "Backing up release version (may require sudo)..."; \
+		sudo cp "$(BREW_GOSTL)" "$(BREW_BACKUP)"; \
+		sudo cp "$(BREW_METALLIB)" "$(BREW_METALLIB_BACKUP)"; \
+		sudo cp "$(BREW_APP)/Contents/MacOS/GoSTL" "$(BREW_APP)/Contents/MacOS/GoSTL.backup"; \
+	else \
+		echo "Backup already exists"; \
+	fi
+	@echo "Installing dev build (may require sudo)..."
+	sudo cp GoSTL-Swift/.build/arm64-apple-macosx/debug/GoSTL "$(BREW_GOSTL)"
+	sudo cp GoSTL-Swift/.build/arm64-apple-macosx/debug/GoSTL "$(BREW_APP)/Contents/MacOS/GoSTL"
+	sudo cp GoSTL-Swift/.build/default.metallib "$(BREW_METALLIB)"
+	@echo ""
+	@echo "Done! Dev build installed."
+	@echo "  - Quit GoSTL if running"
+	@echo "  - Test by opening files from Finder"
+	@echo "  - Run 'make restore-release' when done testing"
+
+# Restore the Homebrew release version
+restore-release:
+	@if [ -z "$(BREW_PREFIX)" ] || [ ! -f "$(BREW_BACKUP)" ]; then \
+		echo "Error: No backup found. Nothing to restore."; \
+		exit 1; \
+	fi
+	@echo "Restoring release version (may require sudo)..."
+	sudo cp "$(BREW_BACKUP)" "$(BREW_GOSTL)"
+	sudo cp "$(BREW_METALLIB_BACKUP)" "$(BREW_METALLIB)"
+	sudo cp "$(BREW_APP)/Contents/MacOS/GoSTL.backup" "$(BREW_APP)/Contents/MacOS/GoSTL"
+	sudo rm -f "$(BREW_BACKUP)" "$(BREW_METALLIB_BACKUP)" "$(BREW_APP)/Contents/MacOS/GoSTL.backup"
+	@echo "Done! Release version restored."
+
+# Show current installation status
+install-status:
+	@echo "Homebrew prefix: $(BREW_PREFIX)"
+	@echo "Binary: $(BREW_GOSTL)"
+	@echo "App: $(BREW_APP)"
+	@if [ -f "$(BREW_BACKUP)" ]; then \
+		echo "Status: DEV build installed (backup exists)"; \
+	else \
+		echo "Status: Release build installed"; \
+	fi
