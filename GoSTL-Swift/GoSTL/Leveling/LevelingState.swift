@@ -93,6 +93,12 @@ final class LevelingState: @unchecked Sendable {
         selectedAxis = nil
     }
 
+    /// Full reset for loading a new file (includes undo state)
+    func fullReset() {
+        reset()
+        previousModelTriangles = nil
+    }
+
     /// Store triangles for undo functionality
     /// - Parameter triangles: The current triangles before transformation
     func storeForUndo(_ triangles: [Triangle]) {

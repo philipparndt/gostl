@@ -7,12 +7,14 @@ struct ContentView: View {
     @State private var errorAlert: ErrorAlert?
     @State private var showErrorOverlay = false
     @State private var windowTitle: String = "GoSTL"
+    @State private var windowNumber: Int = 0
+    @State private var hasInitialized = false
+    @State private var notificationObserver: NSObjectProtocol?
 
     let fileURL: URL?
 
     init(fileURL: URL? = nil) {
         self.fileURL = fileURL
-        // Notifications are set up in onAppear since we need access to appState
     }
 
     var body: some View {
@@ -145,7 +147,15 @@ struct ContentView: View {
         .navigationTitle(windowTitle)
         .focusedSceneValue(\.appState, appState)
         .onAppear {
-            setupNotifications()
+            guard !hasInitialized else { return }
+            hasInitialized = true
+
+            // Store window number for notification filtering
+            DispatchQueue.main.async {
+                if let window = NSApp.keyWindow {
+                    self.windowNumber = window.windowNumber
+                }
+            }
 
             // Initialize rendering components
             if let device = MTLCreateSystemDefaultDevice() {
@@ -158,12 +168,27 @@ struct ContentView: View {
                 }
             }
 
-            // Load file if provided via command line or init parameter
+            // Set up window-specific notification handler
+            setupNotifications()
+
+            // Determine which file to load:
+            // 1. File passed via constructor (command line or new window)
+            // 2. Pending file from FileOpenManager (Finder double-click)
+            // 3. No file - show test cube
             if let fileURL = fileURL {
                 loadFileOnStartup(fileURL)
+            } else if let pendingFile = FileOpenManager.shared.claimPendingFileForFirstWindow() {
+                loadFileOnStartup(pendingFile)
             } else {
                 // No file - show test cube
                 setupInitialState(loadTestCube: true)
+            }
+        }
+        .onDisappear {
+            // Clean up notification observer
+            if let observer = notificationObserver {
+                NotificationCenter.default.removeObserver(observer)
+                notificationObserver = nil
             }
         }
         .onChange(of: appState.slicingState.bounds) { _, _ in
@@ -263,6 +288,7 @@ struct ContentView: View {
                 if let window = NSApp.keyWindow {
                     window.representedURL = url
                     window.title = url.lastPathComponent
+                    self.windowNumber = window.windowNumber
                 }
 
                 RecentDocuments.shared.addDocument(url)
@@ -276,35 +302,49 @@ struct ContentView: View {
     }
 
     private func setupNotifications() {
-        // Handle LoadSTLFile notification from menu File > Open when loading into existing empty window
-        let appStateRef = appState
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("LoadSTLFile"),
+        // Handle window-specific LoadFileInWindow notification
+        // This is used when File > Open detects an empty window
+        // Capture window number at setup time for thread safety
+        let capturedWindowNumber = windowNumber
+
+        notificationObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("LoadFileInWindow"),
             object: nil,
             queue: .main
-        ) { notification in
+        ) { [weak appState] notification in
             guard let url = notification.object as? URL,
-                  let device = MTLCreateSystemDefaultDevice() else { return }
+                  let appState = appState else { return }
 
-            appStateRef.isLoading = true
+            // Check if this notification is for our window
+            if let targetWindowNumber = notification.userInfo?["windowNumber"] as? Int {
+                // Only respond if we are the target window or if our window number matches
+                guard targetWindowNumber == capturedWindowNumber || capturedWindowNumber == 0 else {
+                    return
+                }
+            }
+
+            // Load file using MainActor to ensure proper thread isolation
             Task { @MainActor in
-                do {
-                    try appStateRef.loadFile(url, device: device)
+                guard let device = MTLCreateSystemDefaultDevice() else {
+                    print("ERROR: Metal device not available")
+                    return
+                }
 
-                    // Update window title and representedURL
-                    if let window = NSApp.keyWindow {
-                        window.title = url.lastPathComponent
+                appState.isLoading = true
+                do {
+                    try appState.loadFile(url, device: device)
+
+                    // Update window properties - find our window by the captured window number
+                    if let window = NSApp.windows.first(where: { $0.windowNumber == capturedWindowNumber }) {
                         window.representedURL = url
+                        window.title = url.lastPathComponent
                     }
 
-                    // Add to recent documents
                     RecentDocuments.shared.addDocument(url)
-
-                    // Set up file watching for auto-reload
-                    try? appStateRef.setupFileWatcher()
+                    try? appState.setupFileWatcher()
                 } catch {
                     print("ERROR: Failed to load file: \(error)")
-                    appStateRef.isLoading = false
+                    appState.isLoading = false
                 }
             }
         }

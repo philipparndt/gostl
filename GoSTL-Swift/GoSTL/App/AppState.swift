@@ -788,6 +788,75 @@ final class AppState: @unchecked Sendable {
         self.measurementSystem.clearAll()
     }
 
+    /// Reset state for loading a new file (different from current file)
+    /// This clears all model-related state but preserves view settings like wireframe mode
+    /// - Parameter preserveSettings: If true, preserve wireframe mode, grid mode, build plate, etc.
+    func resetForNewFile(preserveSettings: Bool = false) {
+        // Stop existing file watcher
+        fileWatcher?.stop()
+        fileWatcher = nil
+
+        // Clean up old temp file if exists
+        if let tempURL = tempSTLFileURL, (isOpenSCAD || isGo3mf) {
+            try? FileManager.default.removeItem(at: tempURL)
+        }
+
+        // Clear model-related state
+        model = nil
+        spatialAccelerator = nil
+        isBuildingAccelerator = false
+        isBuildingWireframe = false
+        cachedEdges = nil
+        cachedFeatureEdges = nil
+        cachedStyledEdges = nil
+        unclippedWireframeData = nil
+
+        // Clear GPU data
+        meshData = nil
+        wireframeData = nil
+        slicePlaneData = nil
+        cutEdgeData = nil
+        gridData = nil
+        gridTextData = nil
+        selectedTrianglesData = nil
+
+        // Clear file references
+        sourceFileURL = nil
+        tempSTLFileURL = nil
+        isOpenSCAD = false
+        isGo3mf = false
+        savedFileURL = nil
+        isModelModified = false
+
+        // Clear 3MF plate data
+        threeMFParseResult = nil
+        selectedPlateId = nil
+
+        // Clear model info
+        modelInfo = nil
+        isEmptyFile = false
+
+        // Clear loading/error state
+        isLoading = false
+        loadError = nil
+        loadErrorID = nil
+
+        // Reset slicing state
+        slicingState.fullReset()
+
+        // Clear measurements
+        measurementSystem.clearAll()
+
+        // Reset leveling state
+        levelingState.fullReset()
+
+        // Optionally reset view settings
+        if !preserveSettings {
+            // Reset to default view settings for a fresh file
+            // Keep these as they are - user preferences
+        }
+    }
+
     /// Load an STL model and create mesh data for rendering
     /// - Parameters:
     ///   - model: The STL model to load
@@ -923,14 +992,24 @@ final class AppState: @unchecked Sendable {
     }
 
     /// Load a file from URL (supports both .stl and .scad files)
-    func loadFile(_ url: URL, device: MTLDevice) throws {
-        // Stop existing file watcher
-        fileWatcher?.stop()
-        fileWatcher = nil
+    /// - Parameters:
+    ///   - url: The file URL to load
+    ///   - device: Metal device for GPU resources
+    ///   - isSameFile: If true, preserve settings like material (for reloads)
+    func loadFile(_ url: URL, device: MTLDevice, isSameFile: Bool = false) throws {
+        // Check if this is the same file (for determining whether to preserve settings)
+        let shouldPreserveSettings = isSameFile || (sourceFileURL == url)
 
-        // Clean up old temp file if exists
-        if let tempURL = tempSTLFileURL, isOpenSCAD {
-            try? FileManager.default.removeItem(at: tempURL)
+        // Reset state for the new file (cleans up watchers, temp files, etc.)
+        if !shouldPreserveSettings {
+            resetForNewFile(preserveSettings: false)
+        } else {
+            // Just stop watcher and clean temp file, but preserve settings
+            fileWatcher?.stop()
+            fileWatcher = nil
+            if let tempURL = tempSTLFileURL, (isOpenSCAD || isGo3mf), tempURL != url {
+                try? FileManager.default.removeItem(at: tempURL)
+            }
         }
 
         let fileExtension = url.pathExtension.lowercased()

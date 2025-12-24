@@ -54,6 +54,16 @@ final class SlicingState: @unchecked Sendable {
         bounds = modelBounds
     }
 
+    /// Full reset for loading a new file
+    func fullReset() {
+        isVisible = false
+        showPlanes = false
+        fillCrossSections = false
+        activePlane = nil
+        bounds = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]
+        modelBounds = [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]]
+    }
+
     /// Toggle slicing UI visibility
     func toggleVisibility() {
         isVisible.toggle()
