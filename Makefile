@@ -73,12 +73,17 @@ install-dev: build
 restore-release:
 	@if [ -z "$(BREW_PREFIX)" ] || [ ! -f "$(BREW_BACKUP)" ]; then \
 		echo "Error: No backup found. Nothing to restore."; \
+		echo "Try: brew reinstall gostl"; \
 		exit 1; \
 	fi
 	@echo "Restoring release version (may require sudo)..."
 	sudo cp "$(BREW_BACKUP)" "$(BREW_GOSTL)"
-	sudo cp "$(BREW_METALLIB_BACKUP)" "$(BREW_METALLIB)"
-	sudo cp "$(BREW_APP)/Contents/MacOS/GoSTL.backup" "$(BREW_APP)/Contents/MacOS/GoSTL"
+	@if [ -f "$(BREW_METALLIB_BACKUP)" ]; then \
+		sudo cp "$(BREW_METALLIB_BACKUP)" "$(BREW_METALLIB)"; \
+	fi
+	@if [ -f "$(BREW_APP)/Contents/MacOS/GoSTL.backup" ]; then \
+		sudo cp "$(BREW_APP)/Contents/MacOS/GoSTL.backup" "$(BREW_APP)/Contents/MacOS/GoSTL"; \
+	fi
 	sudo rm -f "$(BREW_BACKUP)" "$(BREW_METALLIB_BACKUP)" "$(BREW_APP)/Contents/MacOS/GoSTL.backup"
 	@echo "Done! Release version restored."
 
