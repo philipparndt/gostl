@@ -673,14 +673,16 @@ final class MeasurementSystem: @unchecked Sendable {
         hoveredTriangle = findTriangleAtRay(ray: ray, model: model, accelerator: accelerator)
     }
 
-    /// Get preview distance (distance from last point to hover point)
+    /// Get preview distance (distance from last point to hover point or constrained endpoint)
     var previewDistance: Double? {
         guard let hoverPoint = hoverPoint,
               !currentPoints.isEmpty else {
             return nil
         }
         let lastPoint = currentPoints.last!.position
-        return hoverPoint.position.distance(to: lastPoint)
+        // Use constrained endpoint if available, otherwise use hover point
+        let endPoint = constrainedEndpoint ?? hoverPoint.position
+        return endPoint.distance(to: lastPoint)
     }
 }
 
