@@ -433,8 +433,22 @@ struct ContentView: View {
                     break
                 }
             }
+        } else if let go3mfError = error as? Go3mfError {
+            // Handle go3mf errors
+            switch go3mfError {
+            case .go3mfNotFound:
+                errorAlert = ErrorAlert(
+                    title: "go3mf Not Installed",
+                    message: "go3mf is required to process .yaml configuration files.\n\nPlease install go3mf from:\nhttps://github.com/parndt/go3mf"
+                )
+            case .buildFailed(let message):
+                errorAlert = ErrorAlert(
+                    title: "go3mf Build Failed",
+                    message: message
+                )
+            }
         } else {
-            // For non-OpenSCAD errors, always show modal dialog
+            // For other errors, always show modal dialog
             errorAlert = ErrorAlert(
                 title: "Failed to Load File",
                 message: error.localizedDescription

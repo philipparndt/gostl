@@ -65,6 +65,7 @@ Feature: Keyboard Shortcuts
       | Cmd+M        | material cycles                                 |
       | Cmd+Shift+K  | all measurements are cleared                    |
       | Cmd+Shift+C  | selected/all measurements copied as OpenSCAD    |
+      | Cmd+P        | selected/all measurements copied as polygon     |
 
   @measurement-mode
   Scenario Outline: Measurement mode shortcuts

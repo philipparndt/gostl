@@ -547,6 +547,15 @@ struct ToolsSectionContent: View {
                 )
             }
 
+            // Show selected measurement details
+            if !measurementSystem.selectedMeasurements.isEmpty {
+                Divider()
+                    .background(Color.white.opacity(0.2))
+                    .padding(.vertical, 2)
+
+                SelectedMeasurementsPanel(measurementSystem: measurementSystem)
+            }
+
             // Show Clear All button if measurements exist
             if !measurementSystem.measurements.isEmpty {
                 Divider()
@@ -918,6 +927,143 @@ struct BuildPlateOrientationToggle: View {
         if let device = MTLCreateSystemDefaultDevice() {
             appState.updateBuildPlate(device: device)
         }
+    }
+}
+
+/// Panel showing details of selected measurements
+struct SelectedMeasurementsPanel: View {
+    let measurementSystem: MeasurementSystem
+
+    private var selectedMeasurements: [Measurement] {
+        measurementSystem.selectedMeasurements
+            .sorted()
+            .compactMap { index in
+                index < measurementSystem.measurements.count ? measurementSystem.measurements[index] : nil
+            }
+    }
+
+    private var distanceMeasurements: [Measurement] {
+        selectedMeasurements.filter { $0.type == .distance }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Header
+            HStack {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.blue)
+                    .frame(width: 6, height: 6)
+                Text("Selected (\(measurementSystem.selectedMeasurements.count))")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+
+            // Show coordinates for each selected distance measurement
+            ForEach(Array(selectedMeasurements.enumerated()), id: \.offset) { index, measurement in
+                if measurement.type == .distance && measurement.points.count >= 2 {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Line \(index + 1): \(measurement.formattedValue)")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.yellow)
+
+                        let start = measurement.points[0].position
+                        let end = measurement.points[1].position
+
+                        Text("  Start: (\(formatCoord(start.x)), \(formatCoord(start.y)), \(formatCoord(start.z)))")
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.8))
+
+                        Text("  End: (\(formatCoord(end.x)), \(formatCoord(end.y)), \(formatCoord(end.z)))")
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                } else if measurement.type == .radius, let circle = measurement.circle {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Circle: r=\(measurement.formattedValue)")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(Color(red: 1.0, green: 0.59, blue: 1.0))
+
+                        Text("  Center: (\(formatCoord(circle.center.x)), \(formatCoord(circle.center.y)), \(formatCoord(circle.center.z)))")
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                } else if measurement.type == .angle && measurement.points.count >= 3 {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Angle: \(measurement.formattedValue)")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.cyan)
+
+                        let vertex = measurement.points[1].position
+                        Text("  Vertex: (\(formatCoord(vertex.x)), \(formatCoord(vertex.y)), \(formatCoord(vertex.z)))")
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                }
+            }
+
+            // Copy as polygon button (only for distance measurements)
+            if !distanceMeasurements.isEmpty {
+                Button(action: {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("CopyMeasurementsAsPolygon"),
+                        object: nil
+                    )
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 8))
+                        Text("Copy as Polygon")
+                            .font(.system(size: 9))
+                        Spacer()
+                        KeyHint(key: "⌘P")
+                    }
+                    .foregroundColor(.blue.opacity(0.9))
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.blue.opacity(0.15))
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+            }
+
+            // Delete selected button
+            Button(action: { measurementSystem.removeSelectedMeasurements() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 8))
+                    Text("Delete Selected")
+                        .font(.system(size: 9))
+                    Spacer()
+                    KeyHint(key: "⌫")
+                }
+                .foregroundColor(.red.opacity(0.8))
+                .padding(.vertical, 4)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.red.opacity(0.15))
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.blue.opacity(0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.blue.opacity(0.4), lineWidth: 1)
+                )
+        )
+    }
+
+    private func formatCoord(_ value: Double) -> String {
+        String(format: "%.2f", value)
     }
 }
 

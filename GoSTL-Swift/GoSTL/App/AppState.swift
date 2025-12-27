@@ -337,6 +337,14 @@ final class AppState: @unchecked Sendable {
         })
 
         notificationObservers.append(NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CopyMeasurementsAsPolygon"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.copySelectedMeasurementsAsPolygon()
+        })
+
+        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("CycleMaterial"),
             object: nil,
             queue: .main
@@ -1564,6 +1572,33 @@ final class AppState: @unchecked Sendable {
         let code = OpenSCADGenerator.generate(from: measurementsToConvert)
         OpenSCADGenerator.copyToClipboard(code)
         print("Copied \(measurementsToConvert.count) measurement(s) as OpenSCAD to clipboard")
+    }
+
+    /// Copy selected measurement lines as OpenSCAD polygon to clipboard
+    func copySelectedMeasurementsAsPolygon() {
+        // Get selected measurements (or all if none selected)
+        let measurementsToConvert: [Measurement]
+        if !measurementSystem.selectedMeasurements.isEmpty {
+            measurementsToConvert = measurementSystem.selectedMeasurements
+                .sorted()
+                .compactMap { index in
+                    index < measurementSystem.measurements.count ? measurementSystem.measurements[index] : nil
+                }
+        } else {
+            measurementsToConvert = measurementSystem.measurements
+        }
+
+        // Filter to only distance measurements
+        let distanceMeasurements = measurementsToConvert.filter { $0.type == .distance }
+
+        guard !distanceMeasurements.isEmpty else {
+            print("No distance measurements to convert to polygon")
+            return
+        }
+
+        let code = OpenSCADGenerator.generatePolygon(from: distanceMeasurements)
+        OpenSCADGenerator.copyToClipboard(code)
+        print("Copied \(distanceMeasurements.count) distance measurement(s) as OpenSCAD polygon to clipboard")
     }
 }
 

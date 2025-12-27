@@ -146,6 +146,8 @@ Features use tags for categorization:
 | X/Y/Z | Axis constraint (in measurement mode) |
 | Backspace | Undo last point / delete selected |
 | Cmd+Shift+K | Clear all measurements |
+| Cmd+Shift+C | Copy selected/all as OpenSCAD |
+| Cmd+P | Copy selected/all as polygon |
 
 ### Transformation
 | Shortcut | Action |

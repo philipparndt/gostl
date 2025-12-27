@@ -742,4 +742,112 @@ class OpenSCADGenerator {
         pasteboard.clearContents()
         pasteboard.setString(code, forType: .string)
     }
+
+    // MARK: - Polygon Generation from Measurements
+
+    /// Generate OpenSCAD polygon code from distance measurements
+    /// - Parameter measurements: Array of distance measurements to convert to polygon points
+    /// - Returns: OpenSCAD code string with polygon definition
+    static func generatePolygon(from measurements: [Measurement]) -> String {
+        // Filter to only distance measurements
+        let distanceMeasurements = measurements.filter { $0.type == .distance }
+
+        guard !distanceMeasurements.isEmpty else {
+            return "// No distance measurements to convert to polygon"
+        }
+
+        var lines: [String] = []
+        lines.append("// OpenSCAD polygon generated from GoSTL measurements")
+        lines.append("// Generated: \(formattedDate())")
+        lines.append("// Measurements: \(distanceMeasurements.count)")
+        lines.append("")
+
+        // Extract all unique points from measurements
+        var allPoints: [Vector3] = []
+        var pointOrder: [Int] = []  // Track order of points for polygon
+
+        for measurement in distanceMeasurements {
+            guard measurement.points.count >= 2 else { continue }
+            let p1 = measurement.points[0].position
+            let p2 = measurement.points[1].position
+
+            let idx1 = findOrAddPoint(p1, in: &allPoints)
+            let idx2 = findOrAddPoint(p2, in: &allPoints)
+
+            // Add to point order if not already tracked
+            if !pointOrder.contains(idx1) {
+                pointOrder.append(idx1)
+            }
+            if !pointOrder.contains(idx2) {
+                pointOrder.append(idx2)
+            }
+        }
+
+        guard allPoints.count >= 2 else {
+            return "// Not enough points for a polygon"
+        }
+
+        // Determine the best projection plane
+        let planeInfo = determinePlane(points: allPoints)
+
+        lines.append("// Points projected onto \(planeDescription(planeInfo.plane)) plane")
+        lines.append("")
+
+        // Project points to 2D
+        let points2D = project2D(points: allPoints, plane: planeInfo.plane)
+
+        // Sort points to form a proper polygon outline
+        let sortedIndices = sortPointsForPolygon(points: allPoints, plane: planeInfo.plane)
+
+        lines.append("// \(allPoints.count) unique points")
+        lines.append("polygon_points = [")
+        for (index, pointIdx) in sortedIndices.enumerated() {
+            let point2D = points2D[pointIdx]
+            let point3D = allPoints[pointIdx]
+            let comma = index < sortedIndices.count - 1 ? "," : ""
+            lines.append("    [\(formatNumber(point2D.0)), \(formatNumber(point2D.1))]\(comma)  // Point \(index): 3D=(\(formatNumber(point3D.x)), \(formatNumber(point3D.y)), \(formatNumber(point3D.z)))")
+        }
+        lines.append("];")
+        lines.append("")
+
+        // Generate polygon
+        lines.append("polygon(points = polygon_points);")
+        lines.append("")
+
+        // Also provide extruded version
+        lines.append("// Extruded version (uncomment to use):")
+        lines.append("// extrude_height = 1;")
+
+        // Add transformation based on plane
+        switch planeInfo.plane {
+        case .xy:
+            if abs(planeInfo.offset) > 0.01 {
+                lines.append("// translate([0, 0, \(formatNumber(planeInfo.offset))])")
+            }
+            lines.append("// linear_extrude(height = extrude_height)")
+        case .xz:
+            lines.append("// translate([0, \(formatNumber(planeInfo.offset)), 0])")
+            lines.append("// rotate([90, 0, 0])")
+            lines.append("// linear_extrude(height = extrude_height)")
+        case .yz:
+            lines.append("// translate([\(formatNumber(planeInfo.offset)), 0, 0])")
+            lines.append("// rotate([0, 90, 0])")
+            lines.append("// linear_extrude(height = extrude_height)")
+        case .arbitrary:
+            lines.append("// linear_extrude(height = extrude_height)")
+        }
+        lines.append("//     polygon(polygon_points);")
+
+        return lines.joined(separator: "\n")
+    }
+
+    /// Get a description of the plane
+    private static func planeDescription(_ plane: Plane) -> String {
+        switch plane {
+        case .xy: return "XY"
+        case .xz: return "XZ"
+        case .yz: return "YZ"
+        case .arbitrary: return "XY (arbitrary)"
+        }
+    }
 }

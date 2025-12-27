@@ -536,6 +536,11 @@ struct GoSTLApp: App {
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift, .option])
 
+                Button("Copy as Polygon") {
+                    NotificationCenter.default.post(name: NSNotification.Name("CopyMeasurementsAsPolygon"), object: nil)
+                }
+                .keyboardShortcut("p", modifiers: .command)
+
                 Divider()
 
                 Button("Change Material") {

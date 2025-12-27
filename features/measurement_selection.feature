@@ -51,6 +51,22 @@ Feature: Measurement Selection and Management
     Then each measurement type should have a distinct color
     And this helps distinguish between distance, angle, and radius measurements
 
+  @selection @info-panel
+  Scenario: View selected measurement coordinates
+    Given I have created distance measurements
+    And I select one or more measurements
+    Then the info panel should display the selected measurements
+    And each measurement should show its start point coordinates
+    And each measurement should show its end point coordinates
+    And the coordinates should be formatted as (x, y, z)
+
+  @selection @info-panel
+  Scenario: Selected measurement details for different types
+    Given I have selected measurements of different types
+    Then distance measurements show start and end coordinates
+    And radius measurements show center coordinates
+    And angle measurements show vertex coordinates
+
   @openscad @export
   Scenario: Copy measurements as OpenSCAD code
     Given I have created measurements
@@ -70,6 +86,30 @@ Feature: Measurement Selection and Management
   Scenario: Copy measurements as OpenSCAD from menu
     When I select "Copy as OpenSCAD" from the Tools menu
     Then all measurements should be converted to OpenSCAD code
+    And the code should be copied to the clipboard
+
+  @openscad @export @polygon
+  Scenario: Copy measurements as OpenSCAD polygon
+    Given I have created distance measurements
+    When I press Cmd+P
+    Then the distance measurements should be converted to an OpenSCAD polygon
+    And the polygon points should be extracted from measurement endpoints
+    And the code should be copied to the clipboard
+
+  @openscad @export @polygon
+  Scenario: Copy selected measurements as polygon
+    Given I have created multiple distance measurements
+    And some measurements are selected
+    When I press Cmd+P
+    Then only the selected measurements should be converted to a polygon
+    And the code should be copied to the clipboard
+
+  @openscad @export @polygon
+  Scenario: Copy measurements as polygon from panel
+    Given I have selected distance measurements
+    Then the info panel should show a "Copy as Polygon" button
+    When I click the "Copy as Polygon" button
+    Then the selected measurements should be converted to a polygon
     And the code should be copied to the clipboard
 
   @openscad @export
