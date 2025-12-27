@@ -77,17 +77,6 @@ class FileWatcher {
                 guard let self = self else { return }
                 let event = source.data
 
-                // Log what event we received
-                var eventNames: [String] = []
-                if event.contains(.write) { eventNames.append("write") }
-                if event.contains(.extend) { eventNames.append("extend") }
-                if event.contains(.attrib) { eventNames.append("attrib") }
-                if event.contains(.delete) { eventNames.append("delete") }
-                if event.contains(.rename) { eventNames.append("rename") }
-                if event.contains(.link) { eventNames.append("link") }
-                if event.contains(.revoke) { eventNames.append("revoke") }
-                print("FileWatcher event: \(fileURL.lastPathComponent) - [\(eventNames.joined(separator: ", "))]")
-
                 // If file was deleted or renamed (atomic save), re-establish watch
                 if event.contains(.delete) || event.contains(.rename) {
                     self.handleFileReplaced(fileURL: fileURL, oldSource: source, oldFd: fd)
@@ -175,7 +164,6 @@ class FileWatcher {
     private func handleFileChange(fileURL: URL) {
         // Ignore events while paused
         if isPaused {
-            print("handleFileChange: Ignored (paused) - \(fileURL.lastPathComponent)")
             return
         }
 
@@ -184,7 +172,6 @@ class FileWatcher {
         // Debounce: check if we've triggered recently for this file
         if let lastTime = lastCallbackTime[path],
            Date().timeIntervalSince(lastTime) < debounceInterval {
-            print("handleFileChange: Debounced - \(fileURL.lastPathComponent)")
             return
         }
 
@@ -206,20 +193,15 @@ class FileWatcher {
         }
 
         guard let fingerprint = newFingerprint else {
-            print("handleFileChange: Could not read file metadata after \(maxRetries) attempts: \(fileURL.lastPathComponent)")
+            print("FileWatcher: Could not read file metadata: \(fileURL.lastPathComponent)")
             return
         }
 
         // Check if fingerprint changed
         let oldFingerprint = fileFingerprints[path]
         if oldFingerprint == fingerprint {
-            print("handleFileChange: Fingerprint unchanged - \(fileURL.lastPathComponent)")
             return
         }
-
-        print("handleFileChange: Fingerprint changed - \(fileURL.lastPathComponent)")
-        print("  Old: size=\(oldFingerprint?.size ?? 0), date=\(oldFingerprint?.modificationDate.description ?? "nil")")
-        print("  New: size=\(fingerprint.size), date=\(fingerprint.modificationDate)")
 
         // Update stored fingerprint
         fileFingerprints[path] = fingerprint
@@ -227,7 +209,7 @@ class FileWatcher {
         // Update last callback time for debounce
         lastCallbackTime[path] = Date()
 
-        print("handleFileChange: Triggering callback for \(fileURL.lastPathComponent)")
+        print("File changed: \(fileURL.lastPathComponent)")
         callback?(fileURL)
     }
 

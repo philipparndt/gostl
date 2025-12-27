@@ -55,12 +55,18 @@ class OpenSCADRenderer {
         throw OpenSCADError.openSCADNotFound
     }
 
+    /// Result of an OpenSCAD render operation
+    struct RenderResult {
+        let warnings: [String]
+    }
+
     /// Render an OpenSCAD file to STL format
     /// - Parameters:
     ///   - scadFile: URL of the .scad file to render
     ///   - outputFile: URL where the STL output should be written
+    /// - Returns: RenderResult containing any warnings
     /// - Throws: Error if rendering fails
-    func renderToSTL(scadFile: URL, outputFile: URL) throws {
+    func renderToSTL(scadFile: URL, outputFile: URL) throws -> RenderResult {
         // Find OpenSCAD executable
         let openscadPath = try findOpenSCADExecutable()
 
@@ -81,11 +87,12 @@ class OpenSCADRenderer {
         try process.run()
         process.waitUntilExit()
 
-        if process.terminationStatus != 0 {
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        // Always capture stderr for warnings
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
 
-            let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+        if process.terminationStatus != 0 {
+            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
             let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
 
             // Check if the file is empty (produces no geometry)
@@ -103,23 +110,48 @@ class OpenSCADRenderer {
 
             throw OpenSCADError.renderFailed(errorMsg)
         }
+
+        // Parse warnings from stderr (even on success)
+        let warnings = parseWarnings(from: stderr)
+        return RenderResult(warnings: warnings)
+    }
+
+    /// Parse warning messages from OpenSCAD stderr output
+    private func parseWarnings(from stderr: String) -> [String] {
+        guard !stderr.isEmpty else { return [] }
+
+        // Split into lines and filter for actual warnings
+        let lines = stderr.components(separatedBy: .newlines)
+        var warnings: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+
+            // Only capture actual warnings and deprecation notices
+            if trimmed.hasPrefix("WARNING:") || trimmed.hasPrefix("DEPRECATED:") {
+                warnings.append(trimmed)
+            }
+        }
+
+        return warnings
     }
 
     /// Resolve all dependencies (use/include statements) in an OpenSCAD file
     /// - Parameter scadFile: URL of the .scad file to analyze
     /// - Returns: Array of absolute file URLs for all dependencies (including the source file)
-    /// - Throws: Error if file cannot be read or dependencies cannot be resolved
-    func resolveDependencies(scadFile: URL) throws -> [URL] {
+    ///           Missing files are skipped with a warning
+    func resolveDependencies(scadFile: URL) -> [URL] {
         var visited = Set<URL>()
         var deps: [URL] = []
 
-        try resolveDependenciesRecursive(scadFile: scadFile, visited: &visited, deps: &deps)
+        resolveDependenciesRecursive(scadFile: scadFile, visited: &visited, deps: &deps)
 
         return deps
     }
 
     /// Recursively resolve dependencies to handle nested includes
-    private func resolveDependenciesRecursive(scadFile: URL, visited: inout Set<URL>, deps: inout [URL]) throws {
+    private func resolveDependenciesRecursive(scadFile: URL, visited: inout Set<URL>, deps: inout [URL]) {
         // Avoid circular dependencies
         let absolutePath = scadFile.standardizedFileURL
         guard !visited.contains(absolutePath) else {
@@ -127,15 +159,24 @@ class OpenSCADRenderer {
         }
         visited.insert(absolutePath)
 
+        // Check if file exists before trying to read it
+        guard FileManager.default.fileExists(atPath: absolutePath.path) else {
+            print("OpenSCADRenderer: Skipping missing dependency: \(absolutePath.lastPathComponent)")
+            return
+        }
+
         // Add this file to dependencies
         deps.append(absolutePath)
 
         // Parse the file to find use/include statements
-        let fileDeps = try parseDependencies(scadFile: scadFile)
+        guard let fileDeps = try? parseDependencies(scadFile: scadFile) else {
+            print("OpenSCADRenderer: Could not parse dependencies in: \(scadFile.lastPathComponent)")
+            return
+        }
 
         // Recursively resolve dependencies
         for dep in fileDeps {
-            try resolveDependenciesRecursive(scadFile: dep, visited: &visited, deps: &deps)
+            resolveDependenciesRecursive(scadFile: dep, visited: &visited, deps: &deps)
         }
     }
 
@@ -149,11 +190,16 @@ class OpenSCADRenderer {
 
         // Regular expressions to match use/include statements
         // Matches: use <file.scad>, include <file.scad>, use <./file.scad>, etc.
-        let usePattern = #"^\s*use\s*<([^>]+)>"#
-        let includePattern = #"^\s*include\s*<([^>]+)>"#
+        // Also matches quoted forms: use "file.scad", include "file.scad"
+        let useAnglePattern = #"^\s*use\s*<([^>]+)>"#
+        let includeAnglePattern = #"^\s*include\s*<([^>]+)>"#
+        let useQuotedPattern = #"^\s*use\s*\"([^\"]+)\""#
+        let includeQuotedPattern = #"^\s*include\s*\"([^\"]+)\""#
 
-        let useRegex = try NSRegularExpression(pattern: usePattern, options: [])
-        let includeRegex = try NSRegularExpression(pattern: includePattern, options: [])
+        let useAngleRegex = try NSRegularExpression(pattern: useAnglePattern, options: [])
+        let includeAngleRegex = try NSRegularExpression(pattern: includeAnglePattern, options: [])
+        let useQuotedRegex = try NSRegularExpression(pattern: useQuotedPattern, options: [])
+        let includeQuotedRegex = try NSRegularExpression(pattern: includeQuotedPattern, options: [])
 
         for line in lines {
             // Skip comments
@@ -165,23 +211,19 @@ class OpenSCADRenderer {
             let nsLine = line as NSString
             let range = NSRange(location: 0, length: nsLine.length)
 
-            // Check for use statement
-            if let match = useRegex.firstMatch(in: line, options: [], range: range) {
-                let depPathRange = match.range(at: 1)
-                if depPathRange.location != NSNotFound {
-                    let depPath = nsLine.substring(with: depPathRange)
-                    let depURL = resolveDepPath(depPath: depPath, currentDir: scadDir)
-                    deps.append(depURL)
-                }
-            }
+            // Try all patterns and collect matches
+            let allPatterns: [NSRegularExpression] = [
+                useAngleRegex, includeAngleRegex, useQuotedRegex, includeQuotedRegex
+            ]
 
-            // Check for include statement
-            if let match = includeRegex.firstMatch(in: line, options: [], range: range) {
-                let depPathRange = match.range(at: 1)
-                if depPathRange.location != NSNotFound {
-                    let depPath = nsLine.substring(with: depPathRange)
-                    let depURL = resolveDepPath(depPath: depPath, currentDir: scadDir)
-                    deps.append(depURL)
+            for regex in allPatterns {
+                if let match = regex.firstMatch(in: line, options: [], range: range) {
+                    let depPathRange = match.range(at: 1)
+                    if depPathRange.location != NSNotFound {
+                        let depPath = nsLine.substring(with: depPathRange)
+                        let depURL = resolveDepPath(depPath: depPath, currentDir: scadDir)
+                        deps.append(depURL)
+                    }
                 }
             }
         }
@@ -203,7 +245,12 @@ class OpenSCADRenderer {
         }
 
         // Try relative to work directory
-        return workDir.appendingPathComponent(depPath).standardizedFileURL
+        let workDirPath = workDir.appendingPathComponent(depPath).standardizedFileURL
+        if FileManager.default.fileExists(atPath: workDirPath.path) {
+            return workDirPath
+        }
+
+        return currentDirPath  // Return the expected path even if not found
     }
 }
 

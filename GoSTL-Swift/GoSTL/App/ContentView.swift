@@ -94,6 +94,18 @@ struct ContentView: View {
                     }
                 }
 
+                // Warnings panel (bottom-right) - only shown when there are warnings
+                if !appState.renderWarnings.isEmpty && !appState.slicingState.isVisible && !appState.levelingState.isActive {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            WarningsPanel(warnings: appState.renderWarnings)
+                                .padding(12)
+                        }
+                    }
+                }
+
                 // Loading overlay (shown while waiting for file to load)
                 if appState.isLoading {
                     LoadingOverlay()

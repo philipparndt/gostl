@@ -171,6 +171,9 @@ final class AppState: @unchecked Sendable {
     var loadError: Error?
     var loadErrorID: UUID?
 
+    /// Warnings from the last OpenSCAD render
+    var renderWarnings: [String] = []
+
     /// Whether the current file is empty (produces no geometry)
     var isEmptyFile: Bool = false
 
@@ -1035,8 +1038,14 @@ final class AppState: @unchecked Sendable {
 
             do {
                 // Render OpenSCAD to STL
-                try renderer.renderToSTL(scadFile: url, outputFile: tempURL)
+                let result = try renderer.renderToSTL(scadFile: url, outputFile: tempURL)
                 print("Rendered to: \(tempURL.path)")
+
+                // Store warnings
+                self.renderWarnings = result.warnings
+                if !result.warnings.isEmpty {
+                    print("OpenSCAD warnings: \(result.warnings.count)")
+                }
 
                 // Parse the generated STL
                 let model = try STLParser.parse(url: tempURL)
@@ -1062,6 +1071,7 @@ final class AppState: @unchecked Sendable {
                 self.isOpenSCAD = true
                 self.isGo3mf = false
                 self.isEmptyFile = true
+                self.renderWarnings = []
                 self.threeMFParseResult = nil
                 self.selectedPlateId = nil
                 self.modelInfo = ModelInfo(fileName: url.lastPathComponent, triangleCount: 0, volume: 0, boundingBox: BoundingBox())
@@ -1084,6 +1094,7 @@ final class AppState: @unchecked Sendable {
             self.tempSTLFileURL = nil
             self.isOpenSCAD = false
             self.isGo3mf = false
+            self.renderWarnings = []
             self.threeMFParseResult = nil
             self.selectedPlateId = nil
             self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
@@ -1115,6 +1126,7 @@ final class AppState: @unchecked Sendable {
             self.tempSTLFileURL = nil
             self.isOpenSCAD = false
             self.isGo3mf = false
+            self.renderWarnings = []
             self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
             print("Successfully loaded: \(model.triangleCount) triangles (\(parseResult.plates.count) plates)")
@@ -1155,6 +1167,7 @@ final class AppState: @unchecked Sendable {
             self.tempSTLFileURL = temp3MFURL  // Store temp 3MF for cleanup
             self.isOpenSCAD = false
             self.isGo3mf = true
+            self.renderWarnings = []
             self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
             print("Successfully loaded go3mf config: \(model.triangleCount) triangles (\(parseResult.plates.count) plates)")
@@ -1202,9 +1215,13 @@ final class AppState: @unchecked Sendable {
     /// Set up file watching for the currently loaded file
     func setupFileWatcher() throws {
         guard let sourceURL = sourceFileURL else {
-            print("No source file to watch")
+            print("setupFileWatcher: No source file to watch")
             return
         }
+
+        // Stop existing watcher first
+        fileWatcher?.stop()
+        fileWatcher = nil
 
         let watcher = FileWatcher()
         var filesToWatch: [URL] = []
@@ -1217,9 +1234,7 @@ final class AppState: @unchecked Sendable {
             // For OpenSCAD files, watch the source file and all dependencies
             let workDir = sourceURL.deletingLastPathComponent()
             let renderer = OpenSCADRenderer(workDir: workDir)
-
-            let deps = try renderer.resolveDependencies(scadFile: sourceURL)
-            filesToWatch = deps
+            filesToWatch = renderer.resolveDependencies(scadFile: sourceURL)
         } else {
             // For STL/3MF files, just watch the source file
             filesToWatch = [sourceURL]
@@ -1230,7 +1245,6 @@ final class AppState: @unchecked Sendable {
             guard let self = self else { return }
             DispatchQueue.main.async {
                 self.reloadRequestId += 1
-                print("FileWatcher callback: reloadRequestId = \(self.reloadRequestId)")
             }
         }
 
@@ -1300,9 +1314,17 @@ final class AppState: @unchecked Sendable {
                     let newTempURL = FileManager.default.temporaryDirectory
                         .appendingPathComponent("gostl_temp_\(Int(Date().timeIntervalSince1970)).stl")
 
-                    try renderer.renderToSTL(scadFile: sourceURL, outputFile: newTempURL)
+                    let result = try renderer.renderToSTL(scadFile: sourceURL, outputFile: newTempURL)
                     model = try STLParser.parse(url: newTempURL)
                     tempURL = newTempURL
+
+                    // Update warnings on main thread
+                    await MainActor.run {
+                        self.renderWarnings = result.warnings
+                        if !result.warnings.isEmpty {
+                            print("OpenSCAD warnings: \(result.warnings.count)")
+                        }
+                    }
                 } else {
                     // Load STL/3MF directly
                     let ext = sourceURL.pathExtension.lowercased()
@@ -1341,8 +1363,9 @@ final class AppState: @unchecked Sendable {
                         self.loadError = nil
                         self.loadErrorID = nil
 
-                        // Resume file watcher
-                        self.fileWatcher?.isPaused = false
+                        // Re-setup file watcher to catch any new dependencies
+                        // (e.g., new include/use statements added to OpenSCAD file)
+                        try? self.setupFileWatcher()
                     } catch {
                         print("ERROR: Failed to apply reloaded model: \(error)")
                         self.isLoading = false
@@ -1363,8 +1386,8 @@ final class AppState: @unchecked Sendable {
                     self.loadError = nil
                     self.loadErrorID = nil
 
-                    // Resume file watcher
-                    self.fileWatcher?.isPaused = false
+                    // Re-setup file watcher (dependencies may have changed)
+                    try? self.setupFileWatcher()
                 }
             } catch {
                 await MainActor.run {
