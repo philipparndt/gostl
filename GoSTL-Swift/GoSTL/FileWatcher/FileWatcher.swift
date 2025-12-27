@@ -27,6 +27,12 @@ class FileWatcher {
     /// Whether the watcher is paused (ignores events)
     var isPaused: Bool = false
 
+    /// Debounce: track last callback time per file to prevent rapid successive triggers
+    private var lastCallbackTime: [String: Date] = [:]
+
+    /// Minimum interval between callbacks for the same file (in seconds)
+    private let debounceInterval: TimeInterval = 0.5
+
     init() {}
 
     /// Start watching files for changes
@@ -70,6 +76,18 @@ class FileWatcher {
             source.setEventHandler { [weak self] in
                 guard let self = self else { return }
                 let event = source.data
+
+                // Log what event we received
+                var eventNames: [String] = []
+                if event.contains(.write) { eventNames.append("write") }
+                if event.contains(.extend) { eventNames.append("extend") }
+                if event.contains(.attrib) { eventNames.append("attrib") }
+                if event.contains(.delete) { eventNames.append("delete") }
+                if event.contains(.rename) { eventNames.append("rename") }
+                if event.contains(.link) { eventNames.append("link") }
+                if event.contains(.revoke) { eventNames.append("revoke") }
+                print("FileWatcher event: \(fileURL.lastPathComponent) - [\(eventNames.joined(separator: ", "))]")
+
                 // If file was deleted or renamed (atomic save), re-establish watch
                 if event.contains(.delete) || event.contains(.rename) {
                     self.handleFileReplaced(fileURL: fileURL, oldSource: source, oldFd: fd)
@@ -106,8 +124,9 @@ class FileWatcher {
             fileDescriptors.remove(at: fdIndex)
         }
 
-        // Wait briefly for the editor to complete the atomic rename
-        queue.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        // Wait for the editor to complete the atomic rename
+        // Use 0.3s delay to handle slow editors or network drives
+        queue.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self = self else { return }
 
             let path = fileURL.path
@@ -156,27 +175,59 @@ class FileWatcher {
     private func handleFileChange(fileURL: URL) {
         // Ignore events while paused
         if isPaused {
+            print("handleFileChange: Ignored (paused) - \(fileURL.lastPathComponent)")
             return
         }
 
         let path = fileURL.path
 
-        // Get new fingerprint
-        guard let newFingerprint = FileFingerprint(url: fileURL) else {
-            print("Could not read file metadata: \(fileURL.lastPathComponent)")
+        // Debounce: check if we've triggered recently for this file
+        if let lastTime = lastCallbackTime[path],
+           Date().timeIntervalSince(lastTime) < debounceInterval {
+            print("handleFileChange: Debounced - \(fileURL.lastPathComponent)")
+            return
+        }
+
+        // Get new fingerprint with retry logic
+        // Sometimes the file isn't fully written yet after an atomic save
+        var newFingerprint: FileFingerprint?
+        var retryCount = 0
+        let maxRetries = 3
+        let retryDelay: useconds_t = 50_000 // 50ms
+
+        while newFingerprint == nil && retryCount < maxRetries {
+            newFingerprint = FileFingerprint(url: fileURL)
+            if newFingerprint == nil {
+                retryCount += 1
+                if retryCount < maxRetries {
+                    usleep(retryDelay)
+                }
+            }
+        }
+
+        guard let fingerprint = newFingerprint else {
+            print("handleFileChange: Could not read file metadata after \(maxRetries) attempts: \(fileURL.lastPathComponent)")
             return
         }
 
         // Check if fingerprint changed
         let oldFingerprint = fileFingerprints[path]
-        if oldFingerprint == newFingerprint {
+        if oldFingerprint == fingerprint {
+            print("handleFileChange: Fingerprint unchanged - \(fileURL.lastPathComponent)")
             return
         }
 
-        // Update stored fingerprint
-        fileFingerprints[path] = newFingerprint
+        print("handleFileChange: Fingerprint changed - \(fileURL.lastPathComponent)")
+        print("  Old: size=\(oldFingerprint?.size ?? 0), date=\(oldFingerprint?.modificationDate.description ?? "nil")")
+        print("  New: size=\(fingerprint.size), date=\(fingerprint.modificationDate)")
 
-        print("File changed: \(fileURL.lastPathComponent)")
+        // Update stored fingerprint
+        fileFingerprints[path] = fingerprint
+
+        // Update last callback time for debounce
+        lastCallbackTime[path] = Date()
+
+        print("handleFileChange: Triggering callback for \(fileURL.lastPathComponent)")
         callback?(fileURL)
     }
 
@@ -189,6 +240,7 @@ class FileWatcher {
         sources.removeAll()
         fileDescriptors.removeAll()
         fileFingerprints.removeAll()
+        lastCallbackTime.removeAll()
     }
 
     deinit {
