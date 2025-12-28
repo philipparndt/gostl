@@ -128,8 +128,8 @@ class OpenSCADRenderer {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
 
-            // Only capture actual warnings and deprecation notices
-            if trimmed.hasPrefix("WARNING:") || trimmed.hasPrefix("DEPRECATED:") {
+            // Capture warnings, deprecation notices, and echo output
+            if trimmed.hasPrefix("WARNING:") || trimmed.hasPrefix("DEPRECATED:") || trimmed.hasPrefix("ECHO:") {
                 warnings.append(trimmed)
             }
         }
