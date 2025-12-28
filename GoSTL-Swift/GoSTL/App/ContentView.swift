@@ -435,7 +435,7 @@ struct ContentView: View {
                         title: "OpenSCAD Not Installed",
                         message: "OpenSCAD is required to render .scad files.\n\nPlease install OpenSCAD from:\nhttps://openscad.org/downloads.html\n\nOr install via Homebrew:\nbrew install --cask openscad"
                     )
-                case .renderFailed(let message):
+                case .renderFailed(let message, _):
                     errorAlert = ErrorAlert(
                         title: "OpenSCAD Render Failed",
                         message: message

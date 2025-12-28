@@ -1062,21 +1062,27 @@ final class AppState: @unchecked Sendable {
                 self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
                 print("Successfully loaded: \(model.triangleCount) triangles")
-            } catch OpenSCADError.emptyFile {
-                // Empty file - show blank view with info
-                print("OpenSCAD file is empty: \(url.lastPathComponent)")
-                clearModel()
-                self.sourceFileURL = url
-                self.tempSTLFileURL = nil
-                self.isOpenSCAD = true
-                self.isGo3mf = false
-                self.isEmptyFile = true
-                self.renderWarnings = []
-                self.threeMFParseResult = nil
-                self.selectedPlateId = nil
-                self.modelInfo = ModelInfo(fileName: url.lastPathComponent, triangleCount: 0, volume: 0, boundingBox: BoundingBox())
-                self.isLoading = false
-                return
+            } catch let error as OpenSCADError {
+                // Handle OpenSCAD-specific errors
+                if case .emptyFile(let messages) = error {
+                    // Empty file - show blank view with info
+                    print("OpenSCAD file is empty: \(url.lastPathComponent)")
+                    clearModel()
+                    self.sourceFileURL = url
+                    self.tempSTLFileURL = nil
+                    self.isOpenSCAD = true
+                    self.isGo3mf = false
+                    self.isEmptyFile = true
+                    self.renderWarnings = messages
+                    self.threeMFParseResult = nil
+                    self.selectedPlateId = nil
+                    self.modelInfo = ModelInfo(fileName: url.lastPathComponent, triangleCount: 0, volume: 0, boundingBox: BoundingBox())
+                    self.isLoading = false
+                    return
+                }
+                // Store messages from other OpenSCAD errors before rethrowing
+                self.renderWarnings = error.messages
+                throw error
             }
 
         } else if fileExtension == "stl" {
@@ -1376,18 +1382,31 @@ final class AppState: @unchecked Sendable {
                         self.fileWatcher?.isPaused = false
                     }
                 }
-            } catch OpenSCADError.emptyFile {
+            } catch let error as OpenSCADError {
                 await MainActor.run {
-                    print("OpenSCAD file is empty: \(sourceURL.lastPathComponent)")
-                    self.clearModel()
-                    self.isEmptyFile = true
-                    self.modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent)
-                    self.isLoading = false
-                    self.loadError = nil
-                    self.loadErrorID = nil
+                    if case .emptyFile(let messages) = error {
+                        print("OpenSCAD file is empty: \(sourceURL.lastPathComponent)")
+                        self.clearModel()
+                        self.isEmptyFile = true
+                        self.renderWarnings = messages
+                        self.modelInfo = ModelInfo(fileName: sourceURL.lastPathComponent)
+                        self.isLoading = false
+                        self.loadError = nil
+                        self.loadErrorID = nil
 
-                    // Re-setup file watcher (dependencies may have changed)
-                    try? self.setupFileWatcher()
+                        // Re-setup file watcher (dependencies may have changed)
+                        try? self.setupFileWatcher()
+                    } else {
+                        // Other OpenSCAD errors - show messages and error
+                        print("ERROR: Failed to reload model: \(error)")
+                        self.renderWarnings = error.messages
+                        self.isLoading = false
+                        self.loadError = error
+                        self.loadErrorID = UUID()
+
+                        // Resume file watcher
+                        self.fileWatcher?.isPaused = false
+                    }
                 }
             } catch {
                 await MainActor.run {

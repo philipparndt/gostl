@@ -4,18 +4,24 @@ import SwiftUI
 private enum MessageType: Int, Comparable {
     case other = 0
     case echo = 1
-    case deprecated = 2
-    case warning = 3
+    case trace = 2
+    case deprecated = 3
+    case warning = 4
+    case error = 5
 
     static func < (lhs: MessageType, rhs: MessageType) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
 
     static func from(_ message: String) -> MessageType {
-        if message.hasPrefix("WARNING:") {
+        if message.hasPrefix("ERROR:") {
+            return .error
+        } else if message.hasPrefix("WARNING:") {
             return .warning
         } else if message.hasPrefix("DEPRECATED:") {
             return .deprecated
+        } else if message.hasPrefix("TRACE:") {
+            return .trace
         } else if message.hasPrefix("ECHO:") {
             return .echo
         } else {
@@ -25,8 +31,10 @@ private enum MessageType: Int, Comparable {
 
     var icon: String {
         switch self {
+        case .error: return "xmark.circle"
         case .warning: return "exclamationmark.triangle"
         case .deprecated: return "clock.arrow.circlepath"
+        case .trace: return "arrow.triangle.branch"
         case .echo: return "text.bubble"
         case .other: return "info.circle"
         }
@@ -34,8 +42,10 @@ private enum MessageType: Int, Comparable {
 
     var color: Color {
         switch self {
+        case .error: return .red
         case .warning: return .orange
         case .deprecated: return .yellow
+        case .trace: return .purple
         case .echo: return .cyan
         case .other: return .gray
         }
@@ -121,12 +131,17 @@ private struct WarningRow: View {
 
     private var displayText: String {
         // Remove the prefix for cleaner display
-        if warning.hasPrefix("WARNING: ") {
-            return String(warning.dropFirst(9))
-        } else if warning.hasPrefix("DEPRECATED: ") {
-            return String(warning.dropFirst(12))
-        } else if warning.hasPrefix("ECHO: ") {
-            return String(warning.dropFirst(6))
+        let prefixes = [
+            "ERROR: ",
+            "WARNING: ",
+            "DEPRECATED: ",
+            "TRACE: ",
+            "ECHO: "
+        ]
+        for prefix in prefixes {
+            if warning.hasPrefix(prefix) {
+                return String(warning.dropFirst(prefix.count))
+            }
         }
         return warning
     }

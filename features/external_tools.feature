@@ -75,6 +75,25 @@ Feature: External Tool Integration
     Then the echo output should appear with a cyan speech bubble icon
     And the "ECHO:" prefix should be stripped from the display
 
+  @openscad
+  Scenario: OpenSCAD error display
+    Given an OpenSCAD file produces an error like "ERROR: Assertion failed"
+    Then the error should appear with a red X circle icon
+    And the "ERROR:" prefix should be stripped from the display
+
+  @openscad
+  Scenario: OpenSCAD trace display
+    Given an OpenSCAD file produces a trace like "TRACE: called by 'align'"
+    Then the trace should appear with a purple branch icon
+    And the "TRACE:" prefix should be stripped from the display
+
+  @openscad
+  Scenario: Messages shown even on render failure
+    Given an OpenSCAD file fails to render
+    When the output contains ECHO, WARNING, ERROR, or TRACE messages
+    Then the messages panel should still display all captured messages
+    And this helps debug the issue that caused the render failure
+
   @go3mf
   Scenario: go3mf YAML rendering
     Given a go3mf YAML configuration file is loaded

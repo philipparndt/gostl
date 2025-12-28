@@ -73,7 +73,7 @@ struct ErrorOverlay: View {
                             }
                             .padding(.top, 4)
 
-                        case .renderFailed(let message):
+                        case .renderFailed(let message, _):
                             Text("Render Failed")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
@@ -116,7 +116,7 @@ struct ErrorOverlay: View {
         Color.gray.opacity(0.3)
 
         ErrorOverlay(
-            error: .renderFailed("ERROR: Parser error: syntax error in file included-file.scad, line 42\nERROR: Cannot continue"),
+            error: .renderFailed("ERROR: Parser error: syntax error in file included-file.scad, line 42\nERROR: Cannot continue", messages: []),
             onDismiss: {}
         )
     }

@@ -87,17 +87,19 @@ class OpenSCADRenderer {
         try process.run()
         process.waitUntilExit()
 
-        // Always capture stderr for warnings
+        // Capture both stdout and stderr
+        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
         let stderr = String(data: stderrData, encoding: .utf8) ?? ""
 
-        if process.terminationStatus != 0 {
-            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+        // Parse messages from both stdout (ECHO) and stderr (warnings, errors)
+        let messages = parseMessages(stdout: stdout, stderr: stderr)
 
+        if process.terminationStatus != 0 {
             // Check if the file is empty (produces no geometry)
             if stderr.contains("Current top level object is empty") {
-                throw OpenSCADError.emptyFile
+                throw OpenSCADError.emptyFile(messages: messages)
             }
 
             var errorMsg = "Failed to render \(scadFile.lastPathComponent)\n"
@@ -108,33 +110,38 @@ class OpenSCADRenderer {
                 errorMsg += "stdout: \(stdout)\n"
             }
 
-            throw OpenSCADError.renderFailed(errorMsg)
+            throw OpenSCADError.renderFailed(errorMsg, messages: messages)
         }
 
-        // Parse warnings from stderr (even on success)
-        let warnings = parseWarnings(from: stderr)
-        return RenderResult(warnings: warnings)
+        return RenderResult(warnings: messages)
     }
 
-    /// Parse warning messages from OpenSCAD stderr output
-    private func parseWarnings(from stderr: String) -> [String] {
-        guard !stderr.isEmpty else { return [] }
+    /// Parse messages from OpenSCAD output
+    /// - Parameters:
+    ///   - stdout: Standard output (contains ECHO statements)
+    ///   - stderr: Standard error (contains warnings, deprecations, errors)
+    /// - Returns: Array of message strings
+    private func parseMessages(stdout: String, stderr: String) -> [String] {
+        var messages: [String] = []
 
-        // Split into lines and filter for actual warnings
-        let lines = stderr.components(separatedBy: .newlines)
-        var warnings: [String] = []
-
-        for line in lines {
+        // Parse stdout for ECHO statements
+        for line in stdout.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { continue }
-
-            // Capture warnings, deprecation notices, and echo output
-            if trimmed.hasPrefix("WARNING:") || trimmed.hasPrefix("DEPRECATED:") || trimmed.hasPrefix("ECHO:") {
-                warnings.append(trimmed)
+            if trimmed.hasPrefix("ECHO:") {
+                messages.append(trimmed)
             }
         }
 
-        return warnings
+        // Parse stderr for warnings, deprecations, errors, and traces
+        for line in stderr.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("WARNING:") || trimmed.hasPrefix("DEPRECATED:") ||
+               trimmed.hasPrefix("ERROR:") || trimmed.hasPrefix("TRACE:") {
+                messages.append(trimmed)
+            }
+        }
+
+        return messages
     }
 
     /// Resolve all dependencies (use/include statements) in an OpenSCAD file
@@ -257,17 +264,29 @@ class OpenSCADRenderer {
 /// Errors that can occur during OpenSCAD operations
 enum OpenSCADError: LocalizedError {
     case openSCADNotFound
-    case renderFailed(String)
-    case emptyFile
+    case renderFailed(String, messages: [String])
+    case emptyFile(messages: [String])
 
     var errorDescription: String? {
         switch self {
         case .openSCADNotFound:
             return "OpenSCAD not found in PATH. Please install OpenSCAD from https://openscad.org/"
-        case .renderFailed(let message):
+        case .renderFailed(let message, _):
             return message
         case .emptyFile:
             return "The OpenSCAD file produced no geometry"
+        }
+    }
+
+    /// Get messages associated with the error (warnings, echoes, errors, traces)
+    var messages: [String] {
+        switch self {
+        case .openSCADNotFound:
+            return []
+        case .renderFailed(_, let messages):
+            return messages
+        case .emptyFile(let messages):
+            return messages
         }
     }
 }
