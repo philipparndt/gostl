@@ -145,6 +145,7 @@ private struct WarningRow: View {
                 .foregroundColor(.white.opacity(0.9))
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
         }
         .padding(.vertical, 2)
     }
