@@ -29,6 +29,8 @@ final class MeasurementRenderData {
     var constraintLineInstanceCount: Int = 0
     var selectedLineInstanceBuffer: MTLBuffer?  // Blue lines for selected measurements
     var selectedLineInstanceCount: Int = 0
+    var staleLineInstanceBuffer: MTLBuffer?  // Gray lines for stale measurements
+    var staleLineInstanceCount: Int = 0
     var pointCount: Int = 0
     var hoverVertexCount: Int = 0
     var constrainedPointVertexCount: Int = 0
@@ -53,6 +55,9 @@ final class MeasurementRenderData {
 
     // Selected line cylinder geometry (blue)
     let selectedCylinderVertexBuffer: MTLBuffer
+
+    // Stale line cylinder geometry (gray/faded)
+    let staleCylinderVertexBuffer: MTLBuffer
 
     init(device: MTLDevice, thickness: Float) throws {
         self.device = device
@@ -129,6 +134,18 @@ final class MeasurementRenderData {
             throw MetalError.bufferCreationFailed
         }
         self.selectedCylinderVertexBuffer = selectedVertexBuffer
+
+        // Create stale line cylinder with gray/faded color (for measurements with stale points)
+        let staleCylinderGeometry = Self.createCylinderGeometry(
+            radius: thickness * measurementThickness,
+            segments: 8,
+            color: SIMD4<Float>(0.5, 0.5, 0.5, 0.7) // Faded gray
+        )
+        let staleVertexSize = staleCylinderGeometry.vertices.count * MemoryLayout<VertexIn>.stride
+        guard let staleVertexBuffer = device.makeBuffer(bytes: staleCylinderGeometry.vertices, length: staleVertexSize, options: []) else {
+            throw MetalError.bufferCreationFailed
+        }
+        self.staleCylinderVertexBuffer = staleVertexBuffer
     }
 
     /// Update buffers based on measurement system state and leveling state
@@ -216,6 +233,7 @@ final class MeasurementRenderData {
         // Add current measurement points (in progress)
         let defaultSize: Float = 0.5
         let defaultColor = SIMD4<Float>(1.0, 0.3, 0.3, 1.0) // Red for regular measurement points
+        let staleColor = SIMD4<Float>(0.5, 0.5, 0.5, 0.7) // Faded gray for stale points
 
         for point in measurementSystem.currentPoints {
             let pos = point.position.float3
@@ -226,10 +244,18 @@ final class MeasurementRenderData {
 
         // Add completed measurement points
         for measurement in measurementSystem.measurements {
-            for point in measurement.points {
+            for (pointIndex, point) in measurement.points.enumerated() {
                 let pos = point.position.float3
                 let size = measurement.type == .radius ? Float(0.3) : defaultSize
-                let color = measurement.type == .radius ? SIMD4<Float>(1.0, 0.59, 1.0, 1.0) : defaultColor // Same magenta as circle line
+                let isStale = measurement.stalePointIndices.contains(pointIndex)
+                let color: SIMD4<Float>
+                if isStale {
+                    color = staleColor
+                } else if measurement.type == .radius {
+                    color = SIMD4<Float>(1.0, 0.59, 1.0, 1.0) // Magenta
+                } else {
+                    color = defaultColor
+                }
                 vertices.append(contentsOf: createCube(center: pos, size: size, color: color))
             }
         }
@@ -262,6 +288,7 @@ final class MeasurementRenderData {
     private func updateLines(_ measurementSystem: MeasurementSystem) {
         var lineEdges: [Edge] = []
         var previewEdges: [Edge] = []
+        var staleEdges: [Edge] = []
 
         // Lines for current measurement
         if measurementSystem.currentPoints.count >= 2 {
@@ -273,7 +300,7 @@ final class MeasurementRenderData {
         }
 
         // Lines for completed measurements (excluding radius measurements)
-        // Separate selected and unselected measurements
+        // Separate selected, stale, and normal measurements
         var selectedEdges: [Edge] = []
 
         for (index, measurement) in measurementSystem.measurements.enumerated() {
@@ -288,8 +315,14 @@ final class MeasurementRenderData {
                 for i in 0..<(measurement.points.count - 1) {
                     let p1 = measurement.points[i].position
                     let p2 = measurement.points[i + 1].position
+                    // A line is stale if either endpoint is stale
+                    let isStale = measurement.stalePointIndices.contains(i) ||
+                                  measurement.stalePointIndices.contains(i + 1)
+
                     if isSelected {
                         selectedEdges.append(Edge(p1, p2))
+                    } else if isStale {
+                        staleEdges.append(Edge(p1, p2))
                     } else {
                         lineEdges.append(Edge(p1, p2))
                     }
@@ -332,6 +365,17 @@ final class MeasurementRenderData {
         } else {
             selectedLineInstanceBuffer = nil
             selectedLineInstanceCount = 0
+        }
+
+        // Create instance buffers for stale lines
+        if !staleEdges.isEmpty {
+            let instances = Self.createWireframeInstances(edges: staleEdges)
+            let instanceSize = instances.count * MemoryLayout<WireframeInstance>.stride
+            staleLineInstanceBuffer = device.makeBuffer(bytes: instances, length: instanceSize, options: [])
+            staleLineInstanceCount = instances.count
+        } else {
+            staleLineInstanceBuffer = nil
+            staleLineInstanceCount = 0
         }
 
         if !previewEdges.isEmpty {

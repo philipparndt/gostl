@@ -650,6 +650,26 @@ final class MetalRenderer {
             )
         }
 
+        // Render stale measurement lines (gray/faded)
+        if let staleInstanceBuffer = measurementData.staleLineInstanceBuffer, measurementData.staleLineInstanceCount > 0 {
+            encoder.setRenderPipelineState(wireframePipelineState)
+            encoder.setDepthStencilState(depthStencilState)
+
+            encoder.setVertexBuffer(measurementData.staleCylinderVertexBuffer, offset: 0, index: 0)
+            var uniformsCopy = uniforms
+            encoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<Uniforms>.size, index: 1)
+            encoder.setVertexBuffer(staleInstanceBuffer, offset: 0, index: 2)
+
+            encoder.drawIndexedPrimitives(
+                type: .triangle,
+                indexCount: measurementData.indexCount,
+                indexType: .uint16,
+                indexBuffer: measurementData.cylinderIndexBuffer,
+                indexBufferOffset: 0,
+                instanceCount: measurementData.staleLineInstanceCount
+            )
+        }
+
         // Render constraint line (red line from constrained endpoint to snap point)
         if let constraintInstanceBuffer = measurementData.constraintLineInstanceBuffer, measurementData.constraintLineInstanceCount > 0 {
             encoder.setRenderPipelineState(wireframePipelineState)

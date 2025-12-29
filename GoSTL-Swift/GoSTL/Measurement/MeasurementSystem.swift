@@ -231,8 +231,13 @@ final class MeasurementSystem: @unchecked Sendable {
             }
 
             // Use spatial grid for fast vertex snapping
-            let snappedPosition = accelerator.findClosestVertex(to: hit.position, maxDistance: snapThreshold) ?? hit.position
-            return MeasurementPoint(position: snappedPosition, normal: hit.normal)
+            if let snappedPosition = accelerator.findClosestVertex(to: hit.position, maxDistance: snapThreshold) {
+                // Snapped to a vertex - not an air point
+                return MeasurementPoint(position: snappedPosition, normal: hit.normal, isAirPoint: false)
+            } else {
+                // No vertex within threshold - this is an air point
+                return MeasurementPoint(position: hit.position, normal: hit.normal, isAirPoint: true)
+            }
         }
 
         // Fallback to O(n) algorithm when accelerator not available
@@ -256,6 +261,7 @@ final class MeasurementSystem: @unchecked Sendable {
 
         // Snap to nearest vertex in the model if within threshold
         var snappedPosition = intersection.position
+        var didSnap = false
 
         var closestVertexDistance: Double = .infinity
         for triangle in model.triangles {
@@ -264,11 +270,12 @@ final class MeasurementSystem: @unchecked Sendable {
                 if distance < closestVertexDistance && distance <= snapThreshold {
                     closestVertexDistance = distance
                     snappedPosition = vertex
+                    didSnap = true
                 }
             }
         }
 
-        return MeasurementPoint(position: snappedPosition, normal: intersection.normal)
+        return MeasurementPoint(position: snappedPosition, normal: intersection.normal, isAirPoint: !didSnap)
     }
 
     /// Clear all measurements
@@ -280,6 +287,65 @@ final class MeasurementSystem: @unchecked Sendable {
         constrainedEndpoint = nil
         selectedTriangles.removeAll()
         hoveredTriangle = nil
+    }
+
+    /// Validate measurements after model reload
+    /// Marks points as stale if they no longer align with model vertices
+    func validateMeasurements(model: STLModel, accelerator: SpatialAccelerator?) {
+        // Use very small threshold for exact vertex matching (floating point epsilon)
+        let staleThreshold: Double = 0.001  // 1 micron tolerance for floating point comparison
+
+        print("validateMeasurements: checking \(measurements.count) measurements (accelerator: \(accelerator != nil ? "available" : "nil"))")
+
+        for i in measurements.indices {
+            var staleIndices: Set<Int> = []
+
+            for (pointIndex, point) in measurements[i].points.enumerated() {
+                // Skip air points - they were never on vertices
+                if point.isAirPoint {
+                    print("  Measurement \(i), point \(pointIndex): air point, skipping")
+                    continue
+                }
+
+                // Check if point still aligns with a model vertex
+                var foundVertex = false
+                var closestDistance: Double = .infinity
+
+                if let accelerator = accelerator {
+                    // Fast path using spatial accelerator
+                    if accelerator.findClosestVertex(to: point.position, maxDistance: staleThreshold) != nil {
+                        foundVertex = true
+                    }
+                } else {
+                    // Slow path - check all vertices
+                    for triangle in model.triangles {
+                        for vertex in [triangle.v1, triangle.v2, triangle.v3] {
+                            let distance = vertex.distance(to: point.position)
+                            if distance < closestDistance {
+                                closestDistance = distance
+                            }
+                            if distance <= staleThreshold {
+                                foundVertex = true
+                                break
+                            }
+                        }
+                        if foundVertex { break }
+                    }
+                }
+
+                if !foundVertex {
+                    staleIndices.insert(pointIndex)
+                    print("  Measurement \(i), point \(pointIndex): STALE (closest vertex: \(String(format: "%.2f", closestDistance))mm away)")
+                } else {
+                    print("  Measurement \(i), point \(pointIndex): valid")
+                }
+            }
+
+            measurements[i].stalePointIndices = staleIndices
+        }
+
+        let totalStale = measurements.reduce(0) { $0 + $1.stalePointIndices.count }
+        print("validateMeasurements: \(totalStale) stale points found")
     }
 
     // MARK: - Axis Constraint Methods

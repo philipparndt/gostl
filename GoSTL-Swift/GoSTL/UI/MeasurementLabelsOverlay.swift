@@ -13,7 +13,16 @@ struct MeasurementLabelsOverlay: View {
                 ForEach(Array(measurementSystem.measurements.enumerated()), id: \.offset) { index, measurement in
                     if let screenPos = camera.project(worldPosition: measurement.labelPosition, viewSize: viewSize) {
                         let isSelected = measurementSystem.selectedMeasurements.contains(index)
-                        let baseColor: Color = measurement.type == .radius ? Color(red: 1.0, green: 0.59, blue: 1.0) : .yellow
+                        let isStale = measurement.hasStalePoints
+                        let baseColor: Color = {
+                            if isStale {
+                                return Color(red: 0.5, green: 0.5, blue: 0.5)  // Gray for stale
+                            } else if measurement.type == .radius {
+                                return Color(red: 1.0, green: 0.59, blue: 1.0)
+                            } else {
+                                return .yellow
+                            }
+                        }()
                         let labelColor: Color = isSelected ? Color(red: 0.3, green: 0.5, blue: 1.0) : baseColor
 
                         MeasurementLabel(

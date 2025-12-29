@@ -254,10 +254,11 @@ final class InputHandler {
         // If constraint is active, use the constrained endpoint
         if let constrainedEndpoint = appState.measurementSystem.constrainedEndpoint,
            appState.measurementSystem.constraint != nil {
-            // Create a measurement point at the constrained endpoint
+            // Create a measurement point at the constrained endpoint (always an air point)
             let constrainedPoint = MeasurementPoint(
                 position: constrainedEndpoint,
-                normal: Vector3(0, 1, 0)  // Dummy normal
+                normal: Vector3(0, 1, 0),  // Dummy normal
+                isAirPoint: true  // Constrained points are always air points
             )
             _ = appState.measurementSystem.addPoint(constrainedPoint)
             appState.measurementSystem.constraint = nil

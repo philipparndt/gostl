@@ -995,8 +995,14 @@ final class AppState: @unchecked Sendable {
         // Initialize slicing bounds
         slicingState.initializeBounds(from: bbox)
 
-        // Clear all measurements when loading a new model
-        measurementSystem.clearAll()
+        // Handle measurements based on whether this is a reload or new file
+        if preserveCamera {
+            // Reload - validate existing measurements against new model
+            measurementSystem.validateMeasurements(model: model, accelerator: spatialAccelerator)
+        } else {
+            // New file - clear all measurements
+            measurementSystem.clearAll()
+        }
 
         // Clear loading state
         isLoading = false

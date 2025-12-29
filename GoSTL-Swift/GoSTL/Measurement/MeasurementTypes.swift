@@ -12,10 +12,12 @@ enum MeasurementType {
 struct MeasurementPoint {
     let position: Vector3
     let normal: Vector3
+    let isAirPoint: Bool  // true if created via constraint or didn't snap to vertex
 
-    init(position: Vector3, normal: Vector3) {
+    init(position: Vector3, normal: Vector3, isAirPoint: Bool = false) {
         self.position = position
         self.normal = normal
+        self.isAirPoint = isAirPoint
     }
 }
 
@@ -25,6 +27,12 @@ struct Measurement {
     let points: [MeasurementPoint]
     let value: Double
     let circle: Circle? // For radius measurements, stores the fitted circle
+    var stalePointIndices: Set<Int> = []  // Indices of points that no longer align with model vertices
+
+    /// Whether any points in this measurement are stale (no longer on vertices)
+    var hasStalePoints: Bool {
+        !stalePointIndices.isEmpty
+    }
 
     init(type: MeasurementType, points: [MeasurementPoint], value: Double, circle: Circle? = nil) {
         self.type = type
