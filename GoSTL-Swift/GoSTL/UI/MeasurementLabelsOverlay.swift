@@ -71,13 +71,7 @@ struct MeasurementLabelsOverlay: View {
     }
 
     private func formatDistance(_ value: Double) -> String {
-        if value < 1.0 {
-            return String(format: "%.2f", value)
-        } else if value < 100.0 {
-            return String(format: "%.1f", value)
-        } else {
-            return String(format: "%.0f", value)
-        }
+        return String(format: "%.2f", value)
     }
 }
 

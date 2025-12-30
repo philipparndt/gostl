@@ -237,8 +237,10 @@ func openWithGo3mf(sourceFileURL: URL?) {
 
     // Find go3mf executable
     guard let go3mfPath = findGo3mfExecutable() else {
+        let error = Go3mfError.go3mfNotFound
         print("go3mf not found. Please install go3mf first.")
         print("Checked: /usr/local/bin/go3mf, /opt/homebrew/bin/go3mf, ~/go/bin/go3mf")
+        NotificationCenter.default.post(name: NSNotification.Name("Go3mfError"), object: error)
         return
     }
 
@@ -252,6 +254,7 @@ func openWithGo3mf(sourceFileURL: URL?) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: go3mfPath)
     process.arguments = ["build", sourceURL.path, "-o", outputURL.path, "--open"]
+    process.currentDirectoryURL = sourceURL.deletingLastPathComponent()
 
     // Inherit the user's shell PATH so go3mf can find openscad and other tools
     var environment = ProcessInfo.processInfo.environment
@@ -260,10 +263,48 @@ func openWithGo3mf(sourceFileURL: URL?) {
     }
     process.environment = environment
 
+    // Capture stdout and stderr to show errors
+    let stdoutPipe = Pipe()
+    let stderrPipe = Pipe()
+    process.standardOutput = stdoutPipe
+    process.standardError = stderrPipe
+
     do {
         try process.run()
-        print("go3mf command launched successfully")
+
+        // Run in background to avoid blocking UI
+        DispatchQueue.global(qos: .userInitiated).async {
+            process.waitUntilExit()
+
+            if process.terminationStatus != 0 {
+                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+
+                let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+                let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+
+                var errorMsg = "Failed to build \(sourceURL.lastPathComponent)\n"
+                if !stderr.isEmpty {
+                    errorMsg += stderr
+                }
+                if !stdout.isEmpty {
+                    if !stderr.isEmpty { errorMsg += "\n" }
+                    errorMsg += stdout
+                }
+
+                let error = Go3mfError.buildFailed(errorMsg)
+                print("go3mf error: \(errorMsg)")
+
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: NSNotification.Name("Go3mfError"), object: error)
+                }
+            } else {
+                print("go3mf build completed successfully")
+            }
+        }
     } catch {
         print("Error launching go3mf: \(error)")
+        let go3mfError = Go3mfError.buildFailed("Failed to launch go3mf: \(error.localizedDescription)")
+        NotificationCenter.default.post(name: NSNotification.Name("Go3mfError"), object: go3mfError)
     }
 }

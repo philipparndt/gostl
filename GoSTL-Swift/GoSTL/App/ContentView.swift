@@ -5,11 +5,12 @@ import AppKit
 struct ContentView: View {
     @State private var appState = AppState()
     @State private var errorAlert: ErrorAlert?
-    @State private var showErrorOverlay = false
+    @State private var overlayError: ToolError?
     @State private var windowTitle: String = "GoSTL"
     @State private var windowNumber: Int = 0
     @State private var hasInitialized = false
     @State private var notificationObserver: NSObjectProtocol?
+    @State private var go3mfErrorObserver: NSObjectProtocol?
 
     let fileURL: URL?
 
@@ -147,10 +148,10 @@ struct ContentView: View {
                     EmptyFileOverlay(fileName: appState.modelInfo?.fileName ?? "")
                 }
 
-                // Error overlay (shown for auto-reload errors)
-                if showErrorOverlay, let error = appState.loadError as? OpenSCADError {
+                // Error overlay (shown for tool errors)
+                if let error = overlayError {
                     ErrorOverlay(error: error) {
-                        showErrorOverlay = false
+                        overlayError = nil
                         appState.loadError = nil
                         appState.loadErrorID = nil
                     }
@@ -207,10 +208,14 @@ struct ContentView: View {
             }
         }
         .onDisappear {
-            // Clean up notification observer
+            // Clean up notification observers
             if let observer = notificationObserver {
                 NotificationCenter.default.removeObserver(observer)
                 notificationObserver = nil
+            }
+            if let observer = go3mfErrorObserver {
+                NotificationCenter.default.removeObserver(observer)
+                go3mfErrorObserver = nil
             }
         }
         .onChange(of: appState.slicingState.bounds) { _, _ in
@@ -242,7 +247,7 @@ struct ContentView: View {
             } else if errorID == nil {
                 // Error was cleared (successful reload), dismiss overlay
                 withAnimation(.easeInOut(duration: 0.3)) {
-                    showErrorOverlay = false
+                    overlayError = nil
                 }
             }
         }
@@ -352,6 +357,24 @@ struct ContentView: View {
         }
 
         setupNotifications()
+        setupGo3mfErrorNotification()
+    }
+
+    /// Set up notification listener for go3mf errors
+    private func setupGo3mfErrorNotification() {
+        go3mfErrorObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("Go3mfError"),
+            object: nil,
+            queue: .main
+        ) { [self] notification in
+            if let error = notification.object as? Go3mfError {
+                Task { @MainActor in
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        overlayError = .go3mf(error)
+                    }
+                }
+            }
+        }
     }
 
     private func setupNotifications() {
@@ -425,42 +448,27 @@ struct ContentView: View {
             // For auto-reload errors, show overlay instead of modal dialog
             if isAutoReload {
                 withAnimation(.easeInOut(duration: 0.3)) {
-                    showErrorOverlay = true
+                    overlayError = .openSCAD(openscadError)
                 }
             } else {
-                // For initial load errors, show modal dialog
+                // For initial load errors, also use overlay for consistency
                 switch openscadError {
-                case .openSCADNotFound:
-                    errorAlert = ErrorAlert(
-                        title: "OpenSCAD Not Installed",
-                        message: "OpenSCAD is required to render .scad files.\n\nPlease install OpenSCAD from:\nhttps://openscad.org/downloads.html\n\nOr install via Homebrew:\nbrew install --cask openscad"
-                    )
-                case .renderFailed(let message, _):
-                    errorAlert = ErrorAlert(
-                        title: "OpenSCAD Render Failed",
-                        message: message
-                    )
                 case .emptyFile:
                     // Empty files are handled gracefully - no error dialog needed
                     break
+                default:
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        overlayError = .openSCAD(openscadError)
+                    }
                 }
             }
         } else if let go3mfError = error as? Go3mfError {
-            // Handle go3mf errors
-            switch go3mfError {
-            case .go3mfNotFound:
-                errorAlert = ErrorAlert(
-                    title: "go3mf Not Installed",
-                    message: "go3mf is required to process .yaml configuration files.\n\nPlease install go3mf from:\nhttps://github.com/parndt/go3mf"
-                )
-            case .buildFailed(let message):
-                errorAlert = ErrorAlert(
-                    title: "go3mf Build Failed",
-                    message: message
-                )
+            // Handle go3mf errors with overlay
+            withAnimation(.easeInOut(duration: 0.3)) {
+                overlayError = .go3mf(go3mfError)
             }
         } else {
-            // For other errors, always show modal dialog
+            // For other errors, show modal dialog
             errorAlert = ErrorAlert(
                 title: "Failed to Load File",
                 message: error.localizedDescription
