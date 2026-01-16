@@ -61,6 +61,7 @@ Features use tags for categorization:
 - `@material` - Material system
 - `@3mf` - 3MF format specific
 - `@openscad` - OpenSCAD integration
+- `@2d` - 2D OpenSCAD file support
 - `@go3mf` - go3mf integration
 - `@ui` - User interface
 - `@keyboard` - Keyboard shortcuts
@@ -72,7 +73,7 @@ Features use tags for categorization:
 |--------|-----------|-------------|
 | STL | .stl | Binary and ASCII stereolithography |
 | 3MF | .3mf | 3D Manufacturing Format with multi-plate support |
-| OpenSCAD | .scad | OpenSCAD source files (requires OpenSCAD) |
+| OpenSCAD | .scad | OpenSCAD source files (requires OpenSCAD, 2D files auto-extruded) |
 | go3mf YAML | .yaml/.yml | go3mf configuration files (requires go3mf) |
 
 ## Supported Printers (Build Plates)

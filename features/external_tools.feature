@@ -94,6 +94,22 @@ Feature: External Tool Integration
     Then the messages panel should still display all captured messages
     And this helps debug the issue that caused the render failure
 
+  @openscad @2d
+  Scenario: 2D OpenSCAD file rendering
+    Given an OpenSCAD file containing only 2D geometry is loaded
+    When the initial render fails with "Current top level object is not a 3D object"
+    Then the file should be automatically re-rendered with linear_extrude
+    And the 2D shapes should be extruded to 1mm height for visualization
+    And the model should display successfully
+
+  @openscad @2d
+  Scenario: 2D OpenSCAD file with includes
+    Given a 2D OpenSCAD file uses include or use statements
+    When the file is rendered for 2D visualization
+    Then the included dependencies should still be resolved
+    And changes to included files should trigger reload
+    And the 2D content from all files should be extruded together
+
   @go3mf
   Scenario: go3mf YAML rendering
     Given a go3mf YAML configuration file is loaded

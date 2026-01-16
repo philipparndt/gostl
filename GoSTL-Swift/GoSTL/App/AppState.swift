@@ -159,6 +159,7 @@ final class AppState: @unchecked Sendable {
     var sourceFileURL: URL?
     var tempSTLFileURL: URL?
     var isOpenSCAD: Bool = false
+    var is2DOpenSCAD: Bool = false
 
     /// Track if the model has been modified (e.g., by leveling)
     var isModelModified: Bool = false
@@ -1061,12 +1062,16 @@ final class AppState: @unchecked Sendable {
                 self.sourceFileURL = url
                 self.tempSTLFileURL = tempURL
                 self.isOpenSCAD = true
+                self.is2DOpenSCAD = result.is2D
                 self.isGo3mf = false
                 self.isEmptyFile = false
                 self.threeMFParseResult = nil
                 self.selectedPlateId = nil
                 self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
 
+                if result.is2D {
+                    print("Detected 2D OpenSCAD file, extruded to 1mm height for visualization")
+                }
                 print("Successfully loaded: \(model.triangleCount) triangles")
             } catch let error as OpenSCADError {
                 // Handle OpenSCAD-specific errors
@@ -1330,9 +1335,13 @@ final class AppState: @unchecked Sendable {
                     model = try STLParser.parse(url: newTempURL)
                     tempURL = newTempURL
 
-                    // Update warnings on main thread
+                    // Update warnings and 2D status on main thread
                     await MainActor.run {
                         self.renderWarnings = result.warnings
+                        self.is2DOpenSCAD = result.is2D
+                        if result.is2D {
+                            print("Detected 2D OpenSCAD file, extruded to 1mm height for visualization")
+                        }
                         if !result.warnings.isEmpty {
                             print("OpenSCAD warnings: \(result.warnings.count)")
                         }

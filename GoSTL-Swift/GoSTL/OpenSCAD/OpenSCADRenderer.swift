@@ -58,15 +58,60 @@ class OpenSCADRenderer {
     /// Result of an OpenSCAD render operation
     struct RenderResult {
         let warnings: [String]
+        let is2D: Bool
     }
+
+    /// Height to extrude 2D objects for visualization (in mm)
+    private let extrude2DHeight: Double = 1.0
 
     /// Render an OpenSCAD file to STL format
     /// - Parameters:
     ///   - scadFile: URL of the .scad file to render
     ///   - outputFile: URL where the STL output should be written
-    /// - Returns: RenderResult containing any warnings
+    /// - Returns: RenderResult containing any warnings and whether it was a 2D file
     /// - Throws: Error if rendering fails
     func renderToSTL(scadFile: URL, outputFile: URL) throws -> RenderResult {
+        // First try to render normally
+        let result = try runOpenSCAD(scadFile: scadFile, outputFile: outputFile)
+
+        // Check if the file produced empty geometry (likely a 2D file)
+        if result.isEmpty {
+            // Try rendering as 2D by wrapping with linear_extrude
+            let wrapperFile = try create2DWrapperFile(for: scadFile)
+            defer {
+                try? FileManager.default.removeItem(at: wrapperFile)
+            }
+
+            let extrudedResult = try runOpenSCAD(scadFile: wrapperFile, outputFile: outputFile)
+
+            if extrudedResult.isEmpty {
+                // Still empty, throw the original error
+                throw OpenSCADError.emptyFile(messages: result.messages)
+            }
+
+            // Success! Combine messages from both attempts
+            var allMessages = result.messages
+            allMessages.append(contentsOf: extrudedResult.messages)
+            return RenderResult(warnings: allMessages, is2D: true)
+        }
+
+        return RenderResult(warnings: result.messages, is2D: false)
+    }
+
+    /// Internal result from running OpenSCAD
+    private struct InternalRenderResult {
+        let messages: [String]
+        let isEmpty: Bool
+        let errorMessage: String?
+    }
+
+    /// Run the OpenSCAD process
+    /// - Parameters:
+    ///   - scadFile: URL of the .scad file to render
+    ///   - outputFile: URL where the STL output should be written
+    /// - Returns: InternalRenderResult with messages and empty status
+    /// - Throws: Error if rendering fails (except for empty file which returns isEmpty=true)
+    private func runOpenSCAD(scadFile: URL, outputFile: URL) throws -> InternalRenderResult {
         // Find OpenSCAD executable
         let openscadPath = try findOpenSCADExecutable()
 
@@ -97,9 +142,12 @@ class OpenSCADRenderer {
         let messages = parseMessages(stdout: stdout, stderr: stderr)
 
         if process.terminationStatus != 0 {
-            // Check if the file is empty (produces no geometry)
-            if stderr.contains("Current top level object is empty") {
-                throw OpenSCADError.emptyFile(messages: messages)
+            // Check if the file is empty or 2D-only (produces no 3D geometry)
+            // "Current top level object is empty" - no geometry at all
+            // "Current top level object is not a 3D object" - 2D geometry only
+            if stderr.contains("Current top level object is empty") ||
+               stderr.contains("Current top level object is not a 3D object") {
+                return InternalRenderResult(messages: messages, isEmpty: true, errorMessage: nil)
             }
 
             var errorMsg = "Failed to render \(scadFile.lastPathComponent)\n"
@@ -113,7 +161,29 @@ class OpenSCADRenderer {
             throw OpenSCADError.renderFailed(errorMsg, messages: messages)
         }
 
-        return RenderResult(warnings: messages)
+        return InternalRenderResult(messages: messages, isEmpty: false, errorMessage: nil)
+    }
+
+    /// Create a temporary wrapper file that extrudes 2D content for visualization
+    /// - Parameter scadFile: The original 2D OpenSCAD file
+    /// - Returns: URL to the temporary wrapper file
+    private func create2DWrapperFile(for scadFile: URL) throws -> URL {
+        // Wrap the include in a module, then extrude the module call
+        // This is necessary because include statements must be at top level
+        // but we need the geometry inside the linear_extrude block
+        let wrapperContent = """
+        // Temporary wrapper to extrude 2D content for visualization
+        module _gostl_2d_content() {
+            include <\(scadFile.path)>
+        }
+
+        linear_extrude(height = \(extrude2DHeight)) _gostl_2d_content();
+        """
+
+        let wrapperFile = workDir.appendingPathComponent("gostl_2d_wrapper_\(ProcessInfo.processInfo.processIdentifier).scad")
+        try wrapperContent.write(to: wrapperFile, atomically: true, encoding: .utf8)
+
+        return wrapperFile
     }
 
     /// Parse messages from OpenSCAD output
