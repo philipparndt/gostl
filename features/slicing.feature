@@ -103,3 +103,11 @@ Feature: Model Slicing and Cross-Sections
     Then the info panel should show visible vs total triangle count
     And the format should be "Triangles: visible / total"
     And the text should be orange to indicate slicing is active
+
+  Scenario: Preserve slicing on model reload
+    Given slicing is active with custom bounds set
+    When the model file is modified externally
+    And the application reloads the model
+    Then the slicing bounds should be preserved
+    And the bounds should be clamped to fit the new model if necessary
+    And the user can continue viewing the same slice position

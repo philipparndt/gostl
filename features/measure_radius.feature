@@ -36,3 +36,13 @@ Feature: Radius Measurement
     When I press Escape
     Then the radius measurement should be cancelled
     And any placed points should be removed
+
+  Scenario: Toggle diameter display via menu
+    Given I have completed a radius measurement
+    When I enable "Show Diameter" in the View menu
+    Then the radius measurements should display as diameter
+    And the label should be prefixed with "d:"
+    And the displayed value should be double the radius
+    When I disable "Show Diameter" in the View menu
+    Then the measurements should display as radius again
+    And the label should be prefixed with "r:"

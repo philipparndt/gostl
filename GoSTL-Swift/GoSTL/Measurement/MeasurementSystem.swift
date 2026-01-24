@@ -45,6 +45,9 @@ final class MeasurementSystem: @unchecked Sendable {
     /// Hovered triangle index (for visual feedback during triangle selection)
     var hoveredTriangle: Int?
 
+    /// Whether to display radius measurements as diameter
+    var showDiameter: Bool = false
+
     /// Paint mode - when enabled, drag to continuously select triangles without rotating
     var paintMode: Bool = false
 

@@ -443,6 +443,13 @@ struct GoSTLApp: App {
 
                 Divider()
 
+                Toggle("Show Diameter", isOn: Binding(
+                    get: { appState?.measurementSystem.showDiameter ?? false },
+                    set: { appState?.measurementSystem.showDiameter = $0 }
+                ))
+
+                Divider()
+
                 Menu("Camera") {
                     Button("Front") {
                         NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.front)

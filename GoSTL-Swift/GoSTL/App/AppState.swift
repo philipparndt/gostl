@@ -993,8 +993,14 @@ final class AppState: @unchecked Sendable {
             camera.frameBoundingBox(bbox)
         }
 
-        // Initialize slicing bounds
-        slicingState.initializeBounds(from: bbox)
+        // Handle slicing bounds based on whether this is a reload or new file
+        if preserveCamera {
+            // Reload - preserve slice positions, just update model bounds
+            slicingState.updateModelBounds(from: bbox)
+        } else {
+            // New file - initialize to full model bounds
+            slicingState.initializeBounds(from: bbox)
+        }
 
         // Handle measurements based on whether this is a reload or new file
         if preserveCamera {

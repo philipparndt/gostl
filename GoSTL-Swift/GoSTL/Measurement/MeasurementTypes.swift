@@ -43,13 +43,20 @@ struct Measurement {
 
     /// Format the measurement value for display
     var formattedValue: String {
+        formattedValue(showDiameter: false)
+    }
+
+    /// Format the measurement value for display with diameter option
+    func formattedValue(showDiameter: Bool) -> String {
         switch type {
         case .distance:
             return formatDistance(value)
         case .angle:
             return String(format: "%.1f°", value)
         case .radius:
-            return formatDistance(value)
+            let prefix = showDiameter ? "d:" : "r:"
+            let displayValue = showDiameter ? value * 2.0 : value
+            return prefix + formatDistance(displayValue)
         case .triangleSelect:
             return ""  // Not used for triangle selection
         }
@@ -57,13 +64,18 @@ struct Measurement {
 
     /// Label for the measurement type
     var label: String {
+        label(showDiameter: false)
+    }
+
+    /// Label for the measurement type with diameter option
+    func label(showDiameter: Bool) -> String {
         switch type {
         case .distance:
             return "Distance"
         case .angle:
             return "Angle"
         case .radius:
-            return "Radius"
+            return showDiameter ? "Diameter" : "Radius"
         case .triangleSelect:
             return "Triangle"  // Not used for triangle selection
         }

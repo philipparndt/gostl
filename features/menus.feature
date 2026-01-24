@@ -25,6 +25,7 @@ Feature: Application Menus
     And I should see "Build Plate" submenu with printer options
     And I should see "Cycle Build Plate" with Cmd+B
     And I should see "Slicing" toggle with Cmd+Shift+S
+    And I should see "Show Diameter" toggle for radius measurements
     And I should see "Camera" submenu with view presets
 
   Scenario: Camera submenu

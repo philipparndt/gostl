@@ -26,7 +26,7 @@ struct MeasurementLabelsOverlay: View {
                         let labelColor: Color = isSelected ? Color(red: 0.3, green: 0.5, blue: 1.0) : baseColor
 
                         MeasurementLabel(
-                            text: measurement.formattedValue,
+                            text: measurement.formattedValue(showDiameter: measurementSystem.showDiameter),
                             position: screenPos,
                             color: labelColor,
                             isSelected: isSelected,

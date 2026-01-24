@@ -54,6 +54,29 @@ final class SlicingState: @unchecked Sendable {
         bounds = modelBounds
     }
 
+    /// Update model bounds while preserving current slice positions (for reload)
+    /// Clamps existing slice bounds to fit within new model bounds
+    func updateModelBounds(from bbox: BoundingBox) {
+        let minCorner = bbox.min
+        let maxCorner = bbox.max
+
+        let newModelBounds = [
+            [minCorner.x, maxCorner.x],
+            [minCorner.y, maxCorner.y],
+            [minCorner.z, maxCorner.z]
+        ]
+
+        // Clamp existing bounds to new model bounds
+        for axis in 0..<3 {
+            bounds[axis][0] = max(bounds[axis][0], newModelBounds[axis][0])
+            bounds[axis][0] = min(bounds[axis][0], newModelBounds[axis][1])
+            bounds[axis][1] = max(bounds[axis][1], newModelBounds[axis][0])
+            bounds[axis][1] = min(bounds[axis][1], newModelBounds[axis][1])
+        }
+
+        modelBounds = newModelBounds
+    }
+
     /// Full reset for loading a new file
     func fullReset() {
         isVisible = false
