@@ -184,23 +184,23 @@ class OpenSCADRenderer {
 
         // Step 2: Extract all unique colors used in the model
         let t1 = CFAbsoluteTimeGetCurrent()
-        let colors = try extractColors(csgFile: csgFile)
+        let colors = try extractColors(csgFile: csgFile, sessionId: sessionId)
         print("  Color extraction: \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - t1) * 1000))ms - found \(colors.count) colors")
 
         // If no colors, use regular rendering
         if colors.isEmpty {
             print("  No colors found, using standard rendering")
-            return try renderWithoutColors(scadFile: scadFile)
+            return try renderWithoutColors(scadFile: scadFile, sessionId: sessionId)
         }
 
         // Step 3: Check for uncolored geometry (will be rendered with default material color)
         let t2 = CFAbsoluteTimeGetCurrent()
-        let hasUncoloredGeometry = try checkForUncoloredGeometry(csgFile: csgFile)
+        let hasUncoloredGeometry = try checkForUncoloredGeometry(csgFile: csgFile, sessionId: sessionId)
         print("  Uncolored check: \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - t2) * 1000))ms - has uncolored: \(hasUncoloredGeometry)")
 
         // Step 4: Render each color separately in parallel (plus uncolored if present)
         let t3 = CFAbsoluteTimeGetCurrent()
-        let coloredTriangles = try renderColorsInParallel(csgFile: csgFile, colors: Array(colors), includeUncolored: hasUncoloredGeometry)
+        let coloredTriangles = try renderColorsInParallel(csgFile: csgFile, colors: Array(colors), includeUncolored: hasUncoloredGeometry, sessionId: sessionId)
         print("  Per-color rendering: \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - t3) * 1000))ms")
 
         // Step 5: Combine all triangles into a single model
@@ -209,7 +209,7 @@ class OpenSCADRenderer {
         print("  Total colored rendering: \(String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
 
         // Collect any warnings from the CSG file
-        let warnings = try? extractWarnings(csgFile: csgFile)
+        let warnings = try? extractWarnings(csgFile: csgFile, sessionId: sessionId)
 
         return ColoredRenderResult(
             model: model,
@@ -220,8 +220,9 @@ class OpenSCADRenderer {
     }
 
     /// Fall back to regular (non-colored) rendering
-    private func renderWithoutColors(scadFile: URL) throws -> ColoredRenderResult {
-        let tempSTL = workDir.appendingPathComponent("gostl_temp_\(ProcessInfo.processInfo.processIdentifier).stl")
+    private func renderWithoutColors(scadFile: URL, sessionId: String.SubSequence? = nil) throws -> ColoredRenderResult {
+        let id = sessionId ?? UUID().uuidString.prefix(8)
+        let tempSTL = workDir.appendingPathComponent("gostl_\(id).stl")
         defer { try? FileManager.default.removeItem(at: tempSTL) }
 
         let result = try runOpenSCAD(scadFile: scadFile, outputFile: tempSTL)
@@ -270,14 +271,14 @@ class OpenSCADRenderer {
     }
 
     /// Extract all unique colors from a CSG file by running OpenSCAD with a redefined color() module
-    private func extractColors(csgFile: URL) throws -> Set<OpenSCADColor> {
+    private func extractColors(csgFile: URL, sessionId: String.SubSequence) throws -> Set<OpenSCADColor> {
         let openscadPath = try findOpenSCADExecutable()
 
         // Redefine color() to echo its parameters instead of rendering
         let colorExtractor = "module color(c, alpha) { echo(\(colorTag)=str(c)); }"
 
         // Use a temp file since OpenSCAD doesn't accept /dev/null
-        let tempOutput = workDir.appendingPathComponent("gostl_color_extract_\(ProcessInfo.processInfo.processIdentifier).stl")
+        let tempOutput = workDir.appendingPathComponent("gostl_\(sessionId)_colors.stl")
         defer { try? FileManager.default.removeItem(at: tempOutput) }
 
         let process = Process()
@@ -328,13 +329,13 @@ class OpenSCADRenderer {
     }
 
     /// Check if the model has any geometry not wrapped in color()
-    private func checkForUncoloredGeometry(csgFile: URL) throws -> Bool {
+    private func checkForUncoloredGeometry(csgFile: URL, sessionId: String.SubSequence) throws -> Bool {
         let openscadPath = try findOpenSCADExecutable()
 
         // Redefine color() to consume its children (output nothing)
         let colorDisabler = "module color(c, alpha) { /* discard */ }"
 
-        let tempSTL = workDir.appendingPathComponent("gostl_uncolored_check_\(ProcessInfo.processInfo.processIdentifier).stl")
+        let tempSTL = workDir.appendingPathComponent("gostl_\(sessionId)_uncolored.stl")
         defer { try? FileManager.default.removeItem(at: tempSTL) }
 
         let process = Process()
@@ -369,7 +370,8 @@ class OpenSCADRenderer {
     ///   - csgFile: The CSG file to render
     ///   - colors: Array of colors to render
     ///   - includeUncolored: If true, also render geometry not wrapped in color() calls
-    private func renderColorsInParallel(csgFile: URL, colors: [OpenSCADColor], includeUncolored: Bool = false) throws -> [Triangle] {
+    ///   - sessionId: Unique identifier for this render session
+    private func renderColorsInParallel(csgFile: URL, colors: [OpenSCADColor], includeUncolored: Bool = false, sessionId: String.SubSequence) throws -> [Triangle] {
         let openscadPath = try findOpenSCADExecutable()
 
         // Thread-safe storage for results
@@ -381,12 +383,12 @@ class OpenSCADRenderer {
         // Add one extra slot for uncolored geometry if needed
         let totalJobs = colors.count + (includeUncolored ? 1 : 0)
         let results = (0..<totalJobs).map { _ in ColorResult() }
-        let pid = ProcessInfo.processInfo.processIdentifier
         let localWorkDir = self.workDir  // Capture for Sendable closure
+        let localSessionId = String(sessionId)  // Capture for Sendable closure
 
         // Render each color in parallel (plus uncolored if requested)
         DispatchQueue.concurrentPerform(iterations: totalJobs) { index in
-            let tempSTL = localWorkDir.appendingPathComponent("gostl_color_\(pid)_\(index).stl")
+            let tempSTL = localWorkDir.appendingPathComponent("gostl_\(localSessionId)_c\(index).stl")
 
             defer { try? FileManager.default.removeItem(at: tempSTL) }
 
@@ -465,11 +467,11 @@ class OpenSCADRenderer {
     }
 
     /// Extract warnings from running OpenSCAD on a file
-    private func extractWarnings(csgFile: URL) throws -> [String] {
+    private func extractWarnings(csgFile: URL, sessionId: String.SubSequence) throws -> [String] {
         let openscadPath = try findOpenSCADExecutable()
 
         // Use a temp file since OpenSCAD doesn't accept /dev/null
-        let tempOutput = workDir.appendingPathComponent("gostl_warnings_\(ProcessInfo.processInfo.processIdentifier).stl")
+        let tempOutput = workDir.appendingPathComponent("gostl_\(sessionId)_warn.stl")
         defer { try? FileManager.default.removeItem(at: tempOutput) }
 
         let process = Process()
@@ -611,7 +613,8 @@ class OpenSCADRenderer {
         linear_extrude(height = \(extrude2DHeight)) _gostl_2d_content();
         """
 
-        let wrapperFile = workDir.appendingPathComponent("gostl_2d_wrapper_\(ProcessInfo.processInfo.processIdentifier).scad")
+        // Use UUID to avoid conflicts when multiple files are rendered simultaneously
+        let wrapperFile = workDir.appendingPathComponent("gostl_2d_\(UUID().uuidString.prefix(8)).scad")
         try wrapperContent.write(to: wrapperFile, atomically: true, encoding: .utf8)
 
         return wrapperFile
