@@ -369,14 +369,6 @@ final class AppState: @unchecked Sendable {
         })
 
         notificationObservers.append(NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("OpenInOpenSCAD"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.openInOpenSCAD()
-        })
-
-        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("SetBuildPlate"),
             object: nil,
             queue: .main
