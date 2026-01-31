@@ -37,6 +37,19 @@ Feature: External Tool Integration
       | Shell PATH via 'which'                             |
 
   @openscad
+  Scenario: Open file in OpenSCAD editor
+    Given an OpenSCAD file is loaded
+    When I press Cmd+E or select "Open in OpenSCAD" from Tools menu
+    Then the .scad file should open in OpenSCAD.app
+    And the user can edit the file in OpenSCAD
+    And file watching should trigger a reload when the file is saved
+
+  @openscad
+  Scenario: Open in OpenSCAD disabled for non-SCAD files
+    Given a non-OpenSCAD file is loaded (e.g., .stl or .3mf)
+    Then the "Open in OpenSCAD" menu item should be disabled
+
+  @openscad
   Scenario: OpenSCAD rendering
     Given an OpenSCAD file is loaded
     Then it should be rendered to a temporary STL file
@@ -109,6 +122,41 @@ Feature: External Tool Integration
     Then the included dependencies should still be resolved
     And changes to included files should trigger reload
     And the 2D content from all files should be extruded together
+
+  @openscad @colors
+  Scenario: OpenSCAD color extraction
+    Given an OpenSCAD file uses color() modules
+    When the file is loaded
+    Then colors should be automatically extracted using multi-pass rendering
+    And each colored region should be rendered separately
+    And triangles should be assigned their respective colors
+    And the model should display with per-triangle colors
+
+  @openscad @colors
+  Scenario: Color extraction process
+    Given an OpenSCAD file with multiple colors
+    When GoSTL processes the file
+    Then it should first convert the file to CSG format
+    And extract unique colors by redefining color() to echo values
+    And verify all geometry is wrapped in color() calls
+    And render each color in parallel for efficiency
+    And merge all colored triangles into a single model
+
+  @openscad @colors
+  Scenario: Fallback for uncolored geometry
+    Given an OpenSCAD file has geometry not wrapped in color()
+    When the file is loaded
+    Then GoSTL should detect the uncolored geometry
+    And fall back to standard (non-colored) rendering
+    And the model should display using the selected material color
+
+  @openscad @colors
+  Scenario: Fallback for single color or white
+    Given an OpenSCAD file uses only white or a single color
+    When the file is loaded
+    Then GoSTL should skip color extraction
+    And use standard rendering for efficiency
+    And the model should display using the selected material color
 
   @go3mf
   Scenario: go3mf YAML rendering

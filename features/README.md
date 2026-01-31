@@ -160,4 +160,5 @@ Features use tags for categorization:
 |----------|--------|
 | Cmd+M | Cycle material |
 | O | Open with go3mf |
+| Cmd+E | Open in OpenSCAD (when .scad file loaded) |
 | Ctrl+C | Quit application |

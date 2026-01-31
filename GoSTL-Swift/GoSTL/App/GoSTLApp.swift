@@ -561,6 +561,12 @@ struct GoSTLApp: App {
                     NotificationCenter.default.post(name: NSNotification.Name("OpenWithGo3mf"), object: nil)
                 }
                 .keyboardShortcut("o", modifiers: [])
+
+                Button("Open in OpenSCAD") {
+                    NotificationCenter.default.post(name: NSNotification.Name("OpenInOpenSCAD"), object: nil)
+                }
+                .keyboardShortcut("e", modifiers: .command)
+                .disabled(appState?.isOpenSCAD != true)
             }
 
             CommandGroup(replacing: .appInfo) {

@@ -49,6 +49,7 @@ Feature: Application Menus
     And I should see "Copy as OpenSCAD" with Cmd+Shift+C
     And I should see "Change Material" with Cmd+M
     And I should see "Open with go3mf"
+    And I should see "Open in OpenSCAD" with Cmd+E (disabled unless .scad file is loaded)
 
   Scenario: Help menu structure
     When I open the Help menu

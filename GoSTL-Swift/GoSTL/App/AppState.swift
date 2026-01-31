@@ -1,6 +1,7 @@
 import SwiftUI
 import Observation
 import Metal
+import AppKit
 
 // MARK: - Focused Value for Menu Access
 
@@ -365,6 +366,14 @@ final class AppState: @unchecked Sendable {
             queue: .main
         ) { [weak self] _ in
             openWithGo3mf(sourceFileURL: self?.sourceFileURL)
+        })
+
+        notificationObservers.append(NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("OpenInOpenSCAD"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.openInOpenSCAD()
         })
 
         notificationObservers.append(NotificationCenter.default.addObserver(
@@ -1039,20 +1048,15 @@ final class AppState: @unchecked Sendable {
         let fileExtension = url.pathExtension.lowercased()
 
         if fileExtension == "scad" {
-            // OpenSCAD file - render to temporary STL
+            // OpenSCAD file - render with color extraction
             print("Rendering OpenSCAD file: \(url.lastPathComponent)")
 
             let workDir = url.deletingLastPathComponent()
             let renderer = OpenSCADRenderer(workDir: workDir)
 
-            // Create temporary STL file
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("gostl_temp_\(Int(Date().timeIntervalSince1970)).stl")
-
             do {
-                // Render OpenSCAD to STL
-                let result = try renderer.renderToSTL(scadFile: url, outputFile: tempURL)
-                print("Rendered to: \(tempURL.path)")
+                // Render OpenSCAD with color extraction
+                let result = try renderer.renderToColoredModel(scadFile: url)
 
                 // Store warnings
                 self.renderWarnings = result.warnings
@@ -1060,25 +1064,27 @@ final class AppState: @unchecked Sendable {
                     print("OpenSCAD warnings: \(result.warnings.count)")
                 }
 
-                // Parse the generated STL
-                let model = try STLParser.parse(url: tempURL)
-                try loadModel(model, device: device)
+                // Load the model directly (already has colors assigned)
+                try loadModel(result.model, device: device)
 
                 // Update file watching state
                 self.sourceFileURL = url
-                self.tempSTLFileURL = tempURL
+                self.tempSTLFileURL = nil  // No temp file needed with direct model
                 self.isOpenSCAD = true
                 self.is2DOpenSCAD = result.is2D
                 self.isGo3mf = false
                 self.isEmptyFile = false
                 self.threeMFParseResult = nil
                 self.selectedPlateId = nil
-                self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: model)
+                self.modelInfo = ModelInfo(fileName: url.lastPathComponent, model: result.model)
 
                 if result.is2D {
                     print("Detected 2D OpenSCAD file, extruded to 1mm height for visualization")
                 }
-                print("Successfully loaded: \(model.triangleCount) triangles")
+                if result.colorsExtracted > 0 {
+                    print("Extracted \(result.colorsExtracted) colors from OpenSCAD file")
+                }
+                print("Successfully loaded: \(result.model.triangleCount) triangles")
             } catch let error as OpenSCADError {
                 // Handle OpenSCAD-specific errors
                 if case .emptyFile(let messages) = error {
@@ -1274,6 +1280,34 @@ final class AppState: @unchecked Sendable {
         self.fileWatcher = watcher
     }
 
+    /// Open the current .scad file in OpenSCAD application
+    func openInOpenSCAD() {
+        guard let sourceURL = sourceFileURL, isOpenSCAD else {
+            print("No OpenSCAD file loaded")
+            return
+        }
+
+        // Try to find OpenSCAD.app
+        let openSCADAppURL = URL(fileURLWithPath: "/Applications/OpenSCAD.app")
+
+        if FileManager.default.fileExists(atPath: openSCADAppURL.path) {
+            // Open the file with OpenSCAD.app
+            NSWorkspace.shared.open(
+                [sourceURL],
+                withApplicationAt: openSCADAppURL,
+                configuration: NSWorkspace.OpenConfiguration()
+            ) { _, error in
+                if let error = error {
+                    print("Failed to open in OpenSCAD: \(error.localizedDescription)")
+                }
+            }
+        } else {
+            // Fallback: try to open the file and let the system choose the app
+            print("OpenSCAD.app not found at /Applications/OpenSCAD.app")
+            NSWorkspace.shared.open(sourceURL)
+        }
+    }
+
     /// Reload the model from the source file
     func reloadModel(device: MTLDevice) {
         print("reloadModel called - isLoading: \(isLoading), isPaused: \(fileWatcher?.isPaused ?? false)")
@@ -1330,16 +1364,13 @@ final class AppState: @unchecked Sendable {
                         self.threeMFParseResult = parseResult
                     }
                 } else if self.isOpenSCAD {
-                    // Render OpenSCAD to STL
+                    // Render OpenSCAD with color extraction
                     let workDir = sourceURL.deletingLastPathComponent()
                     let renderer = OpenSCADRenderer(workDir: workDir)
 
-                    let newTempURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("gostl_temp_\(Int(Date().timeIntervalSince1970)).stl")
-
-                    let result = try renderer.renderToSTL(scadFile: sourceURL, outputFile: newTempURL)
-                    model = try STLParser.parse(url: newTempURL)
-                    tempURL = newTempURL
+                    let result = try renderer.renderToColoredModel(scadFile: sourceURL)
+                    model = result.model
+                    tempURL = nil  // No temp file needed with direct model
 
                     // Update warnings and 2D status on main thread
                     await MainActor.run {
@@ -1347,6 +1378,9 @@ final class AppState: @unchecked Sendable {
                         self.is2DOpenSCAD = result.is2D
                         if result.is2D {
                             print("Detected 2D OpenSCAD file, extruded to 1mm height for visualization")
+                        }
+                        if result.colorsExtracted > 0 {
+                            print("Extracted \(result.colorsExtracted) colors from OpenSCAD file")
                         }
                         if !result.warnings.isEmpty {
                             print("OpenSCAD warnings: \(result.warnings.count)")

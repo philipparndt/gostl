@@ -119,9 +119,10 @@ Feature: Keyboard Shortcuts
     Then <action> should occur
 
     Examples:
-      | shortcut | action                      |
-      | O        | opens file with go3mf       |
-      | Ctrl+C   | quits the application       |
+      | shortcut | action                              |
+      | O        | opens file with go3mf               |
+      | Cmd+E    | opens .scad file in OpenSCAD editor |
+      | Ctrl+C   | quits the application               |
 
   @escape
   Scenario: Escape key behavior - cancel leveling
