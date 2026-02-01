@@ -146,6 +146,9 @@ final class AppState: @unchecked Sendable {
     /// Whether to show model info overlay
     var showModelInfo: Bool = true
 
+    /// Whether to show face orientation coloring (front=teal, back=yellow)
+    var showFaceOrientation: Bool = false
+
     /// Measurement system for distance/angle/radius measurements
     var measurementSystem = MeasurementSystem()
 

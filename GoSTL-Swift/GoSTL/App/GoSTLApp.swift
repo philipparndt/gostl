@@ -352,6 +352,12 @@ struct GoSTLApp: App {
                 }
                 .keyboardShortcut("w", modifiers: .command)
 
+                Toggle("Face Orientation", isOn: Binding(
+                    get: { appState?.showFaceOrientation ?? false },
+                    set: { appState?.showFaceOrientation = $0 }
+                ))
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+
                 Divider()
 
                 Menu("Grid") {

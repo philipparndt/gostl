@@ -2,6 +2,12 @@
 
 A powerful, modern Go application for inspecting, measuring, and visualizing STL and OpenSCAD files with GPU acceleration. Perfect for 3D printing, CAD analysis, and quality control.
 
+## Screenshots
+
+| STL Rendering | OpenSCAD Rendering | Slicing |
+|---------------|-------------------|---------|
+| ![STL Rendering](examples/stl-rendering.png) | ![OpenSCAD Rendering](examples/openscad-rendering.png) | ![Slicing](examples/slicing.png) |
+
 ## Install
 
 ```bash

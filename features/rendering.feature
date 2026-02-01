@@ -35,3 +35,10 @@ Feature: 3D Rendering
     When wireframe mode is enabled
     Then edges should be rendered as instanced cylinders
     And edge thickness should be consistent across view angles
+
+  @face-orientation
+  Scenario: Face orientation coloring
+    When face orientation mode is enabled (Cmd+Shift+F)
+    Then front-facing surfaces should be rendered in teal (#3e999f)
+    And back-facing surfaces should be rendered in gold/yellow (#eab700)
+    And this helps identify inverted normals in the model

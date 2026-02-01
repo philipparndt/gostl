@@ -18,7 +18,8 @@ struct MaterialProperties {
     var glossiness: Float
     var metalness: Float
     var specularIntensity: Float
-    var _padding1: SIMD2<Float> = .zero
+    var showFaceOrientation: Float = 0.0  // 1.0 = show front/back face colors
+    var _padding1: Float = 0.0
     var _padding2: SIMD4<Float> = .zero // Extra padding to match Metal's 48-byte layout
 }
 

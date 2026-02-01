@@ -472,7 +472,8 @@ final class MetalRenderer {
             baseColor: material.baseColor,
             glossiness: material.glossiness,
             metalness: material.metalness,
-            specularIntensity: material.specularIntensity
+            specularIntensity: material.specularIntensity,
+            showFaceOrientation: appState.showFaceOrientation ? 1.0 : 0.0
         )
 
         // Set material properties for fragment shader

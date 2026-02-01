@@ -58,6 +58,7 @@ Features use tags for categorization:
 - `@measurement` - Measurement tools
 - `@slicing` - Slicing functionality
 - `@leveling` - Leveling/transformation functionality
+- `@face-orientation` - Face orientation coloring
 - `@material` - Material system
 - `@3mf` - 3MF format specific
 - `@openscad` - OpenSCAD integration
@@ -131,6 +132,7 @@ Features use tags for categorization:
 |----------|--------|
 | Cmd+I | Toggle info panel |
 | Cmd+W | Cycle wireframe mode |
+| Cmd+Shift+F | Toggle face orientation coloring |
 | Cmd+G | Cycle grid mode |
 | Cmd+B | Cycle build plate |
 | Cmd+Shift+X | Toggle slicing panel |

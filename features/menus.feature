@@ -20,6 +20,7 @@ Feature: Application Menus
     Then I should see "Info Panel" toggle with Cmd+I
     And I should see "Wireframe" submenu with Off/All/Edge options
     And I should see "Cycle Wireframe Mode" with Cmd+W
+    And I should see "Face Orientation" toggle with Cmd+Shift+F
     And I should see "Grid" submenu with Off/Bottom/All Sides/1mm Grid options
     And I should see "Cycle Grid Mode" with Cmd+G
     And I should see "Build Plate" submenu with printer options

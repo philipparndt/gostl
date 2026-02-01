@@ -49,6 +49,7 @@ Feature: Keyboard Shortcuts
       | Cmd+W        | wireframe mode cycles         |
       | Cmd+G        | grid mode cycles              |
       | Cmd+B        | build plate cycles            |
+      | Cmd+Shift+F  | face orientation mode toggles |
       | Cmd+Shift+X  | slicing panel toggles         |
 
   @measurement

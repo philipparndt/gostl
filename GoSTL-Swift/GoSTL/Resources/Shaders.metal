@@ -13,6 +13,7 @@ struct VertexIn {
 struct VertexOut {
     float4 position [[position]];
     float3 normal;
+    float3 modelNormal;  // Original normal in model space (for face orientation)
     float4 color;
     float3 worldPosition;
     float2 texCoord;
@@ -33,7 +34,8 @@ struct MaterialProperties {
     float glossiness;
     float metalness;
     float specularIntensity;
-    float2 _padding1;
+    float showFaceOrientation;  // 1.0 = show front/back face colors
+    float _padding1;
     float4 _padding2; // Extra padding for proper alignment (total 48 bytes)
 };
 
@@ -56,6 +58,7 @@ vertex VertexOut basicVertexShader(VertexIn in [[stage_in]]) {
     VertexOut out;
     out.position = float4(in.position, 1.0);
     out.normal = in.normal;
+    out.modelNormal = in.normal;
     out.color = float4(1.0, 0.0, 0.0, 1.0); // Red
     out.worldPosition = in.position;
     return out;
@@ -75,6 +78,7 @@ vertex VertexOut meshVertexShader(
     float4 worldPos = uniforms.modelMatrix * float4(in.position, 1.0);
     out.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPos;
     out.normal = uniforms.normalMatrix * in.normal;
+    out.modelNormal = in.normal;  // Pass original normal for face orientation
     out.worldPosition = worldPos.xyz;
     out.color = in.color; // Pre-baked lighting from Swift
     return out;
@@ -90,6 +94,61 @@ fragment float4 meshFragmentShader(
 
     // View direction (from fragment to camera)
     float3 V = normalize(uniforms.cameraPosition - in.worldPosition);
+
+    // Check if face orientation mode is enabled
+    if (material.showFaceOrientation > 0.5) {
+        // Face orientation coloring: subtle color temperature shift
+        // preserving the material's base color character
+        // - Horizontal surfaces (facing up/down): slight cool tint
+        // - Vertical/angled surfaces (facing sideways): slight warm/gold tint
+
+        float3 base = material.baseColor;
+
+        // Subtle cool tint for horizontal (slightly more blue)
+        float3 coolTint = float3(-0.05, 0.0, 0.08);
+        float3 horizontalColor = clamp(base + coolTint, 0.0, 1.0);
+
+        // Subtle warm tint for vertical (slightly more gold/yellow)
+        float3 warmTint = float3(0.12, 0.08, -0.15);
+        float3 verticalColor = clamp(base + warmTint, 0.0, 1.0);
+
+        // Use model-space normal (not view-transformed) for consistent coloring
+        float3 modelN = normalize(in.modelNormal);
+
+        // Check if surface is horizontal (normal pointing up or down)
+        float zComponent = abs(modelN.z);
+
+        // If Z dominates, it's a horizontal surface (top/bottom facing)
+        // Threshold of 0.7 (~45 degrees from vertical)
+        float3 baseColor = zComponent > 0.7 ? horizontalColor : verticalColor;
+
+        // Apply full material lighting (same as normal mode)
+        float3 keyLight = normalize(float3(0.5, 1.0, 0.5));
+        float3 fillLight = normalize(float3(-0.5, 0.3, 0.8));
+        float3 rimLight = normalize(float3(0.0, 0.5, -1.0));
+
+        float keyDiffuse = max(0.0, dot(N, keyLight));
+        float fillDiffuse = max(0.0, dot(N, fillLight));
+        float rimDiffuse = max(0.0, dot(N, rimLight));
+
+        float shininess = mix(8.0, 128.0, material.glossiness);
+        float3 H_key = normalize(keyLight + V);
+        float3 H_fill = normalize(fillLight + V);
+        float3 H_rim = normalize(rimLight + V);
+
+        float keySpecular = pow(max(0.0, dot(N, H_key)), shininess);
+        float fillSpecular = pow(max(0.0, dot(N, H_fill)), shininess);
+        float rimSpecular = pow(max(0.0, dot(N, H_rim)), shininess);
+
+        float specular = (keySpecular * 0.6 + fillSpecular * 0.3 + rimSpecular * 0.2) * material.specularIntensity;
+        float ambient = 0.3;
+        float diffuse = keyDiffuse * 0.6 + fillDiffuse * 0.3 + rimDiffuse * 0.2;
+
+        float3 finalColor = baseColor * (ambient + diffuse) + float3(specular);
+        return float4(finalColor, 1.0);
+    }
+
+    // Normal rendering mode with full lighting
 
     // Three-light setup (same as pre-baked)
     float3 keyLight = normalize(float3(0.5, 1.0, 0.5));
@@ -174,6 +233,7 @@ vertex VertexOut wireframeVertexShader(
         instanceMatrix[2].xyz
     );
     out.normal = uniforms.normalMatrix * instanceRotation * in.normal;
+    out.modelNormal = in.normal;
     out.worldPosition = worldPos.xyz;
 
     // Apply alpha from instance
@@ -198,6 +258,7 @@ vertex VertexOut gridVertexShader(
     float4 worldPos = uniforms.modelMatrix * float4(in.position, 1.0);
     out.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPos;
     out.normal = uniforms.normalMatrix * in.normal;
+    out.modelNormal = in.normal;
     out.worldPosition = worldPos.xyz;
     out.color = in.color;
     return out;
@@ -261,6 +322,7 @@ vertex VertexOut cutEdgeVertexShader(
         instanceMatrix[2].xyz
     );
     out.normal = uniforms.normalMatrix * instanceRotation * in.normal;
+    out.modelNormal = in.normal;
     out.worldPosition = worldPos.xyz;
 
     // Use instance color instead of vertex color
@@ -285,6 +347,7 @@ vertex VertexOut texturedVertexShader(
     float4 worldPos = uniforms.modelMatrix * float4(in.position, 1.0);
     out.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPos;
     out.normal = uniforms.normalMatrix * in.normal;
+    out.modelNormal = in.normal;
     out.worldPosition = worldPos.xyz;
     out.color = in.color;
     out.texCoord = in.texCoord;
