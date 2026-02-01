@@ -1,6 +1,6 @@
-# gostl - GPU-Accelerated STL & OpenSCAD Viewer
+# GoSTL - GPU-Accelerated 3D Model Viewer
 
-A powerful, modern Go application for inspecting, measuring, and visualizing STL and OpenSCAD files with GPU acceleration. Perfect for 3D printing, CAD analysis, and quality control.
+A native macOS application for inspecting, measuring, and visualizing 3D models with Metal GPU acceleration. Built with Swift and SwiftUI for optimal performance and native feel.
 
 ## Screenshots
 
@@ -16,43 +16,83 @@ brew install philipparndt/gostl/gostl
 
 ## Features
 
-- **Dual Format Support**:
-  - STL files (both ASCII and Binary)
-  - OpenSCAD files (.scad) with on-the-fly rendering
-  - Automatic file watching and hot-reload
-  - Dependency tracking for OpenSCAD imports/uses
+### File Format Support
+- **STL** - Binary and ASCII stereolithography files
+- **3MF** - 3D Manufacturing Format with multi-plate support
+- **OpenSCAD** - Live rendering of .scad files (requires OpenSCAD)
+- **go3mf YAML** - Configuration files for go3mf tool
+- **Auto-reload** - Watches files for changes and hot-reloads
+- **Dependency tracking** - Monitors OpenSCAD imports/includes
+- **2D auto-extrusion** - Automatically extrudes 2D OpenSCAD files for visualization
 
-- **GPU-Accelerated 3D Visualization**:
-  - Interactive 3D model rendering with Raylib
-  - Smooth rotation, zoom, and pan with mouse controls
-  - Wireframe and filled display modes
-  - Camera presets (Top, Bottom, Front, Back, Left, Right)
+### 3D Visualization
+- **Metal GPU rendering** - Hardware-accelerated with 4x MSAA anti-aliasing
+- **Wireframe modes** - Off, All edges, or Feature edges only
+- **Face orientation coloring** - Highlights horizontal vs vertical surfaces
+- **Reference grids** - Bottom, all sides, or 1mm precision grid
+- **Build plate visualization** - Presets for popular 3D printers
+- **Orientation cube** - Interactive navigation cube with click-to-rotate
 
-- **Precision Measurement Tools**:
-  - Click to select vertices for measurement
-  - Line measurements with live preview
-  - Radius measurements (3-point arc)
-  - Axis-constrained measurements (X, Y, Z keys)
-  - Real-time distance display
+### Measurement Tools
+- **Distance measurement** - Point-to-point with live preview
+- **Angle measurement** - Three-point angle calculation
+- **Radius measurement** - Three-point circle/arc fitting
+- **Axis constraints** - Lock measurements to X, Y, or Z axis
+- **Triangle selection** - Paint or rectangle select faces
+- **Export to OpenSCAD** - Copy measurements as OpenSCAD code
+- **Export as polygon** - Copy selected points as polygon coordinates
 
-- **Comprehensive Analysis**:
-  - Model dimensions and bounding box
-  - Surface area calculations
-  - Mesh volume calculation
-  - PLA weight estimates (100% and 15% infill)
-  - Triangle and edge statistics
+### Model Slicing
+- **Cross-section views** - Slice along X, Y, Z axes
+- **Min/max bounds** - Dual sliders per axis for precise control
+- **Cut edge highlighting** - Color-coded edges at slice boundaries
+- **Real-time updates** - Smooth slider-driven slicing
 
-- **Auto-Reload**: Automatically detects file changes and reloads while preserving camera position
+### Model Analysis
+- **Dimensions** - Bounding box size (W × H × D)
+- **Volume calculation** - Accurate mesh volume in cm³
+- **Surface area** - Total surface area in mm²
+- **Weight estimation** - Based on material density and infill
+- **Triangle/edge count** - Mesh statistics
+
+### Material System
+- **PLA** - Blue-gray, matte (1.24 g/cm³)
+- **ABS** - Warm gray, semi-glossy (1.04 g/cm³)
+- **PETG** - Blue-tinted, glossy (1.27 g/cm³)
+- **TPU** - Dark gray, matte (1.21 g/cm³)
+- **Nylon** - Cream/beige, semi-glossy (1.14 g/cm³)
+
+### Model Transformation
+- **Leveling** - Align two points to make them level on any axis
+- **Undo support** - Revert leveling transformations
+
+### Build Plate Presets
+- **Bambu Lab** - X1C, P1S, A1, A1 mini, H2D
+- **Prusa** - MK4, Mini
+- **Voron** - V0, 2.4
+- **Creality** - Ender 3
+
+### Application
+- **Multi-window** - Open multiple files in separate windows
+- **Tabbed interface** - Multiple models per window
+- **Recent files** - Quick access to recently opened files
+- **Native macOS** - Keyboard shortcuts, menus, drag & drop
+
+### External Tool Integration
+- **Open in OpenSCAD** - Edit .scad files in OpenSCAD
+- **Open with go3mf** - Process files with go3mf tool
 
 ## Installation
 
-### Prerequisites
+### Via Homebrew (Recommended)
 
-- Go 1.21 or higher
-- OpenSCAD (for .scad file support)
-- Raylib dependencies (handled automatically by raylib-go)
+```bash
+brew install philipparndt/gostl/gostl
+```
 
 ### From Source
+
+Requires Xcode and Swift 5.9+.
 
 ```bash
 git clone https://github.com/philipparndt/gostl.git
@@ -60,136 +100,76 @@ cd gostl
 make build
 ```
 
-## Usage
+### Optional Dependencies
 
-### Launch the Viewer
+- **OpenSCAD** - Required for .scad file support
+- **go3mf** - Required for .yaml/.yml go3mf configuration files
+
+## Keyboard Shortcuts
+
+### File Operations
+| Shortcut | Action |
+|----------|--------|
+| Cmd+T | New tab |
+| Cmd+O | Open file |
+| Cmd+S | Save |
+| Cmd+Shift+S | Save As |
+| Cmd+R | Reload |
+
+### Camera
+| Shortcut | Action |
+|----------|--------|
+| Cmd+1-6 | Front/Back/Left/Right/Top/Bottom |
+| Cmd+0 | Reset view |
+| 7 | Home/isometric view |
+| F | Frame model in view |
+
+### View Toggles
+| Shortcut | Action |
+|----------|--------|
+| Cmd+I | Toggle info panel |
+| Cmd+W | Cycle wireframe mode |
+| Cmd+Shift+F | Toggle face orientation |
+| Cmd+G | Cycle grid mode |
+| Cmd+B | Cycle build plate |
+| Cmd+Shift+X | Toggle slicing panel |
+
+### Measurements
+| Shortcut | Action |
+|----------|--------|
+| Cmd+D | Distance measurement |
+| Cmd+A | Angle measurement |
+| R | Radius measurement |
+| T | Triangle selection |
+| X/Y/Z | Axis constraint |
+| Cmd+Shift+K | Clear all measurements |
+| Cmd+Shift+C | Copy as OpenSCAD |
+| Cmd+P | Copy as polygon |
+
+### Other
+| Shortcut | Action |
+|----------|--------|
+| Cmd+M | Cycle material |
+| Cmd+L | Level object |
+| O | Open with go3mf |
+| Cmd+E | Open in OpenSCAD |
+
+## Mouse Controls
+
+- **Left drag** - Rotate camera
+- **Right drag / Scroll** - Zoom
+- **Middle drag** - Pan
+- **Click** - Select point (in measurement mode)
+- **Cmd+drag** - Paint select triangles
+- **Option+Cmd+drag** - Rectangle select triangles
+
+## Build Commands
 
 ```bash
-# Open with file dialog
-./gostl-raylib
-
-# Open a specific STL file
-./gostl-raylib model.stl
-
-# Open an OpenSCAD file (auto-renders to STL)
-./gostl-raylib model.scad
-```
-
-### Controls
-
-**Camera:**
-- **Left Mouse Drag**: Rotate the model
-- **Scroll**: Zoom in/out
-- **Middle Mouse Drag**: Pan the view
-- **Home**: Reset camera view
-- **T/B**: Top/Bottom view
-- **1/2**: Front/Back view
-- **3/4**: Left/Right view
-
-**Display:**
-- **W**: Toggle wireframe mode
-- **F**: Toggle filled mode
-- **O**: Open current file with go3mf (executes `go3mf build <filename> --open`)
-
-**Measurement:**
-- **Left Click**: Select vertices for measurement
-  - First click: Select start point (red)
-  - Second click: Select end point (green) and measure
-- **X, Y, Z**: Constrain measurement to axis (press again to toggle off)
-- **R**: Toggle radius measurement mode (3-point arc)
-- **ESC**: Clear selection
-
-**Live Preview:**
-- Distance preview appears in bottom-right while drawing measurements
-- Shows axis delta (ΔX, ΔY, ΔZ) when axis-constrained
-- Works across all keyboard layouts (QWERTY, QWERTZ, etc.)
-
-### Model Information Display
-
-The left panel shows:
-- **Dimensions**: Model name, triangle count, surface area, volume, size
-- **PLA Weight**: Estimated weights at 100% and 15% infill
-- **Measure**: Active measurement details (when points selected)
-- **View**: Camera preset shortcuts
-- **Navigate**: Control reference
-- **Constraints**: Axis constraint status (when measuring)
-
-### OpenSCAD Support
-
-When opening a `.scad` file:
-- Automatically renders to STL using OpenSCAD CLI
-- Monitors the source file and all dependencies (use/include)
-- Auto-reloads on any file change
-- Shows loading indicator during re-render
-- Preserves camera position across reloads
-
-## Make Targets
-
-```bash
-make help          # Show all available targets
-make build         # Build the binary
-make run           # Build and run with example STL file
-make run-scad      # Build and run with example OpenSCAD file
-make test          # Run tests
-make clean         # Clean build artifacts
-make install       # Install to $GOPATH/bin
-```
-
-## Architecture
-
-```
-gostl/
-├── cmd/gostl-raylib/   # Main Raylib application
-│   └── main.go         # Entry point and UI
-├── pkg/
-│   ├── geometry/       # 3D geometry types and operations
-│   ├── stl/            # STL model and parsing
-│   ├── analysis/       # Measurement and analysis tools
-│   ├── openscad/       # OpenSCAD rendering and dependency resolution
-│   ├── watcher/        # File watching with debouncing
-│   └── viewer/         # (legacy) Fyne renderer
-└── go.mod
-```
-
-### Key Design Decisions
-
-1. **GPU Acceleration**: Uses Raylib for hardware-accelerated 3D rendering
-2. **Thread Safety**: Background file loading with main-thread mesh creation
-3. **Keyboard Layout Independence**: Uses character input (GetCharPressed) instead of physical keys
-4. **Hot Reload**: Debounced file watching (500ms) for smooth auto-updates
-5. **Modular Architecture**: Clean separation between rendering, parsing, and analysis
-
-## Examples
-
-### STL File Analysis
-```bash
-./gostl-raylib examples/h2d-named/Large_Insert_13_6.stl
-```
-
-### OpenSCAD Development Workflow
-```bash
-# Open your OpenSCAD project
-./gostl-raylib ~/projects/my-model.scad
-
-# Edit the file in your favorite editor
-# Viewer automatically reloads on save
-```
-
-## Development
-
-### Running Tests
-```bash
-make test
-```
-
-### Code Coverage
-```bash
-make test-coverage
-```
-
-### Format Code
-```bash
-make fmt
+make build      # Build debug version
+make release    # Build release version
+make test       # Run tests
+make run FILE=./examples/cube.stl  # Run with file
 ```
 
 ## Contributing
