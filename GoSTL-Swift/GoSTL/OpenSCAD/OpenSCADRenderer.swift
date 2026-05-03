@@ -248,13 +248,20 @@ class OpenSCADRenderer {
     }
 
     /// Convert a .scad file to .csg format
-    private func convertToCSG(scadFile: URL, outputFile: URL) throws {
+    /// - Parameters:
+    ///   - scadFile: The OpenSCAD source file
+    ///   - outputFile: Where to write the CSG output
+    ///   - runFromSourceDir: If true, run from the source file's directory to resolve relative imports correctly
+    private func convertToCSG(scadFile: URL, outputFile: URL, runFromSourceDir: Bool = false) throws {
         let openscadPath = try findOpenSCADExecutable()
+
+        let runDir = runFromSourceDir ? scadFile.deletingLastPathComponent() : workDir
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: openscadPath)
         process.arguments = ["-o", outputFile.path, scadFile.path]
-        process.currentDirectoryURL = workDir
+        // Run from source directory when exporting, so relative imports resolve correctly
+        process.currentDirectoryURL = runDir
 
         let stderrPipe = Pipe()
         process.standardOutput = Pipe()
@@ -324,7 +331,6 @@ class OpenSCADRenderer {
             }
         }
 
-        print("  Extracted colors: \(colors)")
         return colors
     }
 
@@ -346,6 +352,103 @@ class OpenSCADRenderer {
             csgFile.path
         ]
         process.currentDirectoryURL = workDir
+
+        let stderrPipe = Pipe()
+        process.standardOutput = Pipe()
+        process.standardError = stderrPipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        // Check if the output file has any geometry
+        if FileManager.default.fileExists(atPath: tempSTL.path) {
+            let attrs = try? FileManager.default.attributesOfItem(atPath: tempSTL.path)
+            let fileSize = attrs?[.size] as? Int ?? 0
+            // Empty binary STL is 84 bytes (header + 0 triangles)
+            return fileSize > 84
+        }
+
+        return false
+    }
+
+    /// Extract colors from a CSG file, running from the specified source directory
+    /// This is needed to resolve relative paths in the CSG file
+    private func extractColorsForExport(csgFile: URL, sourceDir: URL, sessionId: String.SubSequence) throws -> Set<OpenSCADColor> {
+        let openscadPath = try findOpenSCADExecutable()
+
+        // Redefine color() to echo its parameters instead of rendering
+        let colorExtractor = "module color(c, alpha) { echo(\(colorTag)=str(c)); }"
+
+        // Use a temp file since OpenSCAD doesn't accept /dev/null
+        let tempOutput = workDir.appendingPathComponent("gostl_\(sessionId)_colors.stl")
+        defer { try? FileManager.default.removeItem(at: tempOutput) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: openscadPath)
+        process.arguments = [
+            "-D", colorExtractor,
+            "-o", tempOutput.path,
+            csgFile.path
+        ]
+        // Run from source directory to resolve relative imports in CSG
+        process.currentDirectoryURL = sourceDir
+
+        let stderrPipe = Pipe()
+        let stdoutPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        // Parse colors from stderr (ECHO statements go there)
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+        let combinedOutput = stderr + "\n" + stdout
+
+        var colors = Set<OpenSCADColor>()
+
+        // Look for ECHO: GOSTL_COLOR = "[r, g, b, a]"
+        let pattern = "ECHO: \(colorTag) = \"(\\[[^\\]]+\\])\""
+        if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+            let nsString = combinedOutput as NSString
+            let matches = regex.matches(in: combinedOutput, options: [], range: NSRange(location: 0, length: nsString.length))
+
+            for match in matches {
+                if match.numberOfRanges >= 2 {
+                    let colorRange = match.range(at: 1)
+                    let colorString = nsString.substring(with: colorRange)
+                    if let color = OpenSCADColor(fromOpenSCADString: colorString) {
+                        colors.insert(color)
+                    }
+                }
+            }
+        }
+
+        return colors
+    }
+
+    /// Check for uncolored geometry, running from the specified source directory
+    private func checkForUncoloredGeometryForExport(csgFile: URL, sourceDir: URL, sessionId: String.SubSequence) throws -> Bool {
+        let openscadPath = try findOpenSCADExecutable()
+
+        // Redefine color() to consume its children (output nothing)
+        let colorDisabler = "module color(c, alpha) { /* discard */ }"
+
+        let tempSTL = workDir.appendingPathComponent("gostl_\(sessionId)_uncolored.stl")
+        defer { try? FileManager.default.removeItem(at: tempSTL) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: openscadPath)
+        process.arguments = [
+            "-D", colorDisabler,
+            "-o", tempSTL.path,
+            csgFile.path
+        ]
+        // Run from source directory to resolve relative imports in CSG
+        process.currentDirectoryURL = sourceDir
 
         let stderrPipe = Pipe()
         process.standardOutput = Pipe()
@@ -762,6 +865,149 @@ class OpenSCADRenderer {
         }
 
         return currentDirPath  // Return the expected path even if not found
+    }
+
+    // MARK: - Multi-Color Export for go3mf
+
+    /// Result of exporting for go3mf
+    struct Go3mfExportResult {
+        /// Directory containing the exported STL files
+        let outputDir: URL
+        /// List of (filename, color) pairs for each exported part
+        let parts: [(filename: String, color: OpenSCADColor?)]
+        /// True if model has multiple colors
+        var isMultiColor: Bool { parts.count > 1 }
+    }
+
+    /// Export an OpenSCAD file as separate STL files for go3mf multi-color support
+    /// Each color gets its own STL file that can be assigned a different filament
+    /// - Parameter scadFile: URL of the .scad file to export
+    /// - Returns: Go3mfExportResult with paths to exported STL files
+    func exportForGo3mf(scadFile: URL) throws -> Go3mfExportResult {
+        let sessionId = UUID().uuidString.prefix(8)
+        let outputDir = workDir.appendingPathComponent("gostl_go3mf_\(sessionId)")
+        try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+
+        // Use the source file's directory as working directory to resolve relative imports
+        let sourceDir = scadFile.deletingLastPathComponent()
+
+        // Step 1: Convert to CSG format, running from source dir to resolve relative imports
+        // Put CSG in source directory so relative paths in CSG resolve correctly
+        let csgFile = sourceDir.appendingPathComponent("gostl_\(sessionId).csg")
+        defer { try? FileManager.default.removeItem(at: csgFile) }
+
+        do {
+            try convertToCSG(scadFile: scadFile, outputFile: csgFile, runFromSourceDir: true)
+        } catch {
+            // If CSG conversion fails, export as single STL
+            let singleSTL = outputDir.appendingPathComponent("model.stl")
+            _ = try renderToSTL(scadFile: scadFile, outputFile: singleSTL)
+            return Go3mfExportResult(outputDir: outputDir, parts: [("model.stl", nil)])
+        }
+
+        // Step 2: Extract colors (run from source dir to resolve relative paths in CSG)
+        let colors = try extractColorsForExport(csgFile: csgFile, sourceDir: sourceDir, sessionId: sessionId)
+
+        // If no colors found, export as single STL
+        if colors.isEmpty {
+            let singleSTL = outputDir.appendingPathComponent("model.stl")
+            _ = try renderToSTL(scadFile: scadFile, outputFile: singleSTL)
+            return Go3mfExportResult(outputDir: outputDir, parts: [("model.stl", nil)])
+        }
+
+        // Step 3: Check for uncolored geometry (run from source dir)
+        let hasUncolored = try checkForUncoloredGeometryForExport(csgFile: csgFile, sourceDir: sourceDir, sessionId: sessionId)
+
+        // Step 4: Export each color as separate STL
+        let openscadPath = try findOpenSCADExecutable()
+        var parts: [(String, OpenSCADColor?)] = []
+        let colorArray = Array(colors)
+
+        for (index, color) in colorArray.enumerated() {
+            let filename = "color_\(index + 1).stl"
+            let stlPath = outputDir.appendingPathComponent(filename)
+
+            // Use the exact string format from extraction for matching
+            let colorString = color.openSCADString
+
+            let colorFilter = """
+            module color(c, alpha) {
+                if ($colored) {
+                    children();
+                } else {
+                    $colored = true;
+                    if (str(c) == "\(colorString)") children();
+                }
+            }
+            """
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: openscadPath)
+            process.arguments = [
+                "-D", "$colored = false;",
+                "-D", colorFilter,
+                "-o", stlPath.path,
+                csgFile.path
+            ]
+            // Run from source directory to resolve relative imports in CSG
+            process.currentDirectoryURL = sourceDir
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
+
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus == 0 && FileManager.default.fileExists(atPath: stlPath.path) {
+                // Check if file has geometry
+                let attrs = try? FileManager.default.attributesOfItem(atPath: stlPath.path)
+                let size = attrs?[.size] as? Int ?? 0
+                if size > 84 {  // More than empty STL
+                    parts.append((filename, color))
+                }
+            }
+        }
+
+        // Export uncolored geometry if present
+        if hasUncolored {
+            let filename = "uncolored.stl"
+            let stlPath = outputDir.appendingPathComponent(filename)
+
+            let colorDisabler = "module color(c, alpha) { /* discard */ }"
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: openscadPath)
+            process.arguments = [
+                "-D", colorDisabler,
+                "-o", stlPath.path,
+                csgFile.path
+            ]
+            // Run from source directory to resolve relative imports in CSG
+            process.currentDirectoryURL = sourceDir
+            process.standardOutput = Pipe()
+            process.standardError = Pipe()
+
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus == 0 && FileManager.default.fileExists(atPath: stlPath.path) {
+                let attrs = try? FileManager.default.attributesOfItem(atPath: stlPath.path)
+                let size = attrs?[.size] as? Int ?? 0
+                if size > 84 {
+                    parts.append((filename, nil))
+                }
+            }
+        }
+
+        // If somehow no parts were exported, fall back to single STL
+        if parts.isEmpty {
+            let singleSTL = outputDir.appendingPathComponent("model.stl")
+            _ = try renderToSTL(scadFile: scadFile, outputFile: singleSTL)
+            return Go3mfExportResult(outputDir: outputDir, parts: [("model.stl", nil)])
+        }
+
+        return Go3mfExportResult(outputDir: outputDir, parts: parts)
     }
 }
 

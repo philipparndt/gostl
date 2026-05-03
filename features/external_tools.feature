@@ -172,3 +172,21 @@ Feature: External Tool Integration
     When the file is loaded
     Then the plate selector panel should appear
     And all plates from the generated 3MF should be available
+
+  @go3mf @openscad @colors
+  Scenario: Multi-color OpenSCAD export to go3mf
+    Given an OpenSCAD file with multiple color() modules is loaded
+    When I press O to open with go3mf
+    Then GoSTL should export each color as a separate STL file
+    And generate a go3mf YAML configuration with filament assignments
+    And each color gets assigned to a different filament (1, 2, 3, etc.)
+    And go3mf should build a multi-color 3MF file
+    And the 3MF file should open in the default application
+
+  @go3mf @openscad @colors
+  Scenario: Single-color OpenSCAD export to go3mf
+    Given an OpenSCAD file with no color() modules is loaded
+    When I press O to open with go3mf
+    Then GoSTL should export the model as a single STL file
+    And pass it directly to go3mf (no YAML needed)
+    And go3mf should build a standard 3MF file
