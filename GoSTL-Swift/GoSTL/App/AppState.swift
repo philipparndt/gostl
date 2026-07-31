@@ -57,6 +57,15 @@ final class AppState: @unchecked Sendable {
     /// Clear color for the background, sourced from the active theme
     var clearColor: SIMD4<Float> = ThemePreferences.shared.colors.background
 
+    /// Background chosen by whoever is embedding the viewer.
+    ///
+    /// An editor showing a model beside its source wants the two halves to look
+    /// like one window, so it supplies its own colour and the theme's is not
+    /// used — including after a theme change.
+    var backgroundOverride: SIMD4<Float>? {
+        didSet { clearColor = backgroundOverride ?? ThemePreferences.shared.colors.background }
+    }
+
     /// Camera for 3D navigation
     var camera = Camera()
 
@@ -441,7 +450,7 @@ final class AppState: @unchecked Sendable {
 
     /// Refresh GPU buffers that bake in theme colors after a theme change
     func applyThemeChange() {
-        clearColor = ThemePreferences.shared.colors.background
+        clearColor = backgroundOverride ?? ThemePreferences.shared.colors.background
         guard let device = MTLCreateSystemDefaultDevice() else { return }
         try? updateGrid(device: device)
         if buildPlate != .off {

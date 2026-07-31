@@ -849,16 +849,15 @@ final class MetalRenderer {
     }
 
     private func renderOrientationCube(encoder: MTLRenderCommandEncoder, cubeData: OrientationCubeData, appState: AppState, viewSize: CGSize) {
-        // Define cube viewport in top-right corner
-        // Note: Metal framebuffer coordinates have Y=0 at TOP, so originY=margin places
-        // the viewport margin pixels from the top edge, resulting in top-right placement.
-        let cubeSize: Double = 300  // Size of the cube viewport in pixels (2.5x larger: 120 * 2.5 = 300)
-        let margin: Double = 20
+        // Top-right corner. Metal framebuffer coordinates have Y=0 at TOP, so
+        // originY is the gap from the top edge.
+        let layout = OrientationCubeLayout(viewSize: viewSize)
+        guard layout.isVisible else { return }
         let viewport = MTLViewport(
-            originX: viewSize.width - cubeSize - margin,
-            originY: margin,  // Top-right corner (Metal framebuffer has Y=0 at TOP)
-            width: cubeSize,
-            height: cubeSize,
+            originX: layout.originX,
+            originY: layout.originY,
+            width: layout.size,
+            height: layout.size,
             znear: 0.0,
             zfar: 0.01  // Very shallow depth range ensures cube is always in front
         )
@@ -875,7 +874,7 @@ final class MetalRenderer {
         cubeCamera.target = SIMD3<Float>(0, 0, 0)  // Always look at origin
 
         // Create uniforms with cube camera
-        let aspect = Float(cubeSize / cubeSize)  // Square viewport
+        let aspect: Float = 1  // Square viewport
         var uniforms = createUniforms(camera: cubeCamera, aspect: aspect)
 
         // Update vertex colors for hover effect if needed

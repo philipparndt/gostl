@@ -14,9 +14,29 @@ public struct ContentView: View {
     @State private var go3mfErrorObserver: NSObjectProtocol?
 
     let fileURL: URL?
+    let embedding: EmbeddingOptions?
 
-    public init(fileURL: URL? = nil) {
+    /// How the viewer should behave inside someone else's window.
+    ///
+    /// The defaults suit a window of its own; an editor showing a model in a
+    /// split pane wants something quieter and in its own colours.
+    public struct EmbeddingOptions: Sendable {
+        /// Background for the viewport, so the pane matches its surroundings.
+        public var backgroundColor: NSColor?
+        /// Whether the menu panel is open to begin with. It covers most of a
+        /// narrow pane, so an embedder usually wants it folded away behind its
+        /// button until asked for.
+        public var showsMenuPanel: Bool
+
+        public init(backgroundColor: NSColor? = nil, showsMenuPanel: Bool = false) {
+            self.backgroundColor = backgroundColor
+            self.showsMenuPanel = showsMenuPanel
+        }
+    }
+
+    public init(fileURL: URL? = nil, embedding: EmbeddingOptions? = nil) {
         self.fileURL = fileURL
+        self.embedding = embedding
     }
 
     public var body: some View {
@@ -43,15 +63,21 @@ public struct ContentView: View {
                 // the app theme so the .ultraThinMaterial glass stays dark enough
                 // for the white text inside to remain readable in light mode.
                 ZStack {
-                    // Main menu panel (top-left)
-                    if appState.showModelInfo {
-                        VStack {
-                            HStack {
+                    // Main menu panel (top-left), or the button that brings it
+                    // back. Without the button the panel is reachable only by
+                    // the "i" shortcut or a menu command, and an embedded
+                    // viewer has neither.
+                    VStack {
+                        HStack {
+                            if appState.showModelInfo {
                                 MainMenuPanel(appState: appState)
-                                Spacer()
+                            } else {
+                                MenuPanelButton { appState.showModelInfo = true }
+                                    .padding(12)
                             }
                             Spacer()
                         }
+                        Spacer()
                     }
 
                     // Slicing panel (bottom-right)
@@ -173,6 +199,13 @@ public struct ContentView: View {
         .onAppear {
             guard !hasInitialized else { return }
             hasInitialized = true
+
+            if let embedding {
+                appState.showModelInfo = embedding.showsMenuPanel
+                if let color = embedding.backgroundColor {
+                    appState.backgroundOverride = color.viewportComponents
+                }
+            }
 
             print("DEBUG: ContentView.onAppear, fileURL=\(fileURL?.lastPathComponent ?? "nil")")
 
@@ -593,4 +626,46 @@ struct EmptyFileOverlay: View {
 
 #Preview {
     ContentView()
+}
+
+/// Opens the menu panel when it has been folded away.
+///
+/// Styled like the panel it replaces so it reads as the same piece of chrome
+/// rather than something new.
+private struct MenuPanelButton: View {
+	let action: () -> Void
+	@State private var isHovering = false
+
+	var body: some View {
+		Button(action: action) {
+			Image(systemName: "sidebar.left")
+				.font(.system(size: 13, weight: .medium))
+				.foregroundColor(.white.opacity(isHovering ? 1 : 0.75))
+				.frame(width: 28, height: 28)
+				.background(
+					RoundedRectangle(cornerRadius: 8)
+						.fill(.ultraThinMaterial)
+						.shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 2)
+				)
+		}
+		.buttonStyle(.plain)
+		.onHover { isHovering = $0 }
+		.help("Show the panel")
+	}
+}
+
+extension NSColor {
+	/// The components Metal writes for this colour.
+	///
+	/// The drawable is `bgra8Unorm` rather than an sRGB format, so what is
+	/// written is the display value itself and no conversion belongs here.
+	var viewportComponents: SIMD4<Float> {
+		let srgb = usingColorSpace(.sRGB) ?? self
+		return SIMD4<Float>(
+			Float(srgb.redComponent),
+			Float(srgb.greenComponent),
+			Float(srgb.blueComponent),
+			1
+		)
+	}
 }

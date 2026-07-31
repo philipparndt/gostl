@@ -333,36 +333,18 @@ final class InputHandler {
     private func checkOrientationCubeHover(at location: CGPoint, viewSize: CGSize, appState: AppState) -> (face: CubeFace?, axisLabel: Int?) {
         guard let cubeData = appState.orientationCubeData else { return (nil, nil) }
 
-        // Define cube viewport bounds (must match MetalRenderer)
-        //
-        // The cube viewport is positioned at TOP-RIGHT of the screen.
-        // MetalRenderer uses (in Metal framebuffer coords where Y=0 at TOP):
-        //   originX: viewSize.width - cubeSize - margin  (right side)
-        //   originY: margin  (places viewport at top, 20 pixels from top edge)
-        //
-        // Mouse coordinates from MetalView (AppKit convention, Y=0 at BOTTOM):
-        //   We need to convert Metal's Y=0-at-top to our Y=0-at-bottom
-        //   Metal originY=margin means TOP of cube is at margin from top
-        //   In Y=0-at-bottom: TOP of cube is at viewSize.height - margin
-        //   BOTTOM of cube is at viewSize.height - margin - cubeSize
-        let cubeSize: CGFloat = 300
-        let margin: CGFloat = 20
-        let cubeMinX = viewSize.width - cubeSize - margin  // Left edge of cube viewport
-        let cubeMaxX = cubeMinX + cubeSize  // Right edge
-        let cubeMinY = viewSize.height - margin - cubeSize  // Bottom edge (in Y=0-at-bottom coords)
-        let cubeMaxY = viewSize.height - margin  // Top edge (in Y=0-at-bottom coords)
-
-        // Check if mouse is within cube viewport
-        guard location.x >= cubeMinX && location.x <= cubeMaxX &&
-              location.y >= cubeMinY && location.y <= cubeMaxY else {
+        // The same geometry the renderer draws with, so a click lands where the
+        // cube appears. Mouse coordinates arrive in AppKit's convention, with
+        // Y=0 at the bottom, while the layout measures from the top.
+        let layout = OrientationCubeLayout(viewSize: viewSize)
+        guard layout.contains(location, viewHeight: Double(viewSize.height)) else {
             return (nil, nil)
         }
 
-        // Convert to cube viewport local coordinates
-        // localX: 0 at left edge of cube viewport
-        // localY: 0 at BOTTOM of cube viewport (matching AppKit/NDC convention)
-        let localX = location.x - cubeMinX
-        let localY = location.y - cubeMinY
+        // Local to the cube's viewport: X from its left edge, Y from its bottom.
+        let cubeSize = CGFloat(layout.size)
+        let localX = location.x - CGFloat(layout.originX)
+        let localY = location.y - CGFloat(layout.bottomUpMinY(viewHeight: Double(viewSize.height)))
 
         // Create a camera matching the cube's view
         let cubeCamera = Camera()
