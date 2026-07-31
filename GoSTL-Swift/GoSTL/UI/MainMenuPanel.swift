@@ -5,6 +5,23 @@ import Metal
 struct MainMenuPanel: View {
     let appState: AppState
 
+    /// Width of the view the panel floats over.
+    ///
+    /// The panel cannot measure this itself: it is fixed to its own width, so
+    /// the geometry it sees is that width and nothing else. Embedded beside an
+    /// editor the pane is often narrower than the panel's natural size, and
+    /// without this the panel simply hangs off the edge.
+    var availableWidth: CGFloat = .infinity
+
+    /// Natural width, used whenever there is room for it.
+    private static let preferredWidth: CGFloat = 260
+    /// Gap to the edges of the view.
+    private static let margin: CGFloat = 12
+
+    private var panelWidth: CGFloat {
+        min(Self.preferredWidth, max(0, availableWidth - Self.margin * 2))
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let maxPanelHeight = geometry.size.height - 24 // Account for padding
@@ -43,7 +60,7 @@ struct MainMenuPanel: View {
                 }
                 .padding(8)
             }
-            .frame(width: 260)
+            .frame(width: panelWidth)
             .frame(maxHeight: maxPanelHeight)
             .fixedSize(horizontal: false, vertical: true)
             .background(
@@ -52,9 +69,9 @@ struct MainMenuPanel: View {
                     .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
             )
             .clipShape(RoundedRectangle(cornerRadius: 10))
-            .padding(12)
+            .padding(Self.margin)
         }
-        .frame(width: 284) // 260 + 24 padding
+        .frame(width: panelWidth + Self.margin * 2)
     }
 }
 

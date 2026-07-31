@@ -70,7 +70,7 @@ public struct ContentView: View {
                     VStack {
                         HStack {
                             if appState.showModelInfo {
-                                MainMenuPanel(appState: appState)
+                                MainMenuPanel(appState: appState, availableWidth: geometry.size.width)
                             } else {
                                 MenuPanelButton { appState.showModelInfo = true }
                                     .padding(12)
@@ -192,7 +192,17 @@ public struct ContentView: View {
                 .environment(\.colorScheme, .dark)
             }
         }
-        .frame(minWidth: 800, minHeight: 600)
+        // A window of its own deserves a sensible minimum size. A pane in
+        // someone else's window does not get to insist on one: the view would
+        // stay 800pt wide inside a narrower pane, be clipped to what fits, and
+        // everything anchored to its right edge — the orientation cube above
+        // all — would sit outside what can be seen. The 3D view would also be
+        // fitted to a viewport wider than the visible one, so the model came
+        // out oversized and cut off.
+        .frame(
+            minWidth: embedding == nil ? 800 : nil,
+            minHeight: embedding == nil ? 600 : nil
+        )
         .navigationTitle(windowTitle)
         .focusedSceneValue(\.appState, appState)
         .preferredColorScheme(themePreferences.current.colorScheme)
