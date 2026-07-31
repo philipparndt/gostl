@@ -17,7 +17,15 @@ private struct FileFingerprint: Equatable {
 }
 
 /// Watches files for changes using file system metadata to detect actual changes
-class FileWatcher {
+///
+/// Every piece of mutable state below belongs to `queue`. The dispatch sources
+/// already delivered their events there; `watch` and `stop` are called from the
+/// main thread and now hop onto it too, so the sources array and the
+/// fingerprints are only ever touched from one serial queue. That confinement
+/// is what makes the `@unchecked Sendable` below true rather than merely quiet
+/// — before it, a `stop()` from the main thread could empty the array while an
+/// event handler was walking it.
+class FileWatcher: @unchecked Sendable {
     private var sources: [DispatchSourceFileSystemObject] = []
     private var fileDescriptors: [Int32] = []
     private let queue = DispatchQueue(label: "com.gostl.filewatcher")
@@ -41,8 +49,12 @@ class FileWatcher {
     ///   - callback: Closure to call when a file changes (receives the changed file URL)
     /// - Throws: Error if watching cannot be set up
     func watch(files: [URL], callback: @escaping (URL) -> Void) throws {
-        // Stop any existing watching
-        stop()
+        queue.sync { watchOnQueue(files: files, callback: callback) }
+    }
+
+    /// The body of `watch`, on the queue that owns the state.
+    private func watchOnQueue(files: [URL], callback: @escaping (URL) -> Void) {
+        stopOnQueue()
 
         self.callback = callback
 
@@ -215,6 +227,10 @@ class FileWatcher {
 
     /// Stop watching all files
     func stop() {
+        queue.sync { stopOnQueue() }
+    }
+
+    private func stopOnQueue() {
         // Cancel all dispatch sources
         for source in sources {
             source.cancel()
@@ -226,6 +242,10 @@ class FileWatcher {
     }
 
     deinit {
-        stop()
+        // Directly, not through the queue. Nothing else can hold a reference at
+        // this point, so there is no one to race with — and a `queue.sync` here
+        // would deadlock if the last reference happened to be released on that
+        // queue, which an event handler capturing self can arrange.
+        stopOnQueue()
     }
 }
