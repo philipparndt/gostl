@@ -28,7 +28,13 @@ final class Camera {
     /// framed for. Kept so a change of shape can re-fit without the caller
     /// having to remember what was on screen.
     private var framedRadius: Double?
-    private var framedAspect: Double = 1
+    /// The viewport's shape, as last reported by the renderer.
+    ///
+    /// Recorded even before anything is loaded, because neither caller that
+    /// frames a model knows the view's size. Without it, a model opened into a
+    /// pane that is already narrow gets fitted to a square one and hangs off
+    /// the sides.
+    private(set) var viewportAspect: Double = 1
 
     // Default values for reset
     private var defaultDistance: Double = 100.0
@@ -119,11 +125,13 @@ final class Camera {
     /// than it is tall has a smaller horizontal one, and a distance chosen from
     /// the model's size alone lets the model run off the sides. That is what
     /// happens when the pane is dragged narrow.
-    func frameBoundingBox(_ bbox: BoundingBox, aspect: Double = 1) {
+    /// Passing `aspect` is optional; the shape the renderer last reported is
+    /// used when the caller does not know it, which is the usual case.
+    func frameBoundingBox(_ bbox: BoundingBox, aspect: Double? = nil) {
         target = bbox.center.float3
         framedRadius = bbox.diagonal / 2
-        framedAspect = max(0.01, aspect)
-        distance = Self.fitDistance(radius: bbox.diagonal / 2, aspect: framedAspect)
+        viewportAspect = max(0.01, aspect ?? viewportAspect)
+        distance = Self.fitDistance(radius: bbox.diagonal / 2, aspect: viewportAspect)
         saveAsDefault()
     }
 
@@ -131,12 +139,15 @@ final class Camera {
     /// zoomed in or out relative to a fitted view.
     func reframe(aspect: Double) {
         let aspect = max(0.01, aspect)
-        guard let framedRadius, abs(aspect - framedAspect) > 0.001 else { return }
+        let previous = viewportAspect
+        // Recorded first: a resize that arrives before anything is loaded still
+        // tells us the shape the next model has to be fitted to.
+        viewportAspect = aspect
+        guard let framedRadius, abs(aspect - previous) > 0.001 else { return }
 
-        let previousFit = Self.fitDistance(radius: framedRadius, aspect: framedAspect)
+        let previousFit = Self.fitDistance(radius: framedRadius, aspect: previous)
         let zoom = previousFit > 0 ? distance / previousFit : 1
 
-        framedAspect = aspect
         let fit = Self.fitDistance(radius: framedRadius, aspect: aspect)
         distance = fit * zoom
         defaultDistance = fit
