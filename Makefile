@@ -1,4 +1,4 @@
-.PHONY: build run clean test release install-dev restore-release
+.PHONY: help build run run-release clean test release install-dev restore-release install-status
 
 # Homebrew installation paths
 BREW_PREFIX := $(shell brew --prefix gostl 2>/dev/null)
@@ -10,6 +10,23 @@ BREW_METALLIB_BACKUP := $(BREW_APP)/GoSTL_GoSTL.bundle/Contents/Resources/defaul
 
 # Default target
 all: build
+
+# Show available targets
+help:
+	@echo "GoSTL Makefile targets:"
+	@echo ""
+	@echo "  build            Build debug version (compiles Swift + Metal shaders)"
+	@echo "  release          Build release version (arm64)"
+	@echo "  run FILE=<path>  Build debug and run with the given file"
+	@echo "  run-release FILE=<path>"
+	@echo "                   Build release and run with the given file"
+	@echo "  test             Build debug and open examples/simple-named/PartA_1.stl"
+	@echo "  clean            Remove build artifacts (.build/)"
+	@echo "  install-dev      Replace the Homebrew binary with the local debug build"
+	@echo "                   (creates a backup the first time)"
+	@echo "  restore-release  Restore the Homebrew release binary from backup"
+	@echo "  install-status   Show whether the Homebrew install is dev or release"
+	@echo "  help             Show this help"
 
 # Build debug version
 build:
