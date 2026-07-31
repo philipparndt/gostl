@@ -252,8 +252,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-@main
-struct GoSTLApp: App {
+/// The standalone application.
+///
+/// Not `@main` any more: the module is a library so its viewer can be embedded
+/// in another app, and a library cannot carry an entry point. The GoSTLMain
+/// target calls `main()` on this.
+public struct GoSTLApp: App {
+    public init() {}
+
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @FocusedValue(\.appState) private var appState
     @State private var themePreferences = ThemePreferences.shared
@@ -262,7 +268,7 @@ struct GoSTLApp: App {
         RecentDocuments.shared
     }
 
-    var body: some Scene {
+    public var body: some Scene {
         WindowGroup {
             ContentView(fileURL: AppDelegate.commandLineFileURL)
                 .onAppear {

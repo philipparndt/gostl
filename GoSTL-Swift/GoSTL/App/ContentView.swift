@@ -2,7 +2,7 @@ import SwiftUI
 import Metal
 import AppKit
 
-struct ContentView: View {
+public struct ContentView: View {
     @State private var appState = AppState()
     @State private var themePreferences = ThemePreferences.shared
     @State private var errorAlert: ErrorAlert?
@@ -15,11 +15,11 @@ struct ContentView: View {
 
     let fileURL: URL?
 
-    init(fileURL: URL? = nil) {
+    public init(fileURL: URL? = nil) {
         self.fileURL = fileURL
     }
 
-    var body: some View {
+    public var body: some View {
         GeometryReader { geometry in
             ZStack {
                 MetalView(appState: appState)
