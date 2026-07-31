@@ -23,6 +23,7 @@ This directory contains Cucumber/Gherkin feature files documenting all functiona
 - `grid_display.feature` - Reference grid display
 - `build_plate.feature` - 3D printer build plate visualization
 - `rendering.feature` - 3D rendering quality and features
+- `theme.feature` - Dark/light theme selection
 
 ### Model Interaction
 - `slicing.feature` - Model slicing and cross-sections
@@ -66,6 +67,7 @@ Features use tags for categorization:
 - `@go3mf` - go3mf integration
 - `@ui` - User interface
 - `@keyboard` - Keyboard shortcuts
+- `@theme` - Theme/appearance selection
 - `@internal` - Internal implementation details
 
 ## Supported File Formats

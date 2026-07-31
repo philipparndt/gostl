@@ -168,8 +168,9 @@ final class GridData {
         let halfSize = size / 2.0
         let lineCount = Int(size / spacing)
 
-        let majorColor = SIMD4<Float>(0.3, 0.3, 0.3, 1.0)
-        let minorColor = SIMD4<Float>(0.2, 0.2, 0.2, 1.0)
+        let theme = ThemePreferences.shared.colors
+        let majorColor = theme.gridMajor
+        let minorColor = theme.gridMinor
 
         // Lines parallel to X axis (running along Y)
         for i in -lineCount...lineCount {
@@ -205,9 +206,10 @@ final class GridData {
     }
 
     private static func getLineColor(value: Float, spacing: Float, mode: GridMode) -> SIMD4<Float> {
-        let gridColor = SIMD4<Float>(100.0/255.0, 100.0/255.0, 100.0/255.0, 160.0/255.0)
-        let majorColor = SIMD4<Float>(140.0/255.0, 140.0/255.0, 140.0/255.0, 200.0/255.0)
-        let superMajorColor = SIMD4<Float>(180.0/255.0, 180.0/255.0, 180.0/255.0, 240.0/255.0)
+        let theme = ThemePreferences.shared.colors
+        let gridColor = theme.gridMinor
+        let majorColor = theme.gridMajor
+        let superMajorColor = theme.gridSuperMajor
 
         if mode == .oneMM {
             // In 1mm mode: every 10mm is super major, every 5mm is major
@@ -340,7 +342,7 @@ final class GridData {
         bottomZ: Float
     ) -> [VertexIn] {
         var vertices: [VertexIn] = []
-        let dimColor = SIMD4<Float>(255.0/255.0, 200.0/255.0, 100.0/255.0, 1.0) // Orange
+        let dimColor = ThemePreferences.shared.colors.dimensionLines
         let markerSize: Float = 3.0
 
         // X axis indicator - simple marker at max X (front edge)
@@ -364,7 +366,7 @@ final class GridData {
     /// Generate grid label data for text rendering (Z-up coordinate system)
     func generateGridLabels() -> [(text: String, position: SIMD3<Float>, color: SIMD4<Float>, size: Float, orientation: TextOrientation)] {
         var labels: [(String, SIMD3<Float>, SIMD4<Float>, Float, TextOrientation)] = []
-        let labelColor = SIMD4<Float>(200.0/255.0, 200.0/255.0, 200.0/255.0, 1.0) // White
+        let labelColor = ThemePreferences.shared.colors.gridLabel
         let labelSize: Float = 2.0
 
         // Always show labels at fixed 10-unit intervals
@@ -409,7 +411,7 @@ final class GridData {
     /// Generate dimension label data for text rendering (Z-up coordinate system)
     func generateDimensionLabels() -> [(text: String, position: SIMD3<Float>, color: SIMD4<Float>, size: Float, orientation: TextOrientation)] {
         var labels: [(String, SIMD3<Float>, SIMD4<Float>, Float, TextOrientation)] = []
-        let dimColor = SIMD4<Float>(255.0/255.0, 200.0/255.0, 100.0/255.0, 1.0) // Orange
+        let dimColor = ThemePreferences.shared.colors.dimensionLines
         let labelSize: Float = 1.75
 
         let sizeX = bounds.bboxMaxX - bounds.bboxMinX

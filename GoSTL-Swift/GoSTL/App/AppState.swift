@@ -54,8 +54,8 @@ final class AppState: @unchecked Sendable {
     @ObservationIgnored
     private var notificationObservers: [Any] = []
 
-    /// Clear color for the background (dark blue matching Go version: RGB 15, 18, 25)
-    var clearColor: SIMD4<Float> = SIMD4(0.059, 0.071, 0.098, 1.0)
+    /// Clear color for the background, sourced from the active theme
+    var clearColor: SIMD4<Float> = ThemePreferences.shared.colors.background
 
     /// Camera for 3D navigation
     var camera = Camera()
@@ -410,6 +410,15 @@ final class AppState: @unchecked Sendable {
             }
         })
 
+        // Theme change - update clear color and regenerate baked-in buffer colors
+        notificationObservers.append(NotificationCenter.default.addObserver(
+            forName: .themeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyThemeChange()
+        })
+
         // Leveling notifications
         notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("StartLeveling"),
@@ -428,6 +437,16 @@ final class AppState: @unchecked Sendable {
                 try? self?.undoLeveling(device: device)
             }
         })
+    }
+
+    /// Refresh GPU buffers that bake in theme colors after a theme change
+    func applyThemeChange() {
+        clearColor = ThemePreferences.shared.colors.background
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        try? updateGrid(device: device)
+        if buildPlate != .off {
+            updateBuildPlate(device: device)
+        }
     }
 
     /// Cycle to the next grid mode

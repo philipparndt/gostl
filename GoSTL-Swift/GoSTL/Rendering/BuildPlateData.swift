@@ -57,19 +57,19 @@ final class BuildPlateData {
             plateZ = 0
         }
 
+        let theme = ThemePreferences.shared.colors
+
         // Build plate surface
-        let surfaceColor = SIMD4<Float>(0.12, 0.15, 0.22, 0.45)
         addSurfaceXY(&vertices, centerX: centerX, centerY: centerY, z: plateZ,
-                    halfWidth: halfWidth, halfDepth: halfDepth, color: surfaceColor)
+                    halfWidth: halfWidth, halfDepth: halfDepth, color: theme.buildPlateSurface)
 
         // Grid lines
         addGridLinesXY(&vertices, centerX: centerX, centerY: centerY, z: plateZ,
                       halfWidth: halfWidth, halfDepth: halfDepth)
 
         // Frame outline
-        let frameColor = SIMD4<Float>(0.35, 0.55, 0.85, 0.85)
         addFrameXY(&vertices, centerX: centerX, centerY: centerY, z: plateZ + 0.05,
-                  halfWidth: halfWidth, halfDepth: halfDepth, color: frameColor)
+                  halfWidth: halfWidth, halfDepth: halfDepth, color: theme.buildPlateFrame)
 
         return vertices
     }
@@ -97,19 +97,19 @@ final class BuildPlateData {
             plateY = 0
         }
 
+        let theme = ThemePreferences.shared.colors
+
         // Build plate surface
-        let surfaceColor = SIMD4<Float>(0.12, 0.15, 0.22, 0.45)
         addSurfaceXZ(&vertices, centerX: centerX, centerZ: centerZ, y: plateY,
-                    halfWidth: halfWidth, halfHeight: halfHeight, color: surfaceColor)
+                    halfWidth: halfWidth, halfHeight: halfHeight, color: theme.buildPlateSurface)
 
         // Grid lines
         addGridLinesXZ(&vertices, centerX: centerX, centerZ: centerZ, y: plateY,
                       halfWidth: halfWidth, halfHeight: halfHeight)
 
         // Frame outline
-        let frameColor = SIMD4<Float>(0.35, 0.55, 0.85, 0.85)
         addFrameXZ(&vertices, centerX: centerX, centerZ: centerZ, y: plateY - 0.05,
-                  halfWidth: halfWidth, halfHeight: halfHeight, color: frameColor)
+                  halfWidth: halfWidth, halfHeight: halfHeight, color: theme.buildPlateFrame)
 
         return vertices
     }
@@ -167,8 +167,9 @@ final class BuildPlateData {
         let normal = SIMD3<Float>(0, -1, 0)  // Facing toward viewer
         let gridSpacing: Float = 10.0
         let majorEvery: Int = 5
-        let lineColor = SIMD4<Float>(0.28, 0.38, 0.55, 0.35)
-        let majorLineColor = SIMD4<Float>(0.32, 0.45, 0.62, 0.55)
+        let theme = ThemePreferences.shared.colors
+        let lineColor = theme.buildPlateGridMinor
+        let majorLineColor = theme.buildPlateGridMajor
         let lineWidth: Float = 0.12
         let majorLineWidth: Float = 0.22
         let lineY = y - 0.015  // Offset toward viewer
@@ -204,7 +205,7 @@ final class BuildPlateData {
         }
 
         // Center crosshairs
-        let crossColor = SIMD4<Float>(0.4, 0.55, 0.75, 0.7)
+        let crossColor = theme.buildPlateCrosshair
         let crossWidth: Float = 0.35
         let crossY = y - 0.025
         addLineXZ(&vertices, from: SIMD3(centerX - halfWidth, crossY, centerZ),
@@ -224,8 +225,9 @@ final class BuildPlateData {
         let normal = SIMD3<Float>(0, 0, 1)  // Facing up
         let gridSpacing: Float = 10.0
         let majorEvery: Int = 5
-        let lineColor = SIMD4<Float>(0.28, 0.38, 0.55, 0.35)
-        let majorLineColor = SIMD4<Float>(0.32, 0.45, 0.62, 0.55)
+        let theme = ThemePreferences.shared.colors
+        let lineColor = theme.buildPlateGridMinor
+        let majorLineColor = theme.buildPlateGridMajor
         let lineWidth: Float = 0.12
         let majorLineWidth: Float = 0.22
         let lineZ = z + 0.015
@@ -261,7 +263,7 @@ final class BuildPlateData {
         }
 
         // Center crosshairs
-        let crossColor = SIMD4<Float>(0.4, 0.55, 0.75, 0.7)
+        let crossColor = theme.buildPlateCrosshair
         let crossWidth: Float = 0.35
         let crossZ = z + 0.025
         addLineXY(&vertices, from: SIMD3(centerX - halfWidth, centerY, crossZ),

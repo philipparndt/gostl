@@ -256,6 +256,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct GoSTLApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @FocusedValue(\.appState) private var appState
+    @State private var themePreferences = ThemePreferences.shared
 
     private var recentDocuments: RecentDocuments {
         RecentDocuments.shared
@@ -446,6 +447,17 @@ struct GoSTLApp: App {
                     set: { _ in appState?.slicingState.toggleVisibility() }
                 ))
                 .keyboardShortcut("x", modifiers: [.command, .shift])
+
+                Divider()
+
+                Picker("Theme", selection: Binding(
+                    get: { themePreferences.current },
+                    set: { themePreferences.current = $0 }
+                )) {
+                    ForEach(Theme.allCases) { theme in
+                        Text(theme.displayName).tag(theme)
+                    }
+                }
 
                 Divider()
 

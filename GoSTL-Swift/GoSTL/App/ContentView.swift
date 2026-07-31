@@ -4,6 +4,7 @@ import AppKit
 
 struct ContentView: View {
     @State private var appState = AppState()
+    @State private var themePreferences = ThemePreferences.shared
     @State private var errorAlert: ErrorAlert?
     @State private var overlayError: ToolError?
     @State private var windowTitle: String = "GoSTL"
@@ -38,130 +39,137 @@ struct ContentView: View {
                 // Selection rectangle overlay
                 SelectionRectangleOverlay(measurementSystem: appState.measurementSystem)
 
-                // Main menu panel (top-left)
-                if appState.showModelInfo {
-                    VStack {
-                        HStack {
-                            MainMenuPanel(appState: appState)
+                // Floating overlay panels — kept in dark color scheme regardless of
+                // the app theme so the .ultraThinMaterial glass stays dark enough
+                // for the white text inside to remain readable in light mode.
+                ZStack {
+                    // Main menu panel (top-left)
+                    if appState.showModelInfo {
+                        VStack {
+                            HStack {
+                                MainMenuPanel(appState: appState)
+                                Spacer()
+                            }
                             Spacer()
                         }
-                        Spacer()
                     }
-                }
 
-                // Slicing panel (bottom-right)
-                if appState.slicingState.isVisible {
-                    VStack {
-                        Spacer()
-                        HStack {
+                    // Slicing panel (bottom-right)
+                    if appState.slicingState.isVisible {
+                        VStack {
                             Spacer()
-                            SlicingPanel(slicingState: appState.slicingState)
-                                .padding(12)
-                        }
-                    }
-                }
-
-                // Leveling panel (bottom-right, replaces slicing when active)
-                if appState.levelingState.isActive {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            LevelingPanel(
-                                levelingState: appState.levelingState,
-                                onApply: { axis in
-                                    appState.levelingState.selectAxis(axis)
-                                    applyLeveling()
-                                },
-                                onCancel: {
-                                    appState.levelingState.reset()
-                                },
-                                onUndo: {
-                                    guard let device = MTLCreateSystemDefaultDevice() else { return }
-                                    try? appState.undoLeveling(device: device)
-                                }
-                            )
-                            .padding(12)
-                        }
-                    }
-                }
-
-                // Plate selector (bottom-center) - only shown for 3MF files with multiple plates
-                if appState.hasMultiplePlates {
-                    VStack {
-                        Spacer()
-                        PlateSelector(appState: appState)
-                            .padding(.bottom, 16)
-                    }
-                }
-
-                // Warnings panel (bottom-right) - only shown when there are warnings
-                if !appState.renderWarnings.isEmpty && !appState.slicingState.isVisible && !appState.levelingState.isActive {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            WarningsPanel(warnings: appState.renderWarnings)
-                                .padding(12)
-                        }
-                    }
-                }
-
-                // Loading overlay (shown while waiting for file to load)
-                if appState.isLoading {
-                    LoadingOverlay()
-                        .transition(.opacity)
-                }
-
-                // Background processing indicator (shown while spatial index or wireframe builds)
-                if (appState.isBuildingAccelerator || appState.isBuildingWireframe) && !appState.isLoading {
-                    VStack {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                                .scaleEffect(0.8)
-                            VStack(alignment: .leading, spacing: 2) {
-                                if appState.isBuildingWireframe {
-                                    Text("Building wireframe...")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                if appState.isBuildingAccelerator {
-                                    Text("Building spatial index...")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
+                            HStack {
+                                Spacer()
+                                SlicingPanel(slicingState: appState.slicingState)
+                                    .padding(12)
                             }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 50)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    .animation(.easeInOut(duration: 0.3), value: appState.isBuildingAccelerator || appState.isBuildingWireframe)
-                }
 
-                // Empty file indicator (shown when OpenSCAD file has no geometry)
-                if appState.isEmptyFile {
-                    EmptyFileOverlay(fileName: appState.modelInfo?.fileName ?? "")
-                }
-
-                // Error overlay (shown for tool errors)
-                if let error = overlayError {
-                    ErrorOverlay(error: error) {
-                        overlayError = nil
-                        appState.loadError = nil
-                        appState.loadErrorID = nil
+                    // Leveling panel (bottom-right, replaces slicing when active)
+                    if appState.levelingState.isActive {
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                LevelingPanel(
+                                    levelingState: appState.levelingState,
+                                    onApply: { axis in
+                                        appState.levelingState.selectAxis(axis)
+                                        applyLeveling()
+                                    },
+                                    onCancel: {
+                                        appState.levelingState.reset()
+                                    },
+                                    onUndo: {
+                                        guard let device = MTLCreateSystemDefaultDevice() else { return }
+                                        try? appState.undoLeveling(device: device)
+                                    }
+                                )
+                                .padding(12)
+                            }
+                        }
                     }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+
+                    // Plate selector (bottom-center) - only shown for 3MF files with multiple plates
+                    if appState.hasMultiplePlates {
+                        VStack {
+                            Spacer()
+                            PlateSelector(appState: appState)
+                                .padding(.bottom, 16)
+                        }
+                    }
+
+                    // Warnings panel (bottom-right) - only shown when there are warnings
+                    if !appState.renderWarnings.isEmpty && !appState.slicingState.isVisible && !appState.levelingState.isActive {
+                        VStack {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                WarningsPanel(warnings: appState.renderWarnings)
+                                    .padding(12)
+                            }
+                        }
+                    }
+
+                    // Loading overlay (shown while waiting for file to load)
+                    if appState.isLoading {
+                        LoadingOverlay()
+                            .transition(.opacity)
+                    }
+
+                    // Background processing indicator (shown while spatial index or wireframe builds)
+                    if (appState.isBuildingAccelerator || appState.isBuildingWireframe) && !appState.isLoading {
+                        VStack {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.8)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    if appState.isBuildingWireframe {
+                                        Text("Building wireframe...")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    if appState.isBuildingAccelerator {
+                                        Text("Building spatial index...")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 50)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .animation(.easeInOut(duration: 0.3), value: appState.isBuildingAccelerator || appState.isBuildingWireframe)
+                    }
+
+                    // Empty file indicator (shown when OpenSCAD file has no geometry)
+                    if appState.isEmptyFile {
+                        EmptyFileOverlay(fileName: appState.modelInfo?.fileName ?? "")
+                    }
+
+                    // Error overlay (shown for tool errors)
+                    if let error = overlayError {
+                        ErrorOverlay(error: error) {
+                            overlayError = nil
+                            appState.loadError = nil
+                            appState.loadErrorID = nil
+                        }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
+                .environment(\.colorScheme, .dark)
             }
         }
         .frame(minWidth: 800, minHeight: 600)
         .navigationTitle(windowTitle)
         .focusedSceneValue(\.appState, appState)
+        .preferredColorScheme(themePreferences.current.colorScheme)
         .onAppear {
             guard !hasInitialized else { return }
             hasInitialized = true
