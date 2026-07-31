@@ -315,6 +315,16 @@ final class MetalRenderer {
 
     @MainActor
     func draw(in view: MTKView, appState: AppState) {
+        // Re-fit when the viewport's shape changes. The projection fixes the
+        // vertical field of view, so a pane dragged narrow has a smaller
+        // horizontal one and the model runs off the sides. Done here rather
+        // than in drawableSizeWillChange because this is where the camera is
+        // in reach.
+        let size = view.drawableSize
+        if size.height > 0 {
+            appState.camera.reframe(aspect: Double(size.width / size.height))
+        }
+
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
         guard let renderPassDescriptor = view.currentRenderPassDescriptor else { return }
         guard let drawable = view.currentDrawable else { return }

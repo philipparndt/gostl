@@ -18,6 +18,18 @@ final class Camera {
     /// Target point to orbit around
     var target: SIMD3<Float> = .zero
 
+    /// The vertical field of view the projection uses.
+    ///
+    /// Held here rather than only as a default argument so the framing maths
+    /// and the projection cannot drift apart.
+    static let fieldOfView: Float = .pi / 4
+
+    /// Radius of the last framed model, and the width-to-height ratio it was
+    /// framed for. Kept so a change of shape can re-fit without the caller
+    /// having to remember what was on screen.
+    private var framedRadius: Double?
+    private var framedAspect: Double = 1
+
     // Default values for reset
     private var defaultDistance: Double = 100.0
     private var defaultAngleX: Double = 0.3
@@ -48,7 +60,7 @@ final class Camera {
     }
 
     /// Generate projection matrix
-    func projectionMatrix(aspect: Float, fov: Float = .pi / 4, near: Float = 0.1, far: Float = 10000.0) -> simd_float4x4 {
+    func projectionMatrix(aspect: Float, fov: Float = Camera.fieldOfView, near: Float = 0.1, far: Float = 10000.0) -> simd_float4x4 {
         matrix_perspective(fov: fov, aspect: aspect, near: near, far: far)
     }
 
@@ -100,17 +112,48 @@ final class Camera {
         defaultTarget = target
     }
 
-    /// Frame a bounding box in view
-    func frameBoundingBox(_ bbox: BoundingBox) {
-        // Set target to center of bounding box
+    /// Frame a bounding box in view.
+    ///
+    /// `aspect` is the viewport's width over its height. It matters: the
+    /// projection fixes the *vertical* field of view, so a viewport narrower
+    /// than it is tall has a smaller horizontal one, and a distance chosen from
+    /// the model's size alone lets the model run off the sides. That is what
+    /// happens when the pane is dragged narrow.
+    func frameBoundingBox(_ bbox: BoundingBox, aspect: Double = 1) {
         target = bbox.center.float3
-
-        // Set distance based on bounding box size
-        let size = bbox.diagonal
-        distance = size * 1.5 // Factor to ensure entire model is visible
-
-        // Save as new default
+        framedRadius = bbox.diagonal / 2
+        framedAspect = max(0.01, aspect)
+        distance = Self.fitDistance(radius: bbox.diagonal / 2, aspect: framedAspect)
         saveAsDefault()
+    }
+
+    /// Re-fits after the viewport's shape changes, keeping how far the user had
+    /// zoomed in or out relative to a fitted view.
+    func reframe(aspect: Double) {
+        let aspect = max(0.01, aspect)
+        guard let framedRadius, abs(aspect - framedAspect) > 0.001 else { return }
+
+        let previousFit = Self.fitDistance(radius: framedRadius, aspect: framedAspect)
+        let zoom = previousFit > 0 ? distance / previousFit : 1
+
+        framedAspect = aspect
+        let fit = Self.fitDistance(radius: framedRadius, aspect: aspect)
+        distance = fit * zoom
+        defaultDistance = fit
+    }
+
+    /// How far back a sphere of `radius` must sit to fit both ways.
+    ///
+    /// The tighter of the two fields of view decides it — vertical when the
+    /// viewport is wide, horizontal when it is narrow.
+    static func fitDistance(radius: Double, aspect: Double, margin: Double = 1.15) -> Double {
+        guard radius > 0 else { return 1 }
+
+        let verticalHalf = Double(fieldOfView) / 2
+        let horizontalHalf = atan(tan(verticalHalf) * max(0.01, aspect))
+        let tighter = min(verticalHalf, horizontalHalf)
+
+        return max(1, radius / sin(tighter) * margin)
     }
 
     // MARK: - Ray Casting
