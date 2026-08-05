@@ -27,10 +27,28 @@ public struct ContentView: View {
         /// narrow pane, so an embedder usually wants it folded away behind its
         /// button until asked for.
         public var showsMenuPanel: Bool
+        /// A way to render the current scene into an image, for an embedder
+        /// whose screenshots cannot see Metal. Main-actor because the scene
+        /// is: it reads the camera and the model as the view does.
+        public typealias SnapshotProvider = @MainActor (CGSize) -> CGImage?
 
-        public init(backgroundColor: NSColor? = nil, showsMenuPanel: Bool = false) {
+        /// Handed a way to photograph what the viewer is showing, once there
+        /// is something to photograph.
+        ///
+        /// AppKit captures a window by walking its view tree, and a Metal
+        /// layer's contents are not in it — so an embedder's screenshot has
+        /// the model missing and nothing to say about why. Given this, it can
+        /// ask for the frame and draw it where the pane is.
+        public var snapshotHandle: (@MainActor (@escaping SnapshotProvider) -> Void)?
+
+        public init(
+            backgroundColor: NSColor? = nil,
+            showsMenuPanel: Bool = false,
+            snapshotHandle: (@MainActor (@escaping SnapshotProvider) -> Void)? = nil
+        ) {
             self.backgroundColor = backgroundColor
             self.showsMenuPanel = showsMenuPanel
+            self.snapshotHandle = snapshotHandle
         }
     }
 
@@ -39,10 +57,18 @@ public struct ContentView: View {
         self.embedding = embedding
     }
 
+    /// The Metal viewport, built outside `body`.
+    ///
+    /// Inside it, the type checker gives up on the surrounding expression —
+    /// which is already large — the moment this takes a second argument.
+    private var viewport: MetalView {
+        MetalView(appState: appState, snapshotHandle: embedding?.snapshotHandle)
+    }
+
     public var body: some View {
         GeometryReader { geometry in
             ZStack {
-                MetalView(appState: appState)
+                viewport
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
                     .onAppear {

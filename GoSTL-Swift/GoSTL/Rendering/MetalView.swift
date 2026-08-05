@@ -2,7 +2,12 @@ import SwiftUI
 import MetalKit
 
 struct MetalView: NSViewRepresentable {
+
     let appState: AppState
+    /// Called once with a way to render the current scene into an image, for
+    /// an embedder whose screenshots cannot see Metal. See
+    /// `ContentView.EmbeddingOptions.snapshotHandle`.
+    var snapshotHandle: (@MainActor (@escaping ContentView.EmbeddingOptions.SnapshotProvider) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(appState: appState)
@@ -34,6 +39,16 @@ struct MetalView: NSViewRepresentable {
         // Set up input handling
         mtkView.coordinator = context.coordinator
         context.coordinator.setupRenderer(device: device)
+
+        // The scene is the coordinator's: it owns the renderer and holds the
+        // state. Handing out a closure over both keeps that ownership here
+        // rather than publishing the renderer to everybody.
+        if let snapshotHandle {
+            let coordinator = context.coordinator
+            snapshotHandle { size in
+                coordinator.renderer?.image(of: coordinator.appState, size: size)
+            }
+        }
         print("DEBUG: MetalView.makeNSView complete, mtkView frame: \(mtkView.frame)")
 
         return mtkView

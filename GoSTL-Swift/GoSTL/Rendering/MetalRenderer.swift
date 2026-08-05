@@ -2,6 +2,7 @@ import Metal
 import MetalKit
 import CoreText
 import CoreGraphics
+import Foundation
 
 final class MetalRenderer {
     let device: MTLDevice
@@ -329,6 +330,29 @@ final class MetalRenderer {
         guard let renderPassDescriptor = view.currentRenderPassDescriptor else { return }
         guard let drawable = view.currentDrawable else { return }
 
+        encodeScene(
+            into: renderPassDescriptor,
+            size: size,
+            appState: appState,
+            commandBuffer: commandBuffer
+        )
+
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+
+    /// Encodes one frame into any render pass.
+    ///
+    /// Split out from `draw` so the same frame can go somewhere other than a
+    /// view's drawable — an offscreen texture, for a screenshot. Everything
+    /// below used to read `view.drawableSize`; it takes the size now, and
+    /// nothing else about it changed.
+    func encodeScene(
+        into renderPassDescriptor: MTLRenderPassDescriptor,
+        size: CGSize,
+        appState: AppState,
+        commandBuffer: MTLCommandBuffer
+    ) {
         // Set clear color (dark blue: RGB 15, 18, 25)
         if let colorAttachment = renderPassDescriptor.colorAttachments[0] {
             colorAttachment.loadAction = .clear
@@ -346,60 +370,170 @@ final class MetalRenderer {
 
         // Render build plate first (background)
         if let buildPlateData = appState.buildPlateData {
-            renderBuildPlate(encoder: renderEncoder, buildPlateData: buildPlateData, appState: appState, viewSize: view.drawableSize)
+            renderBuildPlate(encoder: renderEncoder, buildPlateData: buildPlateData, appState: appState, viewSize: size)
         }
 
         // Render grid (background)
         if appState.gridMode != .off, let gridData = appState.gridData {
-            renderGrid(encoder: renderEncoder, gridData: gridData, appState: appState, viewSize: view.drawableSize)
+            renderGrid(encoder: renderEncoder, gridData: gridData, appState: appState, viewSize: size)
         }
 
         // Render slice planes (before mesh, for depth sorting)
         if let slicePlaneData = appState.slicePlaneData {
-            renderSlicePlanes(encoder: renderEncoder, slicePlaneData: slicePlaneData, appState: appState, viewSize: view.drawableSize)
+            renderSlicePlanes(encoder: renderEncoder, slicePlaneData: slicePlaneData, appState: appState, viewSize: size)
         }
 
         // Render mesh if available
         if let meshData = appState.meshData {
-            renderMesh(encoder: renderEncoder, meshData: meshData, appState: appState, viewSize: view.drawableSize)
+            renderMesh(encoder: renderEncoder, meshData: meshData, appState: appState, viewSize: size)
         }
 
         // Render wireframe if enabled and available
         if appState.wireframeMode != .off, let wireframeData = appState.wireframeData {
-            renderWireframe(encoder: renderEncoder, wireframeData: wireframeData, appState: appState, viewSize: view.drawableSize)
+            renderWireframe(encoder: renderEncoder, wireframeData: wireframeData, appState: appState, viewSize: size)
         }
 
         // Render cut edges (from slicing)
         if let cutEdgeData = appState.cutEdgeData {
-            renderCutEdges(encoder: renderEncoder, cutEdgeData: cutEdgeData, appState: appState, viewSize: view.drawableSize)
+            renderCutEdges(encoder: renderEncoder, cutEdgeData: cutEdgeData, appState: appState, viewSize: size)
         }
 
         // Update and render selected triangles
         if let selectedTrianglesData = appState.selectedTrianglesData {
             appState.updateSelectedTriangles()
-            renderSelectedTriangles(encoder: renderEncoder, selectedTrianglesData: selectedTrianglesData, appState: appState, viewSize: view.drawableSize)
+            renderSelectedTriangles(encoder: renderEncoder, selectedTrianglesData: selectedTrianglesData, appState: appState, viewSize: size)
         }
 
         // Update and render measurements (and leveling visualization)
         if let measurementData = appState.measurementData {
             measurementData.update(measurementSystem: appState.measurementSystem, levelingState: appState.levelingState)
-            renderMeasurements(encoder: renderEncoder, measurementData: measurementData, appState: appState, viewSize: view.drawableSize)
+            renderMeasurements(encoder: renderEncoder, measurementData: measurementData, appState: appState, viewSize: size)
         }
 
         // Render grid text labels (3D text)
         if appState.gridMode != .off, let gridTextData = appState.gridTextData {
-            renderTextBillboards(encoder: renderEncoder, textData: gridTextData, appState: appState, viewSize: view.drawableSize)
+            renderTextBillboards(encoder: renderEncoder, textData: gridTextData, appState: appState, viewSize: size)
         }
 
         // Render orientation cube (top right corner)
         if let orientationCubeData = appState.orientationCubeData {
-            renderOrientationCube(encoder: renderEncoder, cubeData: orientationCubeData, appState: appState, viewSize: view.drawableSize)
+            renderOrientationCube(encoder: renderEncoder, cubeData: orientationCubeData, appState: appState, viewSize: size)
         }
 
         renderEncoder.endEncoding()
+    }
 
-        commandBuffer.present(drawable)
+    // MARK: - Offscreen
+
+    /// Renders one frame into an image.
+    ///
+    /// For anybody photographing a window this viewer is embedded in. AppKit
+    /// captures a window by walking its view tree — `cacheDisplay(in:to:)` —
+    /// and a `CAMetalLayer`'s contents are not part of that tree, so an
+    /// embedded viewer comes out as an empty rectangle however long the
+    /// screenshot waits. This renders the same scene into a texture instead,
+    /// which the embedder can draw where the pane is.
+    ///
+    /// The pass matches the view's: 4× multisampled `bgra8Unorm` resolved into
+    /// a readable texture, with a `depth32Float` attachment. A screenshot that
+    /// differs from the window it claims to show would be worse than none.
+    func image(of appState: AppState, size: CGSize, scale: CGFloat = 2) -> CGImage? {
+        let width = Int((size.width * scale).rounded())
+        let height = Int((size.height * scale).rounded())
+        guard width > 0, height > 0 else { return nil }
+
+        if height > 0 {
+            appState.camera.reframe(aspect: Double(width) / Double(height))
+        }
+
+        let device = commandQueue.device
+
+        func texture(
+            format: MTLPixelFormat,
+            samples: Int,
+            usage: MTLTextureUsage,
+            storage: MTLStorageMode
+        ) -> MTLTexture? {
+            let descriptor = MTLTextureDescriptor()
+            descriptor.pixelFormat = format
+            descriptor.width = width
+            descriptor.height = height
+            descriptor.textureType = samples > 1 ? .type2DMultisample : .type2D
+            descriptor.sampleCount = samples
+            descriptor.usage = usage
+            descriptor.storageMode = storage
+            return device.makeTexture(descriptor: descriptor)
+        }
+
+        guard let multisampled = texture(
+                  format: .bgra8Unorm, samples: 4, usage: .renderTarget, storage: .private
+              ),
+              let resolved = texture(
+                  format: .bgra8Unorm, samples: 1,
+                  usage: [.renderTarget, .shaderRead], storage: .shared
+              ),
+              let depth = texture(
+                  format: .depth32Float, samples: 4, usage: .renderTarget, storage: .private
+              ),
+              let commandBuffer = commandQueue.makeCommandBuffer()
+        else { return nil }
+
+        let descriptor = MTLRenderPassDescriptor()
+        descriptor.colorAttachments[0].texture = multisampled
+        descriptor.colorAttachments[0].resolveTexture = resolved
+        descriptor.colorAttachments[0].storeAction = .multisampleResolve
+        descriptor.depthAttachment.texture = depth
+        descriptor.depthAttachment.loadAction = .clear
+        descriptor.depthAttachment.storeAction = .dontCare
+        descriptor.depthAttachment.clearDepth = 1.0
+
+        encodeScene(
+            into: descriptor,
+            size: CGSize(width: width, height: height),
+            appState: appState,
+            commandBuffer: commandBuffer
+        )
         commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        return Self.image(from: resolved)
+    }
+
+    /// A rendered texture as a `CGImage`.
+    ///
+    /// Metal hands back BGRA and Core Graphics wants to be told so, which is
+    /// what the byte-order flag says: without it the model comes out blue.
+    private static func image(from texture: MTLTexture) -> CGImage? {
+        let width = texture.width
+        let height = texture.height
+        let rowBytes = width * 4
+        var pixels = [UInt8](repeating: 0, count: rowBytes * height)
+
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let base = buffer.baseAddress else { return }
+            texture.getBytes(
+                base,
+                bytesPerRow: rowBytes,
+                from: MTLRegionMake2D(0, 0, width, height),
+                mipmapLevel: 0
+            )
+        }
+
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
+        return CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: rowBytes,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+                .union(.byteOrder32Little),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
     }
 
     // MARK: - Selected Triangles Rendering
