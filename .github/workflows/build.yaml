@@ -13,9 +13,6 @@ on:
 jobs:
   build:
     runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: GoSTL-Swift
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,7 +35,7 @@ jobs:
           echo "BIN=$BIN" >> "$GITHUB_ENV"
 
           # Compile Metal shaders into metallib
-          xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
+          xcrun -sdk macosx metal -c GoSTL-Swift/GoSTL/Resources/Shaders.metal -o .build/Shaders.air
           xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
 
           # Create proper bundle structure

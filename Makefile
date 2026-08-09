@@ -6,8 +6,8 @@
 # .build/out/Products/<Config>, and a hard-coded path does not fail - it runs
 # whatever stale binary is still sitting at the old one. Evaluated lazily, so
 # targets that build nothing (help, clean) do not pay for the query.
-DEBUG_BIN = $(shell cd GoSTL-Swift && xcrun swift build --show-bin-path)
-RELEASE_BIN = $(shell cd GoSTL-Swift && xcrun swift build -c release --arch arm64 --show-bin-path)
+DEBUG_BIN = $(shell xcrun swift build --show-bin-path)
+RELEASE_BIN = $(shell xcrun swift build -c release --arch arm64 --show-bin-path)
 
 # Homebrew installation paths
 BREW_PREFIX := $(shell brew --prefix gostl 2>/dev/null)
@@ -39,17 +39,17 @@ help:
 
 # Build debug version
 build:
-	cd GoSTL-Swift && xcrun swift build
-	cd GoSTL-Swift && xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
-	cd GoSTL-Swift && xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
-	BIN="$(DEBUG_BIN)"; mkdir -p "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources" && cp GoSTL-Swift/.build/default.metallib "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources/"
+	xcrun swift build
+	xcrun -sdk macosx metal -c GoSTL-Swift/GoSTL/Resources/Shaders.metal -o .build/Shaders.air
+	xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
+	BIN="$(DEBUG_BIN)"; mkdir -p "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources" && cp .build/default.metallib "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources/"
 
 # Build release version
 release:
-	cd GoSTL-Swift && xcrun swift build -c release --arch arm64
-	cd GoSTL-Swift && xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
-	cd GoSTL-Swift && xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
-	BIN="$(RELEASE_BIN)"; mkdir -p "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources" && cp GoSTL-Swift/.build/default.metallib "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources/"
+	xcrun swift build -c release --arch arm64
+	xcrun -sdk macosx metal -c GoSTL-Swift/GoSTL/Resources/Shaders.metal -o .build/Shaders.air
+	xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
+	BIN="$(RELEASE_BIN)"; mkdir -p "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources" && cp .build/default.metallib "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources/"
 
 # Run debug version with file argument
 # Usage: make run FILE=./examples/cube.stl
@@ -66,7 +66,7 @@ test: build
 
 # Clean build artifacts
 clean:
-	rm -rf GoSTL-Swift/.build
+	rm -rf .build
 
 # Install dev build over Homebrew version (for testing)
 # Creates a backup of the release version first
@@ -85,7 +85,7 @@ install-dev: build
 	fi
 	@echo "Installing dev build (may require sudo)..."
 	BIN="$(DEBUG_BIN)"; sudo cp "$$BIN/GoSTL" "$(BREW_GOSTL)" && sudo cp "$$BIN/GoSTL" "$(BREW_APP)/Contents/MacOS/GoSTL"
-	sudo cp GoSTL-Swift/.build/default.metallib "$(BREW_METALLIB)"
+	sudo cp .build/default.metallib "$(BREW_METALLIB)"
 	@echo ""
 	@echo "Done! Dev build installed."
 	@echo "  - Quit GoSTL if running"

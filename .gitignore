@@ -35,6 +35,11 @@ gostl-gui
 .DS_Store
 Thumbs.db
 
+# SwiftPM, which builds beside the manifest — at the root, since the manifest
+# moved there so the package can be depended on by URL.
+.build/
+.swiftpm/
+
 # Binary executables (in root and cmd directories)
 /gostl-raylib
 cmd/*/gostl-raylib

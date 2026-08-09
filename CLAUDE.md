@@ -18,21 +18,23 @@ make run FILE=./examples/cube.stl
 make test
 
 # Clean build artifacts
-rm -rf GoSTL-Swift/.build
+rm -rf .build
 ```
 
 ### Running Tests
 
 ```bash
-cd GoSTL-Swift && swift test
+xcrun swift test
 
 # Run a specific test
-cd GoSTL-Swift && swift test --filter STLParserTests
+xcrun swift test --filter STLParserTests
 ```
 
 ## Architecture
 
 GoSTL is a macOS STL/3MF/OpenSCAD viewer built with Swift, SwiftUI, and Metal. The main application is in `GoSTL-Swift/`.
+
+`Package.swift` sits at the repository root rather than beside the sources, because SwiftPM only finds a manifest there and a package whose manifest is in a subdirectory can be depended on by path alone — which pins nothing. Every target in it names its `path:` under `GoSTL-Swift/`, and builds run from the root: `xcrun swift build`, not `cd GoSTL-Swift && ...`.
 
 ### Key Components
 

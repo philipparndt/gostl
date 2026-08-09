@@ -12,9 +12,6 @@ jobs:
       packages: write
       pull-requests: write
     runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: GoSTL-Swift
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,7 +35,7 @@ jobs:
 
       - name: Set version info
         run: |
-          ./scripts/set-version.sh \
+          ./GoSTL-Swift/scripts/set-version.sh \
             "${{ steps.version.outputs.version }}" \
             "${{ steps.version.outputs.commit }}" \
             "${{ steps.version.outputs.date }}"
@@ -56,7 +53,7 @@ jobs:
           echo "BIN=$BIN" >> "$GITHUB_ENV"
 
           # Compile Metal shaders into metallib
-          xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
+          xcrun -sdk macosx metal -c GoSTL-Swift/GoSTL/Resources/Shaders.metal -o .build/Shaders.air
           xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
 
           # Create proper bundle structure
@@ -101,8 +98,8 @@ jobs:
         with:
           name: "GoSTL ${{ steps.version.outputs.version }}"
           files: |
-            GoSTL-Swift/dist/GoSTL_darwin_arm64.tar.gz
-            GoSTL-Swift/dist/checksums.txt
+            dist/GoSTL_darwin_arm64.tar.gz
+            dist/checksums.txt
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
