@@ -36,8 +36,18 @@ Feature: Camera Navigation
     And the zoom sensitivity should be adjustable
 
   @zoom-limits
-  Scenario: Camera distance clamping
-    When I zoom in to the maximum extent
-    Then the camera distance should not go below 1.0 units
+  Scenario: Zoom steps and limits follow the model's size
+    Given a model is loaded and framed
+    When I scroll the mouse wheel
+    Then each step should change the distance by a fraction of the distance already travelled
+    And a step should cover the same fraction of the view on a 1.5 m model as on a 20 mm one
     When I zoom out to the maximum extent
-    Then the camera distance should not exceed 1000.0 units
+    Then the camera should stop at 20 times the fitted distance
+    And the model should still be in front of the far clip plane
+    When I zoom in to the maximum extent
+    Then the camera should stop at a fiftieth of the fitted distance
+
+  @zoom-limits
+  Scenario: Camera distance clamping with nothing loaded
+    Given no model has been framed
+    Then the camera distance should stay between 1.0 and 1000.0 units

@@ -66,8 +66,28 @@ final class Camera {
     }
 
     /// Generate projection matrix
-    func projectionMatrix(aspect: Float, fov: Float = Camera.fieldOfView, near: Float = 0.1, far: Float = 10000.0) -> simd_float4x4 {
-        matrix_perspective(fov: fov, aspect: aspect, near: near, far: far)
+    ///
+    /// The clip planes follow how far the camera has been pulled back rather
+    /// than sitting at fixed millimetre values, which a metre-scale model
+    /// outruns: a far plane of 10000 cuts a dollhouse in half as soon as it is
+    /// framed, and a near plane of 0.1 spends most of the depth buffer on space
+    /// nothing occupies.
+    func projectionMatrix(aspect: Float, fov: Float = Camera.fieldOfView, near: Float? = nil, far: Float? = nil) -> simd_float4x4 {
+        matrix_perspective(
+            fov: fov,
+            aspect: aspect,
+            near: near ?? Float(max(0.01, distance * 0.001)),
+            far: far ?? Float(max(100, distance * 20))
+        )
+    }
+
+    /// World size of one drawable pixel `depth` in front of the camera.
+    ///
+    /// The bridge between what the user is aiming at - pixels - and the model
+    /// units everything else is in.
+    func worldUnitsPerPixel(atDepth depth: Double, viewSize: CGSize) -> Double {
+        guard viewSize.height > 0 else { return 0 }
+        return 2 * Double(tan(Camera.fieldOfView / 2)) * depth / Double(viewSize.height)
     }
 
     // MARK: - Camera Manipulation
@@ -81,10 +101,29 @@ final class Camera {
         angleX = max(-Double.pi / 2 + 0.1, min(Double.pi / 2 - 0.1, angleX))
     }
 
-    /// Zoom camera (adjust distance)
+    /// How far in and out of a fitted view zooming may go.
+    private static let zoomRange: ClosedRange<Double> = 0.02...20
+
+    /// Fraction of the current distance one unit of scroll covers.
+    private static let zoomStep: Double = 0.02
+
+    /// Zoom camera
+    ///
+    /// A step is a fraction of the distance already travelled, not a fixed
+    /// number of millimetres: a 20 mm bracket and a 1.5 m dollhouse then zoom
+    /// at the same apparent rate. The limits are relative to the fitted view
+    /// for the same reason - a fixed ceiling of 1000 sits *inside* a framed
+    /// dollhouse, which left zooming out doing nothing at all.
     func zoom(delta: Double) {
-        distance += delta
-        distance = max(1.0, min(1000.0, distance)) // Clamp to reasonable range
+        distance *= exp(delta * Self.zoomStep)
+
+        guard let framedRadius else {
+            distance = max(1.0, min(1000.0, distance))
+            return
+        }
+
+        let fit = Self.fitDistance(radius: framedRadius, aspect: viewportAspect)
+        distance = min(max(distance, fit * Self.zoomRange.lowerBound), fit * Self.zoomRange.upperBound)
     }
 
     /// Pan camera (move target)
