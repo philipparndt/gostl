@@ -30,19 +30,26 @@ jobs:
           # Use swift build which handles SPM packages directly
           swift build -c release --arch arm64
 
+          # Ask SwiftPM where the products landed rather than assuming: the
+          # layout moved from .build/<triple>/<config> to
+          # .build/out/Products/<Config>, so a hard-coded path breaks as soon
+          # as the runner's toolchain moves on.
+          BIN=$(swift build -c release --arch arm64 --show-bin-path)
+          echo "BIN=$BIN" >> "$GITHUB_ENV"
+
           # Compile Metal shaders into metallib
           xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
           xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
 
           # Create proper bundle structure
-          mkdir -p .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources
-          cp .build/default.metallib .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources/
+          mkdir -p "$BIN/GoSTL_GoSTL.bundle/Contents/Resources"
+          cp .build/default.metallib "$BIN/GoSTL_GoSTL.bundle/Contents/Resources/"
 
       - name: Verify build output
         run: |
-          file .build/arm64-apple-macosx/release/GoSTL
+          file "$BIN/GoSTL"
           echo "Bundle contents:"
-          find .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle -type f
+          find "$BIN/GoSTL_GoSTL.bundle" -type f
           echo "Checking metallib exists..."
-          test -f .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources/default.metallib
+          test -f "$BIN/GoSTL_GoSTL.bundle/Contents/Resources/default.metallib"
           echo "Build verified successfully"

@@ -48,16 +48,23 @@ jobs:
           # Use swift build which handles SPM packages directly
           swift build -c release --arch arm64
 
+          # Ask SwiftPM where the products landed rather than assuming: the
+          # layout moved from .build/<triple>/<config> to
+          # .build/out/Products/<Config>, so a hard-coded path breaks as soon
+          # as the runner's toolchain moves on.
+          BIN=$(swift build -c release --arch arm64 --show-bin-path)
+          echo "BIN=$BIN" >> "$GITHUB_ENV"
+
           # Compile Metal shaders into metallib
           xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
           xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
 
           # Create proper bundle structure
-          mkdir -p .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources
-          cp .build/default.metallib .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources/
+          mkdir -p "$BIN/GoSTL_GoSTL.bundle/Contents/Resources"
+          cp .build/default.metallib "$BIN/GoSTL_GoSTL.bundle/Contents/Resources/"
 
           # Create Info.plist for the bundle
-          cat > .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Info.plist << 'EOF'
+          cat > "$BIN/GoSTL_GoSTL.bundle/Contents/Info.plist" << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -77,8 +84,8 @@ jobs:
       - name: Create release archive
         run: |
           mkdir -p dist
-          cp .build/arm64-apple-macosx/release/GoSTL dist/
-          cp -r .build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle dist/
+          cp "$BIN/GoSTL" dist/
+          cp -r "$BIN/GoSTL_GoSTL.bundle" dist/
           chmod +x dist/GoSTL
           cd dist
           tar -czvf GoSTL_darwin_arm64.tar.gz GoSTL GoSTL_GoSTL.bundle

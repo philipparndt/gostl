@@ -1,5 +1,14 @@
 .PHONY: help build run run-release clean test release install-dev restore-release install-status
 
+# Where SwiftPM puts the built products.
+#
+# Asked rather than assumed: the layout moved from .build/<triple>/<config> to
+# .build/out/Products/<Config>, and a hard-coded path does not fail - it runs
+# whatever stale binary is still sitting at the old one. Evaluated lazily, so
+# targets that build nothing (help, clean) do not pay for the query.
+DEBUG_BIN = $(shell cd GoSTL-Swift && xcrun swift build --show-bin-path)
+RELEASE_BIN = $(shell cd GoSTL-Swift && xcrun swift build -c release --arch arm64 --show-bin-path)
+
 # Homebrew installation paths
 BREW_PREFIX := $(shell brew --prefix gostl 2>/dev/null)
 BREW_GOSTL := $(BREW_PREFIX)/bin/gostl
@@ -33,29 +42,27 @@ build:
 	cd GoSTL-Swift && xcrun swift build
 	cd GoSTL-Swift && xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
 	cd GoSTL-Swift && xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
-	mkdir -p GoSTL-Swift/.build/arm64-apple-macosx/debug/GoSTL_GoSTL.bundle/Contents/Resources
-	cp GoSTL-Swift/.build/default.metallib GoSTL-Swift/.build/arm64-apple-macosx/debug/GoSTL_GoSTL.bundle/Contents/Resources/
+	BIN="$(DEBUG_BIN)"; mkdir -p "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources" && cp GoSTL-Swift/.build/default.metallib "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources/"
 
 # Build release version
 release:
 	cd GoSTL-Swift && xcrun swift build -c release --arch arm64
 	cd GoSTL-Swift && xcrun -sdk macosx metal -c GoSTL/Resources/Shaders.metal -o .build/Shaders.air
 	cd GoSTL-Swift && xcrun -sdk macosx metallib .build/Shaders.air -o .build/default.metallib
-	mkdir -p GoSTL-Swift/.build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources
-	cp GoSTL-Swift/.build/default.metallib GoSTL-Swift/.build/arm64-apple-macosx/release/GoSTL_GoSTL.bundle/Contents/Resources/
+	BIN="$(RELEASE_BIN)"; mkdir -p "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources" && cp GoSTL-Swift/.build/default.metallib "$$BIN/GoSTL_GoSTL.bundle/Contents/Resources/"
 
 # Run debug version with file argument
 # Usage: make run FILE=./examples/cube.stl
 run: build
-	GoSTL-Swift/.build/arm64-apple-macosx/debug/GoSTL $(FILE)
+	"$(DEBUG_BIN)/GoSTL" $(FILE)
 
 # Run release version with file argument
 run-release: release
-	GoSTL-Swift/.build/arm64-apple-macosx/release/GoSTL $(FILE)
+	"$(RELEASE_BIN)/GoSTL" $(FILE)
 
 # Test with sample file
 test: build
-	GoSTL-Swift/.build/arm64-apple-macosx/debug/GoSTL examples/simple-named/PartA_1.stl
+	"$(DEBUG_BIN)/GoSTL" examples/simple-named/PartA_1.stl
 
 # Clean build artifacts
 clean:
@@ -77,8 +84,7 @@ install-dev: build
 		echo "Backup already exists"; \
 	fi
 	@echo "Installing dev build (may require sudo)..."
-	sudo cp GoSTL-Swift/.build/arm64-apple-macosx/debug/GoSTL "$(BREW_GOSTL)"
-	sudo cp GoSTL-Swift/.build/arm64-apple-macosx/debug/GoSTL "$(BREW_APP)/Contents/MacOS/GoSTL"
+	BIN="$(DEBUG_BIN)"; sudo cp "$$BIN/GoSTL" "$(BREW_GOSTL)" && sudo cp "$$BIN/GoSTL" "$(BREW_APP)/Contents/MacOS/GoSTL"
 	sudo cp GoSTL-Swift/.build/default.metallib "$(BREW_METALLIB)"
 	@echo ""
 	@echo "Done! Dev build installed."
