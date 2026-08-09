@@ -10,13 +10,14 @@ struct RayPicking {
     ///   - ray: The ray to cast
     ///   - model: The model to test against
     ///   - accelerator: Optional spatial accelerator for fast ray casting
-    ///   - snapThreshold: Distance threshold for snapping to vertices (default 2.0)
+    ///   - snap: Which nearby vertex the click means, judged on screen so that
+    ///     model scale and zoom do not change how it feels
     /// - Returns: The intersection position (snapped to vertex if nearby), or nil if no intersection
     static func findIntersection(
         ray: Ray,
         model: STLModel,
         accelerator: SpatialAccelerator? = nil,
-        snapThreshold: Double = 2.0
+        snap: ScreenSnap
     ) -> Vector3? {
         // Use accelerator for fast ray casting if available
         if let accelerator = accelerator {
@@ -24,8 +25,14 @@ struct RayPicking {
                 return nil
             }
 
-            // Use spatial grid for fast vertex snapping
-            return accelerator.findClosestVertex(to: hit.position, maxDistance: snapThreshold) ?? hit.position
+            // Collect the vertices around the hit, then let the cursor decide
+            var candidates: [Vector3] = []
+            accelerator.forEachVertex(
+                near: hit.position,
+                maxDistance: snap.searchRadius(atDepth: Double(hit.distance))
+            ) { candidates.append($0) }
+
+            return snap.nearest(of: candidates) ?? hit.position
         }
 
         // Fallback to O(n) algorithm
@@ -47,21 +54,13 @@ struct RayPicking {
             return nil
         }
 
-        // Snap to nearest vertex in the model if within threshold
-        var snappedPosition = intersection
-        var closestVertexDistance: Double = .infinity
+        // Snap to the vertex nearest the cursor, out of those near the hit
+        let reach = snap.searchRadius(atDepth: Double(closestDistance))
+        let candidates = model.triangles
+            .flatMap { [$0.v1, $0.v2, $0.v3] }
+            .filter { $0.distance(to: intersection) <= reach }
 
-        for triangle in model.triangles {
-            for vertex in [triangle.v1, triangle.v2, triangle.v3] {
-                let distance = vertex.distance(to: intersection)
-                if distance < closestVertexDistance && distance <= snapThreshold {
-                    closestVertexDistance = distance
-                    snappedPosition = vertex
-                }
-            }
-        }
-
-        return snappedPosition
+        return snap.nearest(of: candidates) ?? intersection
     }
 
     /// Find intersection point on model with full MeasurementPoint information

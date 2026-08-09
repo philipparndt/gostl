@@ -36,3 +36,12 @@ Feature: Ray Casting and Intersection Detection
     When a mouse click does not intersect any geometry
     Then no intersection point should be returned
     And the measurement system should handle this gracefully
+
+  @snapping
+  Scenario: Vertex snapping is judged on screen
+    Given a ray hits the model
+    When vertices near the hit are collected
+    Then the candidate collected in model space should widen with the distance from the camera
+    And the candidate that appears closest to the cursor should win
+    And a candidate more than 12 pixels from the cursor should be rejected
+    And this keeps snapping usable on models of any size, at any zoom

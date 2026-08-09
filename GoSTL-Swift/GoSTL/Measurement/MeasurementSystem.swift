@@ -108,13 +108,13 @@ final class MeasurementSystem: @unchecked Sendable {
     }
 
     /// Update hover point based on mouse position
-    func updateHover(ray: Ray, model: STLModel?, accelerator: SpatialAccelerator? = nil) {
+    func updateHover(ray: Ray, model: STLModel?, accelerator: SpatialAccelerator? = nil, snap: ScreenSnap) {
         guard isCollecting, let model else {
             hoverPoint = nil
             constrainedEndpoint = nil
             return
         }
-        hoverPoint = findIntersection(ray: ray, model: model, accelerator: accelerator)
+        hoverPoint = findIntersection(ray: ray, model: model, accelerator: accelerator, snap: snap)
 
         // Update constrained endpoint if constraint is active
         updateConstrainedMeasurement()
@@ -222,23 +222,27 @@ final class MeasurementSystem: @unchecked Sendable {
     }
 
     /// Find intersection point on model for a ray
-    /// Snaps to nearby vertices if within threshold
+    /// Snaps to whichever nearby vertex looks closest to the cursor
     /// Uses spatial accelerator for O(log n) performance when available
-    func findIntersection(ray: Ray, model: STLModel, accelerator: SpatialAccelerator? = nil) -> MeasurementPoint? {
-        let snapThreshold: Double = 2.0
-
+    func findIntersection(ray: Ray, model: STLModel, accelerator: SpatialAccelerator? = nil, snap: ScreenSnap) -> MeasurementPoint? {
         // Use accelerator for fast ray casting if available
         if let accelerator = accelerator {
             guard let hit = accelerator.raycast(ray: ray) else {
                 return nil
             }
 
-            // Use spatial grid for fast vertex snapping
-            if let snappedPosition = accelerator.findClosestVertex(to: hit.position, maxDistance: snapThreshold) {
+            // Collect the vertices around the hit, then let the cursor decide
+            var candidates: [Vector3] = []
+            accelerator.forEachVertex(
+                near: hit.position,
+                maxDistance: snap.searchRadius(atDepth: Double(hit.distance))
+            ) { candidates.append($0) }
+
+            if let snapped = snap.nearest(of: candidates) {
                 // Snapped to a vertex - not an air point
-                return MeasurementPoint(position: snappedPosition, normal: hit.normal, isAirPoint: false)
+                return MeasurementPoint(position: snapped, normal: hit.normal, isAirPoint: false)
             } else {
-                // No vertex within threshold - this is an air point
+                // Nothing near enough to have been aimed at - this is an air point
                 return MeasurementPoint(position: hit.position, normal: hit.normal, isAirPoint: true)
             }
         }
@@ -262,23 +266,18 @@ final class MeasurementSystem: @unchecked Sendable {
             return nil
         }
 
-        // Snap to nearest vertex in the model if within threshold
-        var snappedPosition = intersection.position
-        var didSnap = false
+        // Snap to the vertex nearest the cursor, out of those near the hit
+        let reach = snap.searchRadius(atDepth: Double(closestDistance))
+        let candidates = model.triangles
+            .flatMap { [$0.v1, $0.v2, $0.v3] }
+            .filter { $0.distance(to: intersection.position) <= reach }
+        let snapped = snap.nearest(of: candidates)
 
-        var closestVertexDistance: Double = .infinity
-        for triangle in model.triangles {
-            for vertex in [triangle.v1, triangle.v2, triangle.v3] {
-                let distance = vertex.distance(to: intersection.position)
-                if distance < closestVertexDistance && distance <= snapThreshold {
-                    closestVertexDistance = distance
-                    snappedPosition = vertex
-                    didSnap = true
-                }
-            }
-        }
-
-        return MeasurementPoint(position: snappedPosition, normal: intersection.normal, isAirPoint: !didSnap)
+        return MeasurementPoint(
+            position: snapped ?? intersection.position,
+            normal: intersection.normal,
+            isAirPoint: snapped == nil
+        )
     }
 
     /// Clear all measurements

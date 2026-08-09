@@ -460,6 +460,26 @@ final class SpatialAccelerator: @unchecked Sendable {
     /// Find the closest vertex to a point within a given radius
     /// Uses spatial grid for O(1) lookup instead of O(n) full scan
     func findClosestVertex(to point: Vector3, maxDistance: Double) -> Vector3? {
+        var closestVertex: Vector3?
+        var closestDistance = maxDistance
+
+        forEachVertex(near: point, maxDistance: maxDistance) { vertex in
+            let dist = vertex.distance(to: point)
+            if dist < closestDistance {
+                closestDistance = dist
+                closestVertex = vertex
+            }
+        }
+
+        return closestVertex
+    }
+
+    /// Every vertex within `maxDistance` of a point.
+    ///
+    /// Callers that judge candidates by something other than distance in model
+    /// space - how close they look to the cursor, say - need to see all of them
+    /// rather than only the nearest.
+    func forEachVertex(near point: Vector3, maxDistance: Double, _ body: (Vector3) -> Void) {
         // Build vertex grid lazily on first use
         if vertexGrid == nil {
             buildVertexGrid()
@@ -473,9 +493,6 @@ final class SpatialAccelerator: @unchecked Sendable {
             y: Int((point.y - gridOrigin.y) / gridCellSize),
             z: Int((point.z - gridOrigin.z) / gridCellSize)
         )
-
-        var closestVertex: Vector3?
-        var closestDistance = maxDistance
 
         // Search neighboring cells
         for dx in -cellRadius...cellRadius {
@@ -495,18 +512,12 @@ final class SpatialAccelerator: @unchecked Sendable {
                     let key = cx + cy * gridDimensions.x + cz * gridDimensions.x * gridDimensions.y
                     guard let cell = vertexGrid?[key] else { continue }
 
-                    for (vertex, _) in cell.vertices {
-                        let dist = vertex.distance(to: point)
-                        if dist < closestDistance {
-                            closestDistance = dist
-                            closestVertex = vertex
-                        }
+                    for (vertex, _) in cell.vertices where vertex.distance(to: point) <= maxDistance {
+                        body(vertex)
                     }
                 }
             }
         }
-
-        return closestVertex
     }
 
     // MARK: - Triangle Lookup

@@ -41,9 +41,12 @@ Feature: Distance Measurement
 
   Scenario: Point picking precision
     Given distance measurement mode is active
-    When I click near a vertex or edge
-    Then the point should snap to the nearest model feature
-    And this ensures precise measurements
+    When I click within a few pixels of a vertex
+    Then the point should snap to the vertex that looks nearest the cursor
+    And how close I have to click should be the same on a 1.5 m model as on a 20 mm one
+    And it should not change as I zoom in or out
+    When I click well clear of any vertex
+    Then the point should stay where I clicked, as an air point
 
   Scenario: Undo last point
     Given distance measurement mode is active

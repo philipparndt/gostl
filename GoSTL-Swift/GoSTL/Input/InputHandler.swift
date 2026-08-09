@@ -225,7 +225,12 @@ final class InputHandler {
             guard let model = appState.model else { return }
 
             let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
-            if let position = RayPicking.findIntersection(ray: ray, model: model, accelerator: appState.spatialAccelerator) {
+            if let position = RayPicking.findIntersection(
+                ray: ray,
+                model: model,
+                accelerator: appState.spatialAccelerator,
+                snap: ScreenSnap(camera: camera, viewSize: viewSize, cursor: location)
+            ) {
                 let completed = appState.levelingState.addPoint(position)
                 if completed {
                     print("Leveling: Both points selected, choose axis")
@@ -271,7 +276,12 @@ final class InputHandler {
         let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
 
         // Find intersection with model
-        if let point = appState.measurementSystem.findIntersection(ray: ray, model: model, accelerator: appState.spatialAccelerator) {
+        if let point = appState.measurementSystem.findIntersection(
+            ray: ray,
+            model: model,
+            accelerator: appState.spatialAccelerator,
+            snap: ScreenSnap(camera: camera, viewSize: viewSize, cursor: location)
+        ) {
             _ = appState.measurementSystem.addPoint(point)
             print("Picked point: \(point.position)")
         }
@@ -300,7 +310,12 @@ final class InputHandler {
         if appState.levelingState.isActive && !appState.levelingState.isReadyForAxisSelection {
             if let model = appState.model {
                 let ray = camera.mouseRay(screenPos: location, viewSize: viewSize)
-                appState.levelingState.hoverPoint = RayPicking.findIntersection(ray: ray, model: model, accelerator: appState.spatialAccelerator)
+                appState.levelingState.hoverPoint = RayPicking.findIntersection(
+                    ray: ray,
+                    model: model,
+                    accelerator: appState.spatialAccelerator,
+                    snap: ScreenSnap(camera: camera, viewSize: viewSize, cursor: location)
+                )
             }
         } else {
             appState.levelingState.hoverPoint = nil
@@ -322,7 +337,12 @@ final class InputHandler {
             appState.measurementSystem.updateTriangleHover(ray: ray, model: appState.model, accelerator: appState.spatialAccelerator)
         } else {
             // Update hover point for other modes
-            appState.measurementSystem.updateHover(ray: ray, model: appState.model, accelerator: appState.spatialAccelerator)
+            appState.measurementSystem.updateHover(
+                ray: ray,
+                model: appState.model,
+                accelerator: appState.spatialAccelerator,
+                snap: ScreenSnap(camera: camera, viewSize: viewSize, cursor: location)
+            )
         }
     }
 
@@ -478,7 +498,7 @@ final class InputHandler {
         }
 
         // Also test what MeasurementSystem.findIntersection returns
-        if let point = appState.measurementSystem.findIntersection(ray: ray, model: model) {
+        if let point = appState.measurementSystem.findIntersection(ray: ray, model: model, snap: ScreenSnap(camera: camera, viewSize: viewSize, cursor: location)) {
             print("MeasurementSystem found: \(point.position)")
         } else {
             print("MeasurementSystem found: nothing")
