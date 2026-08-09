@@ -209,11 +209,15 @@ vertex VertexOut wireframeVertexShader(
     float3 edgeStart = instanceMatrix[3].xyz;
     float distanceToCamera = length(uniforms.cameraPosition - edgeStart);
 
-    // Calculate world-space size of 2 pixels at this distance
+    // Calculate world-space size of one pixel at this distance
     // Extract FOV from projection matrix (assuming perspective projection)
     float fovY = 2.0 * atan(1.0 / uniforms.projectionMatrix[1][1]);
     float pixelSize = (distanceToCamera * tan(fovY * 0.5) * 2.0) / uniforms.viewportHeight;
-    float wireframeThickness = pixelSize * 2.0 * instance.widthMultiplier; // Apply width multiplier
+
+    // The cylinder geometry's radius is authored in pixels, so this converts it
+    // to world space. Anything drawn through this pipeline therefore keeps its
+    // width on screen whatever the model measures and however far it is zoomed.
+    float wireframeThickness = pixelSize * instance.widthMultiplier; // Apply width multiplier
 
     // Scale the radius (XZ plane) while keeping length (Y axis)
     float3 scaledPosition = in.position;

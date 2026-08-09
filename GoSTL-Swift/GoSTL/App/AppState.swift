@@ -489,11 +489,6 @@ final class AppState: @unchecked Sendable {
             return
         }
 
-        // Calculate wireframe thickness based on model size
-        let bbox = model.boundingBox()
-        let modelSize = bbox.diagonal
-        let thickness = Float(modelSize) * 0.002
-
         // Create wireframe data based on mode
         if wireframeMode == .edge {
             // Edge mode: show all edges with styling (feature edges full, soft edges thin/transparent)
@@ -503,9 +498,9 @@ final class AppState: @unchecked Sendable {
             let styledEdges = cachedStyledEdges!
 
             if slicingState.isVisible {
-                wireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness, sliceBounds: slicingState.bounds)
+                wireframeData = try WireframeData(device: device, styledEdges: styledEdges, sliceBounds: slicingState.bounds)
             } else {
-                wireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness)
+                wireframeData = try WireframeData(device: device, styledEdges: styledEdges)
             }
         } else {
             // All mode: show all edges with full width/opacity
@@ -515,9 +510,9 @@ final class AppState: @unchecked Sendable {
             let edges = cachedEdges!
 
             if slicingState.isVisible {
-                wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness, sliceBounds: slicingState.bounds)
+                wireframeData = try WireframeData(device: device, edges: edges, sliceBounds: slicingState.bounds)
             } else {
-                wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+                wireframeData = try WireframeData(device: device, edges: edges)
             }
         }
         unclippedWireframeData = wireframeData
@@ -549,9 +544,9 @@ final class AppState: @unchecked Sendable {
     }
 
     /// Initialize measurement rendering
-    func initializeMeasurements(device: MTLDevice, thickness: Float = 0.01) {
+    func initializeMeasurements(device: MTLDevice) {
         do {
-            self.measurementData = try MeasurementRenderData(device: device, thickness: thickness)
+            self.measurementData = try MeasurementRenderData(device: device)
         } catch {
             print("ERROR: Failed to create measurement data: \(error)")
         }
@@ -637,10 +632,7 @@ final class AppState: @unchecked Sendable {
 
         lastMeshUpdateTime = CFAbsoluteTimeGetCurrent()
 
-        // Calculate wireframe thickness based on model size
         let bbox = model.boundingBox()
-        let modelSize = bbox.diagonal
-        let thickness = Float(modelSize) * 0.002
 
         // If slicing is active, use triangle slicer to clip geometry
         if slicingState.isVisible {
@@ -661,7 +653,7 @@ final class AppState: @unchecked Sendable {
 
                     // Immediately show unclipped wireframe (or keep current clipped one)
                     if unclippedWireframeData == nil {
-                        unclippedWireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness)
+                        unclippedWireframeData = try WireframeData(device: device, styledEdges: styledEdges)
                     }
 
                     // Use unclipped wireframe immediately for responsive UI
@@ -671,7 +663,7 @@ final class AppState: @unchecked Sendable {
 
                     // Schedule debounced async wireframe clipping
                     let bounds = slicingState.bounds
-                    scheduleWireframeUpdate(device: device, styledEdges: styledEdges, thickness: thickness, bounds: bounds)
+                    scheduleWireframeUpdate(device: device, styledEdges: styledEdges, bounds: bounds)
                 } else if wireframeMode == .all {
                     // All mode with plain edges
                     if cachedEdges == nil {
@@ -681,7 +673,7 @@ final class AppState: @unchecked Sendable {
 
                     // Immediately show unclipped wireframe (or keep current clipped one)
                     if unclippedWireframeData == nil {
-                        unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+                        unclippedWireframeData = try WireframeData(device: device, edges: edges)
                     }
 
                     // Use unclipped wireframe immediately for responsive UI
@@ -691,7 +683,7 @@ final class AppState: @unchecked Sendable {
 
                     // Schedule debounced async wireframe clipping
                     let bounds = slicingState.bounds
-                    scheduleWireframeUpdate(device: device, edges: edges, thickness: thickness, bounds: bounds)
+                    scheduleWireframeUpdate(device: device, edges: edges, bounds: bounds)
                 } else {
                     self.wireframeData = nil
                     self.unclippedWireframeData = nil
@@ -734,7 +726,7 @@ final class AppState: @unchecked Sendable {
                 let styledEdges = cachedStyledEdges!
 
                 if unclippedWireframeData == nil {
-                    unclippedWireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness)
+                    unclippedWireframeData = try WireframeData(device: device, styledEdges: styledEdges)
                 }
                 self.wireframeData = unclippedWireframeData
             } else if wireframeMode == .all {
@@ -745,7 +737,7 @@ final class AppState: @unchecked Sendable {
                 let edges = cachedEdges!
 
                 if unclippedWireframeData == nil {
-                    unclippedWireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+                    unclippedWireframeData = try WireframeData(device: device, edges: edges)
                 }
                 self.wireframeData = unclippedWireframeData
             } else {
@@ -759,7 +751,7 @@ final class AppState: @unchecked Sendable {
     }
 
     /// Schedule a debounced wireframe update (runs in background after brief delay)
-    private func scheduleWireframeUpdate(device: MTLDevice, edges: [Edge], thickness: Float, bounds: [[Double]]) {
+    private func scheduleWireframeUpdate(device: MTLDevice, edges: [Edge], bounds: [[Double]]) {
         // Cancel any existing background task
         wireframeUpdateTask?.cancel()
 
@@ -773,7 +765,7 @@ final class AppState: @unchecked Sendable {
 
             // Create clipped wireframe (runs on main actor but WireframeData does its heavy lifting in parallel internally)
             do {
-                let clippedWireframe = try WireframeData(device: device, edges: edges, thickness: thickness, sliceBounds: bounds)
+                let clippedWireframe = try WireframeData(device: device, edges: edges, sliceBounds: bounds)
 
                 // Check if cancelled
                 if Task.isCancelled { return }
@@ -787,7 +779,7 @@ final class AppState: @unchecked Sendable {
     }
 
     /// Schedule a debounced wireframe update for styled edges (runs in background after brief delay)
-    private func scheduleWireframeUpdate(device: MTLDevice, styledEdges: [StyledEdge], thickness: Float, bounds: [[Double]]) {
+    private func scheduleWireframeUpdate(device: MTLDevice, styledEdges: [StyledEdge], bounds: [[Double]]) {
         // Cancel any existing background task
         wireframeUpdateTask?.cancel()
 
@@ -801,7 +793,7 @@ final class AppState: @unchecked Sendable {
 
             // Create clipped wireframe (runs on main actor but WireframeData does its heavy lifting in parallel internally)
             do {
-                let clippedWireframe = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness, sliceBounds: bounds)
+                let clippedWireframe = try WireframeData(device: device, styledEdges: styledEdges, sliceBounds: bounds)
 
                 // Check if cancelled
                 if Task.isCancelled { return }
@@ -928,13 +920,9 @@ final class AppState: @unchecked Sendable {
             }
         }
 
-        // Calculate bounding box and thickness for wireframe
         var t0 = CFAbsoluteTimeGetCurrent()
         let bbox = model.boundingBox()
         print("  boundingBox: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
-
-        let modelSize = bbox.diagonal
-        let thickness = Float(modelSize) * 0.002 // 0.2% of model size
 
         // Show mesh immediately without wireframe
         self.wireframeData = nil
@@ -979,15 +967,15 @@ final class AppState: @unchecked Sendable {
                     do {
                         if currentWireframeMode == .edge, let styledEdges = styledEdges {
                             if currentSlicingState.isVisible {
-                                self.wireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness, sliceBounds: currentSlicingState.bounds)
+                                self.wireframeData = try WireframeData(device: device, styledEdges: styledEdges, sliceBounds: currentSlicingState.bounds)
                             } else {
-                                self.wireframeData = try WireframeData(device: device, styledEdges: styledEdges, thickness: thickness)
+                                self.wireframeData = try WireframeData(device: device, styledEdges: styledEdges)
                             }
                         } else if let edges = edges {
                             if currentSlicingState.isVisible {
-                                self.wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness, sliceBounds: currentSlicingState.bounds)
+                                self.wireframeData = try WireframeData(device: device, edges: edges, sliceBounds: currentSlicingState.bounds)
                             } else {
-                                self.wireframeData = try WireframeData(device: device, edges: edges, thickness: thickness)
+                                self.wireframeData = try WireframeData(device: device, edges: edges)
                             }
                         }
                         self.unclippedWireframeData = self.wireframeData
@@ -1003,9 +991,9 @@ final class AppState: @unchecked Sendable {
             try updateWireframe(device: device)
         }
 
-        // Reinitialize measurement data with appropriate thickness for this model
+        // Reinitialize measurement data for this model
         t0 = CFAbsoluteTimeGetCurrent()
-        initializeMeasurements(device: device, thickness: thickness)
+        initializeMeasurements(device: device)
         print("  initializeMeasurements: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
 
         // Initialize grid based on model bounds

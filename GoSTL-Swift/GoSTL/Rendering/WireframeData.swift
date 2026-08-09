@@ -3,6 +3,15 @@ import simd
 
 /// GPU-ready wireframe data for edge rendering using instanced cylinders
 final class WireframeData {
+    /// Radius of an edge tube, in drawable pixels - a hairline on a Retina
+    /// display, and half of that again for the soft edges of edge mode.
+    ///
+    /// The wireframe shader scales this geometry by the world size of a pixel,
+    /// so an edge stays the same width on screen. Sizing it in model units
+    /// instead made a 1.5 m model's edges tens of pixels wide while a 20 mm
+    /// one's shrank below a pixel and faded out.
+    static let edgeRadiusInPixels: Float = 0.75
+
     let cylinderVertexBuffer: MTLBuffer
     let cylinderIndexBuffer: MTLBuffer
     let instanceBuffer: MTLBuffer
@@ -10,20 +19,20 @@ final class WireframeData {
     let instanceCount: Int
 
     /// Initialize wireframe from a model (extracts edges internally)
-    convenience init(device: MTLDevice, model: STLModel, thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
-        try self.init(device: device, edges: model.extractEdges(), thickness: thickness, sliceBounds: sliceBounds)
+    convenience init(device: MTLDevice, model: STLModel, sliceBounds: [[Double]]? = nil) throws {
+        try self.init(device: device, edges: model.extractEdges(), sliceBounds: sliceBounds)
     }
 
     /// Initialize wireframe from pre-extracted edges (faster for repeated slicing)
     /// All edges get full width and opacity
-    convenience init(device: MTLDevice, edges: [Edge], thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
+    convenience init(device: MTLDevice, edges: [Edge], sliceBounds: [[Double]]? = nil) throws {
         // Convert to styled edges with full opacity
         let styledEdges = edges.map { StyledEdge(edge: $0, isFeatureEdge: true) }
-        try self.init(device: device, styledEdges: styledEdges, thickness: thickness, sliceBounds: sliceBounds)
+        try self.init(device: device, styledEdges: styledEdges, sliceBounds: sliceBounds)
     }
 
     /// Initialize wireframe from styled edges (with per-edge width and alpha)
-    init(device: MTLDevice, styledEdges: [StyledEdge], thickness: Float = 0.005, sliceBounds: [[Double]]? = nil) throws {
+    init(device: MTLDevice, styledEdges: [StyledEdge], sliceBounds: [[Double]]? = nil) throws {
         // Clip edges to bounds (parallelized for large edge counts)
         let clippedEdges: [StyledEdge]
         if let bounds = sliceBounds {
@@ -34,8 +43,8 @@ final class WireframeData {
 
         self.instanceCount = clippedEdges.count
 
-        // Create unit cylinder geometry (along Y-axis, from 0 to 1)
-        let cylinderGeometry = WireframeData.createCylinderGeometry(radius: thickness, segments: 8)
+        // Create cylinder geometry (along Y-axis, from 0 to 1) with its radius in pixels
+        let cylinderGeometry = WireframeData.createCylinderGeometry(radius: Self.edgeRadiusInPixels, segments: 8)
         self.indexCount = cylinderGeometry.indices.count
 
         // Create vertex buffer for cylinder
@@ -246,6 +255,8 @@ final class WireframeData {
 
     // MARK: - Cylinder Geometry
 
+    /// Build a cylinder running (0,0,0)→(0,1,0), its radius given in screen
+    /// pixels for the wireframe shader to scale.
     private static func createCylinderGeometry(radius: Float, segments: Int) -> (vertices: [VertexIn], indices: [UInt16]) {
         var vertices: [VertexIn] = []
         var indices: [UInt16] = []

@@ -59,15 +59,41 @@ final class MeasurementRenderData {
     // Stale line cylinder geometry (gray/faded)
     let staleCylinderVertexBuffer: MTLBuffer
 
-    init(device: MTLDevice, thickness: Float) throws {
+    /// Sizes the cubes that mark picked points, so that they cover the same
+    /// patch of screen wherever they sit.
+    ///
+    /// The cubes are solid geometry, unlike the lines, so nothing scales them
+    /// for us. A size fixed in model units cannot work at both ends of the
+    /// range: half a millimetre vanishes on a 1.5 m model, and a size picked
+    /// for that model swallows the 15 mm panel it is marking.
+    private struct MarkerScale {
+        /// Edge length of a marker cube, in drawable pixels.
+        static let edgeInPixels: Double = 9
+
+        var camera: Camera?
+        var viewSize: CGSize = .zero
+
+        func size(at point: Vector3, relative: Double = 1) -> Float {
+            guard let camera else { return 0.5 }
+            let depth = Double(simd_distance(camera.position, point.float3))
+            let perPixel = camera.worldUnitsPerPixel(atDepth: depth, viewSize: viewSize)
+            return Float(perPixel * Self.edgeInPixels * relative)
+        }
+    }
+
+    private var markerScale = MarkerScale()
+
+    init(device: MTLDevice) throws {
         self.device = device
 
-        // Measurement line thickness multiplier (relative to wireframe thickness)
-        let measurementThickness: Float = 6.0
+        // Measurement lines are drawn through the wireframe pipeline, so their
+        // radius is in screen pixels: a few times an edge, to read as a
+        // deliberate annotation rather than part of the model.
+        let measurementThickness = WireframeData.edgeRadiusInPixels * 3.0
 
-        // Create unit cylinder geometry (along Y-axis, from 0 to 1)
+        // Create cylinder geometry (along Y-axis, from 0 to 1)
         let cylinderGeometry = Self.createCylinderGeometry(
-            radius: thickness * measurementThickness,
+            radius: measurementThickness,
             segments: 8,
             color: SIMD4<Float>(1.0, 1.0, 0.0, 1.0) // Yellow
         )
@@ -89,7 +115,7 @@ final class MeasurementRenderData {
 
         // Create preview cylinder with green color
         let previewCylinderGeometry = Self.createCylinderGeometry(
-            radius: thickness * measurementThickness,
+            radius: measurementThickness,
             segments: 8,
             color: SIMD4<Float>(0.5, 1.0, 0.5, 1.0) // Bright green
         )
@@ -101,7 +127,7 @@ final class MeasurementRenderData {
 
         // Create radius circle cylinder with magenta color (slightly thicker than measurement lines)
         let radiusCircleCylinderGeometry = Self.createCylinderGeometry(
-            radius: thickness * measurementThickness * 1.2,
+            radius: measurementThickness * 1.2,
             segments: 8,
             color: SIMD4<Float>(1.0, 0.59, 1.0, 0.78) // Magenta with transparency
         )
@@ -113,7 +139,7 @@ final class MeasurementRenderData {
 
         // Create constraint line cylinder with red color (for showing offset from constrained point to snap point)
         let constraintCylinderGeometry = Self.createCylinderGeometry(
-            radius: thickness * measurementThickness,
+            radius: measurementThickness,
             segments: 8,
             color: SIMD4<Float>(1.0, 0.0, 0.0, 1.0) // Red
         )
@@ -125,7 +151,7 @@ final class MeasurementRenderData {
 
         // Create selected line cylinder with blue color (for selected measurements)
         let selectedCylinderGeometry = Self.createCylinderGeometry(
-            radius: thickness * measurementThickness * 1.5,  // Slightly thicker for visibility
+            radius: measurementThickness * 1.5,  // Slightly thicker for visibility
             segments: 8,
             color: SIMD4<Float>(0.3, 0.5, 1.0, 1.0) // Blue
         )
@@ -137,7 +163,7 @@ final class MeasurementRenderData {
 
         // Create stale line cylinder with gray/faded color (for measurements with stale points)
         let staleCylinderGeometry = Self.createCylinderGeometry(
-            radius: thickness * measurementThickness,
+            radius: measurementThickness,
             segments: 8,
             color: SIMD4<Float>(0.5, 0.5, 0.5, 0.7) // Faded gray
         )
@@ -149,7 +175,9 @@ final class MeasurementRenderData {
     }
 
     /// Update buffers based on measurement system state and leveling state
-    func update(measurementSystem: MeasurementSystem, levelingState: LevelingState? = nil) {
+    func update(measurementSystem: MeasurementSystem, levelingState: LevelingState? = nil, camera: Camera, viewSize: CGSize) {
+        markerScale = MarkerScale(camera: camera, viewSize: viewSize)
+
         // Update leveling visualization
         updateLevelingVisualization(levelingState)
         // Clear hover if not collecting
@@ -206,7 +234,7 @@ final class MeasurementRenderData {
 
         // Create yellow marker at constrained endpoint
         let markerColor = SIMD4<Float>(1.0, 1.0, 0.0, 1.0) // Yellow
-        let vertices = createCube(center: constrainedEndpoint.float3, size: 0.5, color: markerColor)
+        let vertices = createCube(center: constrainedEndpoint.float3, size: markerScale.size(at: constrainedEndpoint), color: markerColor)
         constrainedPointVertexCount = vertices.count
         let bufferSize = vertices.count * MemoryLayout<VertexIn>.stride
         constrainedPointBuffer = device.makeBuffer(bytes: vertices, length: bufferSize, options: [])
@@ -214,7 +242,7 @@ final class MeasurementRenderData {
         // For point constraint, also show a marker at the constraining point
         if case .point(let constrainingPoint) = constraint {
             let constrainingMarkerColor = SIMD4<Float>(0.0, 1.0, 1.0, 1.0) // Cyan
-            let constrainingVertices = createCube(center: constrainingPoint.float3, size: 0.6, color: constrainingMarkerColor)
+            let constrainingVertices = createCube(center: constrainingPoint.float3, size: markerScale.size(at: constrainingPoint, relative: 1.2), color: constrainingMarkerColor)
             constrainingPointVertexCount = constrainingVertices.count
             let constrainingBufferSize = constrainingVertices.count * MemoryLayout<VertexIn>.stride
             constrainingPointBuffer = device.makeBuffer(bytes: constrainingVertices, length: constrainingBufferSize, options: [])
@@ -231,13 +259,12 @@ final class MeasurementRenderData {
         var vertices: [VertexIn] = []
 
         // Add current measurement points (in progress)
-        let defaultSize: Float = 0.5
         let defaultColor = SIMD4<Float>(1.0, 0.3, 0.3, 1.0) // Red for regular measurement points
         let staleColor = SIMD4<Float>(0.5, 0.5, 0.5, 0.7) // Faded gray for stale points
 
         for point in measurementSystem.currentPoints {
             let pos = point.position.float3
-            let size = measurementSystem.mode == .radius ? Float(0.3) : defaultSize
+            let size = markerScale.size(at: point.position, relative: measurementSystem.mode == .radius ? 0.6 : 1)
             let color = measurementSystem.mode == .radius ? SIMD4<Float>(1.0, 0.59, 1.0, 1.0) : defaultColor // Same magenta as circle line
             vertices.append(contentsOf: createCube(center: pos, size: size, color: color))
         }
@@ -246,7 +273,7 @@ final class MeasurementRenderData {
         for measurement in measurementSystem.measurements {
             for (pointIndex, point) in measurement.points.enumerated() {
                 let pos = point.position.float3
-                let size = measurement.type == .radius ? Float(0.3) : defaultSize
+                let size = markerScale.size(at: point.position, relative: measurement.type == .radius ? 0.6 : 1)
                 let isStale = measurement.stalePointIndices.contains(pointIndex)
                 let color: SIMD4<Float>
                 if isStale {
@@ -272,7 +299,7 @@ final class MeasurementRenderData {
 
     /// Create hover point marker
     private func updateHoverPoint(_ point: MeasurementPoint) {
-        let size: Float = 0.6 // Slightly larger for hover
+        let size = markerScale.size(at: point.position, relative: 1.2) // Slightly larger for hover
         let pos = point.position.float3
         let color = SIMD4<Float>(0.3, 1.0, 0.3, 1.0) // Green for hover
 
@@ -530,13 +557,12 @@ final class MeasurementRenderData {
         // Create point markers for selected leveling points
         var pointVertices: [VertexIn] = []
         let pointColor = SIMD4<Float>(0.0, 0.8, 1.0, 1.0) // Cyan for leveling points
-        let pointSize: Float = 0.6
 
         if let p1 = levelingState.point1 {
-            pointVertices.append(contentsOf: createCube(center: p1.float3, size: pointSize, color: pointColor))
+            pointVertices.append(contentsOf: createCube(center: p1.float3, size: markerScale.size(at: p1, relative: 1.2), color: pointColor))
         }
         if let p2 = levelingState.point2 {
-            pointVertices.append(contentsOf: createCube(center: p2.float3, size: pointSize, color: pointColor))
+            pointVertices.append(contentsOf: createCube(center: p2.float3, size: markerScale.size(at: p2, relative: 1.2), color: pointColor))
         }
 
         if !pointVertices.isEmpty {
@@ -551,7 +577,7 @@ final class MeasurementRenderData {
         // Create hover point marker (green, like measurement hover)
         if let hoverPoint = levelingState.hoverPoint {
             let hoverColor = SIMD4<Float>(0.3, 1.0, 0.3, 1.0) // Green for hover
-            let hoverVertices = createCube(center: hoverPoint.float3, size: 0.7, color: hoverColor)
+            let hoverVertices = createCube(center: hoverPoint.float3, size: markerScale.size(at: hoverPoint, relative: 1.4), color: hoverColor)
             levelingHoverVertexCount = hoverVertices.count
             let bufferSize = hoverVertices.count * MemoryLayout<VertexIn>.stride
             levelingHoverBuffer = device.makeBuffer(bytes: hoverVertices, length: bufferSize, options: [])
@@ -602,7 +628,7 @@ final class MeasurementRenderData {
 
             // Create center point marker (smoother sphere, very small)
             let centerColor = SIMD4<Float>(1.0, 0.59, 1.0, 1.0) // Same magenta as circle line (255, 150, 255, 255)
-            centerVertices.append(contentsOf: createSmoothSphere(center: circle.center.float3, radius: 0.25, color: centerColor))
+            centerVertices.append(contentsOf: createSmoothSphere(center: circle.center.float3, radius: markerScale.size(at: circle.center, relative: 0.5), color: centerColor))
         }
 
         // Update circle instance buffer (using instanced cylinders like measurement lines)

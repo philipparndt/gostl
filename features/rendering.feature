@@ -35,6 +35,19 @@ Feature: 3D Rendering
     When wireframe mode is enabled
     Then edges should be rendered as instanced cylinders
     And edge thickness should be consistent across view angles
+    And the cylinder's radius should be authored in pixels, which the shader scales to world space
+
+  @annotations
+  Scenario: Annotations keep their size on screen
+    Given a measurement has been taken
+    Then measurement lines should be drawn a few pixels wide, whatever the model measures
+    And the cubes marking picked points should cover the same patch of screen wherever they sit
+    And a marker should never swallow the feature it marks
+
+  @clipping
+  Scenario: Clip planes follow the camera
+    Then the near and far planes should be derived from the camera's distance
+    And a metre-scale model should be neither clipped away nor starved of depth precision
 
   @face-orientation
   Scenario: Face orientation coloring

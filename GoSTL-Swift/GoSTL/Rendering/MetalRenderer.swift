@@ -406,7 +406,12 @@ final class MetalRenderer {
 
         // Update and render measurements (and leveling visualization)
         if let measurementData = appState.measurementData {
-            measurementData.update(measurementSystem: appState.measurementSystem, levelingState: appState.levelingState)
+            measurementData.update(
+                measurementSystem: appState.measurementSystem,
+                levelingState: appState.levelingState,
+                camera: appState.camera,
+                viewSize: size
+            )
             renderMeasurements(encoder: renderEncoder, measurementData: measurementData, appState: appState, viewSize: size)
         }
 

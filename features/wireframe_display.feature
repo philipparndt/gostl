@@ -37,10 +37,11 @@ Feature: Wireframe Display Modes
     And the minimum visible edge threshold should be 1 degree
     And these thresholds ensure a clean visualization that highlights model features
 
-  Scenario: Wireframe thickness auto-scaling
+  Scenario: Wireframe thickness is measured on screen
     When wireframe is enabled
-    Then the wireframe line thickness should be 0.2% of the model diagonal
-    And this ensures consistent visibility across different model sizes
+    Then an edge should be drawn as a hairline of a fixed width in pixels
+    And the width should not change as I zoom in or out
+    And a 1.5 m model and a 20 mm model should show edges of the same width
 
   Scenario: Select wireframe mode from menu
     When I open the View menu
