@@ -332,6 +332,10 @@ private func openOpenSCADWithGo3mf(sourceURL: URL, go3mfPath: String) {
     DispatchQueue.global(qos: .userInitiated).async {
         do {
             let tempDir = FileManager.default.temporaryDirectory
+            // The installed copy, deliberately. This path hands what it makes
+            // to the `go3mf` binary on this machine a few lines down, so it is
+            // a host path from end to end and an embedder's command would be
+            // the odd one out — and there is no AppState here to ask for one.
             let renderer = OpenSCADRenderer(workDir: tempDir)
 
             print("Exporting OpenSCAD file for go3mf...")

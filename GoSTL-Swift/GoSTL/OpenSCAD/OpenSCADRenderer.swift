@@ -82,58 +82,25 @@ struct OpenSCADColor: Hashable, CustomStringConvertible {
 class OpenSCADRenderer {
     private let workDir: URL
 
+    /// How to run OpenSCAD.
+    ///
+    /// Was a private function answering with a path, which every one of the
+    /// eleven passes below turned into a `Process` of its own. See
+    /// `OpenSCADCommand` for why that shape had to go: it can only ever mean a
+    /// binary on this machine, and the embedder is the one that knows whether
+    /// that is true.
+    private let openSCAD: OpenSCADCommand
+
     /// Unique tag for color extraction
     private let colorTag = "GOSTL_COLOR"
 
     /// Initialize renderer with a working directory
-    init(workDir: URL) {
+    ///
+    /// - Parameter openSCAD: defaulted, so every existing caller and a viewer
+    ///   running on its own keep exactly the behaviour they had.
+    init(workDir: URL, openSCAD: OpenSCADCommand = InstalledOpenSCAD()) {
         self.workDir = workDir
-    }
-
-    /// Find the OpenSCAD executable path
-    /// - Returns: Path to the OpenSCAD executable
-    /// - Throws: OpenSCADError.openSCADNotFound if not found
-    private func findOpenSCADExecutable() throws -> String {
-        // Common locations to check for OpenSCAD on macOS
-        let commonPaths = [
-            "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD",
-            "/usr/local/bin/openscad",
-            "/opt/homebrew/bin/openscad",
-            "/usr/bin/openscad"
-        ]
-
-        // Check common installation paths first
-        for path in commonPaths {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
-        }
-
-        // Try to find via 'which' command
-        let whichProcess = Process()
-        whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        whichProcess.arguments = ["openscad"]
-
-        let whichPipe = Pipe()
-        whichProcess.standardOutput = whichPipe
-        whichProcess.standardError = Pipe()
-
-        do {
-            try whichProcess.run()
-            whichProcess.waitUntilExit()
-
-            if whichProcess.terminationStatus == 0 {
-                let data = whichPipe.fileHandleForReading.readDataToEndOfFile()
-                if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   !path.isEmpty {
-                    return path
-                }
-            }
-        } catch {
-            // 'which' failed, continue to error
-        }
-
-        throw OpenSCADError.openSCADNotFound
+        self.openSCAD = openSCAD
     }
 
     /// Result of an OpenSCAD render operation
@@ -253,15 +220,13 @@ class OpenSCADRenderer {
     ///   - outputFile: Where to write the CSG output
     ///   - runFromSourceDir: If true, run from the source file's directory to resolve relative imports correctly
     private func convertToCSG(scadFile: URL, outputFile: URL, runFromSourceDir: Bool = false) throws {
-        let openscadPath = try findOpenSCADExecutable()
-
         let runDir = runFromSourceDir ? scadFile.deletingLastPathComponent() : workDir
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: openscadPath)
-        process.arguments = ["-o", outputFile.path, scadFile.path]
         // Run from source directory when exporting, so relative imports resolve correctly
-        process.currentDirectoryURL = runDir
+        let process = try openSCAD.makeProcess(
+            arguments: ["-o", outputFile.path, scadFile.path],
+            workingDirectory: runDir
+        )
 
         let stderrPipe = Pipe()
         process.standardOutput = Pipe()
@@ -279,8 +244,6 @@ class OpenSCADRenderer {
 
     /// Extract all unique colors from a CSG file by running OpenSCAD with a redefined color() module
     private func extractColors(csgFile: URL, sessionId: String.SubSequence) throws -> Set<OpenSCADColor> {
-        let openscadPath = try findOpenSCADExecutable()
-
         // Redefine color() to echo its parameters instead of rendering
         let colorExtractor = "module color(c, alpha) { echo(\(colorTag)=str(c)); }"
 
@@ -288,14 +251,14 @@ class OpenSCADRenderer {
         let tempOutput = workDir.appendingPathComponent("gostl_\(sessionId)_colors.stl")
         defer { try? FileManager.default.removeItem(at: tempOutput) }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: openscadPath)
-        process.arguments = [
-            "-D", colorExtractor,
-            "-o", tempOutput.path,
-            csgFile.path
-        ]
-        process.currentDirectoryURL = workDir
+        let process = try openSCAD.makeProcess(
+            arguments: [
+                "-D", colorExtractor,
+                "-o", tempOutput.path,
+                csgFile.path
+            ],
+            workingDirectory: workDir
+        )
 
         let stderrPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -336,22 +299,20 @@ class OpenSCADRenderer {
 
     /// Check if the model has any geometry not wrapped in color()
     private func checkForUncoloredGeometry(csgFile: URL, sessionId: String.SubSequence) throws -> Bool {
-        let openscadPath = try findOpenSCADExecutable()
-
         // Redefine color() to consume its children (output nothing)
         let colorDisabler = "module color(c, alpha) { /* discard */ }"
 
         let tempSTL = workDir.appendingPathComponent("gostl_\(sessionId)_uncolored.stl")
         defer { try? FileManager.default.removeItem(at: tempSTL) }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: openscadPath)
-        process.arguments = [
-            "-D", colorDisabler,
-            "-o", tempSTL.path,
-            csgFile.path
-        ]
-        process.currentDirectoryURL = workDir
+        let process = try openSCAD.makeProcess(
+            arguments: [
+                "-D", colorDisabler,
+                "-o", tempSTL.path,
+                csgFile.path
+            ],
+            workingDirectory: workDir
+        )
 
         let stderrPipe = Pipe()
         process.standardOutput = Pipe()
@@ -374,8 +335,6 @@ class OpenSCADRenderer {
     /// Extract colors from a CSG file, running from the specified source directory
     /// This is needed to resolve relative paths in the CSG file
     private func extractColorsForExport(csgFile: URL, sourceDir: URL, sessionId: String.SubSequence) throws -> Set<OpenSCADColor> {
-        let openscadPath = try findOpenSCADExecutable()
-
         // Redefine color() to echo its parameters instead of rendering
         let colorExtractor = "module color(c, alpha) { echo(\(colorTag)=str(c)); }"
 
@@ -383,15 +342,15 @@ class OpenSCADRenderer {
         let tempOutput = workDir.appendingPathComponent("gostl_\(sessionId)_colors.stl")
         defer { try? FileManager.default.removeItem(at: tempOutput) }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: openscadPath)
-        process.arguments = [
-            "-D", colorExtractor,
-            "-o", tempOutput.path,
-            csgFile.path
-        ]
         // Run from source directory to resolve relative imports in CSG
-        process.currentDirectoryURL = sourceDir
+        let process = try openSCAD.makeProcess(
+            arguments: [
+                "-D", colorExtractor,
+                "-o", tempOutput.path,
+                csgFile.path
+            ],
+            workingDirectory: sourceDir
+        )
 
         let stderrPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -432,23 +391,21 @@ class OpenSCADRenderer {
 
     /// Check for uncolored geometry, running from the specified source directory
     private func checkForUncoloredGeometryForExport(csgFile: URL, sourceDir: URL, sessionId: String.SubSequence) throws -> Bool {
-        let openscadPath = try findOpenSCADExecutable()
-
         // Redefine color() to consume its children (output nothing)
         let colorDisabler = "module color(c, alpha) { /* discard */ }"
 
         let tempSTL = workDir.appendingPathComponent("gostl_\(sessionId)_uncolored.stl")
         defer { try? FileManager.default.removeItem(at: tempSTL) }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: openscadPath)
-        process.arguments = [
-            "-D", colorDisabler,
-            "-o", tempSTL.path,
-            csgFile.path
-        ]
         // Run from source directory to resolve relative imports in CSG
-        process.currentDirectoryURL = sourceDir
+        let process = try openSCAD.makeProcess(
+            arguments: [
+                "-D", colorDisabler,
+                "-o", tempSTL.path,
+                csgFile.path
+            ],
+            workingDirectory: sourceDir
+        )
 
         let stderrPipe = Pipe()
         process.standardOutput = Pipe()
@@ -475,8 +432,6 @@ class OpenSCADRenderer {
     ///   - includeUncolored: If true, also render geometry not wrapped in color() calls
     ///   - sessionId: Unique identifier for this render session
     private func renderColorsInParallel(csgFile: URL, colors: [OpenSCADColor], includeUncolored: Bool = false, sessionId: String.SubSequence) throws -> [Triangle] {
-        let openscadPath = try findOpenSCADExecutable()
-
         // Thread-safe storage for results
         final class ColorResult: @unchecked Sendable {
             var triangles: [Triangle] = []
@@ -488,6 +443,10 @@ class OpenSCADRenderer {
         let results = (0..<totalJobs).map { _ in ColorResult() }
         let localWorkDir = self.workDir  // Capture for Sendable closure
         let localSessionId = String(sessionId)  // Capture for Sendable closure
+        // Likewise: OpenSCADCommand is Sendable so that this closure may hold
+        // one. It used to capture the resolved path instead, which was the same
+        // trick for the same reason.
+        let openSCAD = self.openSCAD
 
         // Render each color in parallel (plus uncolored if requested)
         DispatchQueue.concurrentPerform(iterations: totalJobs) { index in
@@ -496,9 +455,7 @@ class OpenSCADRenderer {
             defer { try? FileManager.default.removeItem(at: tempSTL) }
 
             do {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: openscadPath)
-
+                let arguments: [String]
                 if index < colors.count {
                     // Render specific color
                     let color = colors[index]
@@ -513,7 +470,7 @@ class OpenSCADRenderer {
                     }
                     """
 
-                    process.arguments = [
+                    arguments = [
                         "-D", "$colored = false;",
                         "-D", colorFilter,
                         "-o", tempSTL.path,
@@ -523,14 +480,16 @@ class OpenSCADRenderer {
                     // Render uncolored geometry (discard all color() children)
                     let colorDisabler = "module color(c, alpha) { /* discard colored geometry */ }"
 
-                    process.arguments = [
+                    arguments = [
                         "-D", colorDisabler,
                         "-o", tempSTL.path,
                         csgFile.path
                     ]
                 }
 
-                process.currentDirectoryURL = localWorkDir
+                let process = try openSCAD.makeProcess(
+                    arguments: arguments, workingDirectory: localWorkDir
+                )
                 process.standardOutput = Pipe()
                 process.standardError = Pipe()
 
@@ -571,16 +530,14 @@ class OpenSCADRenderer {
 
     /// Extract warnings from running OpenSCAD on a file
     private func extractWarnings(csgFile: URL, sessionId: String.SubSequence) throws -> [String] {
-        let openscadPath = try findOpenSCADExecutable()
-
         // Use a temp file since OpenSCAD doesn't accept /dev/null
         let tempOutput = workDir.appendingPathComponent("gostl_\(sessionId)_warn.stl")
         defer { try? FileManager.default.removeItem(at: tempOutput) }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: openscadPath)
-        process.arguments = ["-o", tempOutput.path, csgFile.path]
-        process.currentDirectoryURL = workDir
+        let process = try openSCAD.makeProcess(
+            arguments: ["-o", tempOutput.path, csgFile.path],
+            workingDirectory: workDir
+        )
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -648,17 +605,14 @@ class OpenSCADRenderer {
     /// - Returns: InternalRenderResult with messages and empty status
     /// - Throws: Error if rendering fails (except for empty file which returns isEmpty=true)
     private func runOpenSCAD(scadFile: URL, outputFile: URL) throws -> InternalRenderResult {
-        // Find OpenSCAD executable
-        let openscadPath = try findOpenSCADExecutable()
-
         // Run openscad command
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: openscadPath)
-        process.arguments = [
-            "-o", outputFile.path,
-            scadFile.path
-        ]
-        process.currentDirectoryURL = workDir
+        let process = try openSCAD.makeProcess(
+            arguments: [
+                "-o", outputFile.path,
+                scadFile.path
+            ],
+            workingDirectory: workDir
+        )
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -919,7 +873,6 @@ class OpenSCADRenderer {
         let hasUncolored = try checkForUncoloredGeometryForExport(csgFile: csgFile, sourceDir: sourceDir, sessionId: sessionId)
 
         // Step 4: Export each color as separate STL
-        let openscadPath = try findOpenSCADExecutable()
         var parts: [(String, OpenSCADColor?)] = []
         let colorArray = Array(colors)
 
@@ -941,16 +894,16 @@ class OpenSCADRenderer {
             }
             """
 
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: openscadPath)
-            process.arguments = [
-                "-D", "$colored = false;",
-                "-D", colorFilter,
-                "-o", stlPath.path,
-                csgFile.path
-            ]
             // Run from source directory to resolve relative imports in CSG
-            process.currentDirectoryURL = sourceDir
+            let process = try openSCAD.makeProcess(
+                arguments: [
+                    "-D", "$colored = false;",
+                    "-D", colorFilter,
+                    "-o", stlPath.path,
+                    csgFile.path
+                ],
+                workingDirectory: sourceDir
+            )
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()
             process.standardOutput = stdoutPipe
@@ -976,15 +929,15 @@ class OpenSCADRenderer {
 
             let colorDisabler = "module color(c, alpha) { /* discard */ }"
 
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: openscadPath)
-            process.arguments = [
-                "-D", colorDisabler,
-                "-o", stlPath.path,
-                csgFile.path
-            ]
             // Run from source directory to resolve relative imports in CSG
-            process.currentDirectoryURL = sourceDir
+            let process = try openSCAD.makeProcess(
+                arguments: [
+                    "-D", colorDisabler,
+                    "-o", stlPath.path,
+                    csgFile.path
+                ],
+                workingDirectory: sourceDir
+            )
             process.standardOutput = Pipe()
             process.standardError = Pipe()
 
