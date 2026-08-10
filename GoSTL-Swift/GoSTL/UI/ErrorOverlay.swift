@@ -152,24 +152,33 @@ struct ErrorOverlay: View {
             Text("OpenSCAD is required to render .scad files.")
                 .font(.body)
 
+            // The snapshot cask, not the plain one. `openscad` is the last
+            // stable release, 2021.01, which is five years old and not what
+            // this renders against — somebody who follows that advice installs
+            // something that fails later, looking like a bad model rather than
+            // a stale OpenSCAD. `openscad@snapshot` is the development build
+            // this expects.
             VStack(alignment: .leading, spacing: 4) {
                 Text("Install via Homebrew:")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                Text("brew install --cask openscad")
+                Text("brew install --cask openscad@snapshot")
                     .font(.system(.caption, design: .monospaced))
                     .padding(6)
                     .background(Color.black.opacity(0.1))
                     .cornerRadius(4)
+                Text("The development snapshot, not the 2021.01 release.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             .padding(.top, 4)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Or download from:")
+                Text("Or download a snapshot from:")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                Link("https://openscad.org/downloads.html",
-                     destination: URL(string: "https://openscad.org/downloads.html")!)
+                Link("https://openscad.org/downloads.html#snapshots",
+                     destination: URL(string: "https://openscad.org/downloads.html#snapshots")!)
                     .font(.caption)
             }
             .padding(.top, 4)

@@ -51,6 +51,14 @@ Feature: Open 3D Model Files
     When I open an OpenSCAD file
     Then an error message should be displayed
     And the error should include installation instructions
+    And the instructions should name the development snapshot
+      """
+      The stable cask, openscad, is the 2021.01 release and is not what GoSTL
+      renders against. Following it installs something that fails later, which
+      reads as a bad model rather than a stale OpenSCAD. So the overlay and the
+      error both say `brew install --cask openscad@snapshot`, and link to the
+      snapshots section of the downloads page rather than the page itself.
+      """
 
   @openscad @empty
   Scenario: Open OpenSCAD file that produces empty geometry

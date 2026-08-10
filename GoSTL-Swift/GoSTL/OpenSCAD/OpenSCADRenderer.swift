@@ -1020,7 +1020,11 @@ enum OpenSCADError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .openSCADNotFound:
-            return "OpenSCAD not found in PATH. Please install OpenSCAD from https://openscad.org/"
+            // The snapshot, named explicitly: the stable release on that page
+            // is 2021.01 and is not what this renders against.
+            return "OpenSCAD not found in PATH. Install the development snapshot "
+                + "— brew install --cask openscad@snapshot — or download one from "
+                + "https://openscad.org/downloads.html#snapshots"
         case .renderFailed(let message, _):
             return message
         case .emptyFile:
