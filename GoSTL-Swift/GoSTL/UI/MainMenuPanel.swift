@@ -22,6 +22,183 @@ struct MainMenuPanel: View {
         min(Self.preferredWidth, max(0, availableWidth - Self.margin * 2))
     }
 
+    /// What the Info section keeps when it is folded.
+    ///
+    /// Info is almost all readings, and a reading cannot be an icon. Its one
+    /// action is the material, which the `m` key cycles, so that is the one
+    /// icon — beside the Weight line it changes, when the section is open.
+    private var infoActions: [PanelAction] {
+        guard let material = appState.modelInfo?.material else { return [] }
+        return [PanelAction(
+            symbol: "scalemass",
+            name: "Material: \(material.rawValue)",
+            key: "m",
+            run: { appState.cycleMaterial() }
+        )]
+    }
+
+    /// What the View section keeps when it is folded.
+    ///
+    /// A set of modes is one action, because that is already how the keyboard
+    /// treats it: `w` cycles the wireframe through off/all/edge rather than
+    /// selecting one, and the expanded section's radio buttons are the same
+    /// action spelled out. So one icon each, drawn as on when the mode is not
+    /// off.
+    ///
+    /// The six camera presets are the one place this does not hold, and they are
+    /// left out on purpose: they are one action with six arguments, six
+    /// unlabelled directional icons are unreadable where "Front" is not, and the
+    /// two that a folded panel is actually for — go back to the home view, undo
+    /// what dragging did — are here. All six stay a chevron away.
+    private var viewActions: [PanelAction] {
+        var actions: [PanelAction] = [
+            PanelAction(
+                // A triangulated mesh rather than a second grid: `grid` and
+                // `square.grid.3x3` beside each other were two nearly identical
+                // glyphs for two unrelated things.
+                symbol: "point.3.connected.trianglepath.dotted",
+                name: appState.wireframeMode.description,
+                key: "w",
+                isOn: appState.wireframeMode != .off,
+                run: {
+                    appState.cycleWireframeMode()
+                    if let device = MTLCreateSystemDefaultDevice() {
+                        try? appState.updateWireframe(device: device)
+                    }
+                }
+            ),
+            PanelAction(
+                symbol: "grid",
+                name: appState.gridMode.description,
+                key: "g",
+                isOn: appState.gridMode != .off,
+                run: {
+                    appState.cycleGridMode()
+                    if let device = MTLCreateSystemDefaultDevice() {
+                        try? appState.updateGrid(device: device)
+                    }
+                }
+            ),
+            PanelAction(
+                symbol: "scissors",
+                name: "Slicing",
+                key: "⇧X",
+                isOn: appState.slicingState.isVisible,
+                run: { appState.slicingState.toggleVisibility() }
+            ),
+            PanelAction(
+                symbol: "printer",
+                name: "Build plate: \(appState.buildPlate == .off ? "Off" : appState.buildPlate.displayName)",
+                key: "⌘B",
+                isOn: appState.buildPlate != .off,
+                run: {
+                    appState.buildPlate = appState.buildPlate.next()
+                    if let device = MTLCreateSystemDefaultDevice() {
+                        appState.updateBuildPlate(device: device)
+                    }
+                }
+            ),
+        ]
+        // Only while there is a plate to orient, exactly as the open section
+        // only offers it then.
+        if appState.buildPlate != .off {
+            actions.append(PanelAction(
+                symbol: "rotate.3d",
+                name: "Plate orientation: \(appState.buildPlateOrientation.displayName)",
+                key: nil,
+                run: {
+                    appState.buildPlateOrientation = appState.buildPlateOrientation.next()
+                    if let device = MTLCreateSystemDefaultDevice() {
+                        appState.updateBuildPlate(device: device)
+                    }
+                }
+            ))
+        }
+        actions.append(PanelAction(
+            symbol: "house",
+            name: "Home view",
+            key: "7",
+            run: { appState.camera.setPreset(.home) }
+        ))
+        actions.append(PanelAction(
+            symbol: "arrow.counterclockwise",
+            name: "Reset view",
+            key: "ESC",
+            run: { appState.camera.reset() }
+        ))
+        return actions
+    }
+
+    /// What the Tools section keeps when it is folded, including the one this
+    /// was asked for: open in go3mf.
+    ///
+    /// The set follows the state, as the open section's does. While a
+    /// measurement or a levelling is being collected the open section replaces
+    /// its buttons with a running commentary and a row of key hints, so the
+    /// folded row does the same thing with icons: end it, cancel it. A folded
+    /// section that goes empty halfway through a measurement would be the
+    /// original complaint again, at the worst moment.
+    private var toolActions: [PanelAction] {
+        var actions: [PanelAction] = []
+        let measurements = appState.measurementSystem
+
+        if appState.levelingState.isActive {
+            actions.append(PanelAction(
+                symbol: "xmark.circle",
+                name: "Cancel levelling",
+                key: "ESC",
+                run: { appState.levelingState.reset() }
+            ))
+        } else if measurements.mode != nil {
+            if measurements.isCollecting {
+                actions.append(PanelAction(
+                    symbol: "checkmark.circle",
+                    name: "End measurement",
+                    key: "x",
+                    run: { measurements.endMeasurement() }
+                ))
+            }
+            actions.append(PanelAction(
+                symbol: "xmark.circle",
+                name: "Cancel measurement",
+                key: "ESC",
+                run: { measurements.cancelMeasurement() }
+            ))
+        } else {
+            actions += [
+                PanelAction(symbol: "ruler", name: "Distance", key: "d",
+                            run: { measurements.startMeasurement(type: .distance) }),
+                PanelAction(symbol: "angle", name: "Angle", key: "a",
+                            run: { measurements.startMeasurement(type: .angle) }),
+                PanelAction(symbol: "circle", name: "Radius", key: "r",
+                            run: { measurements.startMeasurement(type: .radius) }),
+                PanelAction(symbol: "triangle", name: "Select triangles", key: "t",
+                            run: { measurements.startMeasurement(type: .triangleSelect) }),
+                PanelAction(symbol: "level", name: "Level object", key: "l",
+                            run: { appState.levelingState.startLeveling() }),
+            ]
+        }
+
+        if !measurements.measurements.isEmpty {
+            actions.append(PanelAction(
+                symbol: "trash",
+                name: "Clear all measurements",
+                key: "c",
+                run: { measurements.clearAll() }
+            ))
+        }
+
+        if appState.sourceFileURL != nil {
+            actions.append(PanelAction(
+                symbol: "cube.transparent",
+                name: "Open with go3mf",
+                key: "o",
+                run: { appState.openWithGo3mf() }
+            ))
+        }
+        return actions
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let maxPanelHeight = geometry.size.height - 24 // Account for padding
@@ -30,7 +207,7 @@ struct MainMenuPanel: View {
                 VStack(alignment: .leading, spacing: 8) {
                     // Info Section
                     if let modelInfo = appState.modelInfo {
-                        MenuSection(title: "Info", icon: "info.circle") {
+                        MenuSection(title: "Info", icon: "info.circle", folded: infoActions) {
                             InfoSectionContent(
                                 modelInfo: modelInfo,
                                 slicingState: appState.slicingState,
@@ -40,12 +217,12 @@ struct MainMenuPanel: View {
                     }
 
                     // View Section
-                    MenuSection(title: "View", icon: "eye") {
+                    MenuSection(title: "View", icon: "eye", folded: viewActions) {
                         ViewSectionContent(appState: appState)
                     }
 
                     // Tools Section
-                    MenuSection(title: "Tools", icon: "ruler") {
+                    MenuSection(title: "Tools", icon: "ruler", folded: toolActions) {
                         ToolsSectionContent(measurementSystem: appState.measurementSystem, appState: appState)
                     }
 
@@ -77,9 +254,29 @@ struct MainMenuPanel: View {
 
 // MARK: - Menu Section
 
+/// One thing a folded section still lets somebody do.
+///
+/// The word is gone in that state, so the name and the key live in the tooltip
+/// — which is also why every action needs both rather than only a symbol.
+struct PanelAction: Identifiable {
+    let symbol: String
+    let name: String
+    let key: String?
+    /// Drawn as on, for the modes and toggles whose open row shows a filled
+    /// radio button or a tick.
+    var isOn: Bool = false
+    let run: () -> Void
+
+    var id: String { symbol + name }
+}
+
 struct MenuSection<Content: View>: View {
     let title: String
     let icon: String
+    /// What survives folding: one icon per action of this section, in the order
+    /// of the rows they stand for. Folding used to leave a header, a chevron and
+    /// nothing to press (0481).
+    var folded: [PanelAction] = []
     @ViewBuilder let content: () -> Content
     @State private var isExpanded: Bool = true
 
@@ -108,8 +305,48 @@ struct MenuSection<Content: View>: View {
                     .background(Color.white.opacity(0.3))
 
                 content()
+            } else if !folded.isEmpty {
+                FoldedActions(actions: folded)
             }
         }
+    }
+}
+
+/// The icons a folded section keeps, wrapped rather than clipped.
+///
+/// Wrapped, of the three things a row too wide for the panel could do. The panel
+/// is already inside a vertical `ScrollView`, so a second line costs nothing and
+/// leaves everything reachable; a horizontal scroller inside a vertical one is a
+/// gesture both of them want and hides what it holds behind a swipe nobody knows
+/// is there; and truncating drops actions, which is the complaint that put the
+/// icons here. The panel is as narrow as the pane it floats over, so this is not
+/// hypothetical — an embedded viewer beside an editor often gets less than the
+/// 260pt the panel prefers.
+private struct FoldedActions: View {
+    let actions: [PanelAction]
+
+    var body: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 26), spacing: 3, alignment: .leading)],
+            alignment: .leading,
+            spacing: 3
+        ) {
+            ForEach(actions) { action in
+                Button(action: action.run) {
+                    Image(systemName: action.symbol)
+                        .font(.system(size: 11))
+                        .foregroundColor(action.isOn ? .orange : .white.opacity(0.8))
+                        .frame(width: 24, height: 22)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(action.isOn ? Color.orange.opacity(0.2) : Color.white.opacity(0.1))
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(action.key.map { "\(action.name) (\($0))" } ?? action.name)
+            }
+        }
+        .padding(.top, 2)
     }
 }
 
