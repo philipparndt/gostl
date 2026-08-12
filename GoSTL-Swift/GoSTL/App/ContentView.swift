@@ -41,14 +41,32 @@ public struct ContentView: View {
         /// ask for the frame and draw it where the pane is.
         public var snapshotHandle: (@MainActor (@escaping SnapshotProvider) -> Void)?
 
+        /// How to run OpenSCAD, for an embedder that has an answer of its own.
+        ///
+        /// Nil means the copy installed on this machine, which is what the
+        /// viewer has always used and what it uses when nothing is embedding it
+        /// at all. An editor that runs its tools from container images can put
+        /// one here instead, and then a `.scad` previews on a machine with no
+        /// OpenSCAD installed — which is the one place a user actually feels
+        /// this, because either the model appears or an overlay tells them to
+        /// go and install a 200 MB cask.
+        ///
+        /// Whatever is supplied has to honour the working directory it is given
+        /// on each call rather than fixing one: relative `include <…>` and
+        /// `use <…>` resolve against it, and the renderer deliberately uses a
+        /// different one for different passes.
+        public var openSCAD: OpenSCADCommand?
+
         public init(
             backgroundColor: NSColor? = nil,
             showsMenuPanel: Bool = false,
-            snapshotHandle: (@MainActor (@escaping SnapshotProvider) -> Void)? = nil
+            snapshotHandle: (@MainActor (@escaping SnapshotProvider) -> Void)? = nil,
+            openSCAD: OpenSCADCommand? = nil
         ) {
             self.backgroundColor = backgroundColor
             self.showsMenuPanel = showsMenuPanel
             self.snapshotHandle = snapshotHandle
+            self.openSCAD = openSCAD
         }
     }
 
@@ -240,6 +258,13 @@ public struct ContentView: View {
                 appState.showModelInfo = embedding.showsMenuPanel
                 if let color = embedding.backgroundColor {
                     appState.backgroundOverride = color.viewportComponents
+                }
+                // Before anything is loaded, which is what makes this the right
+                // place: the file is opened further down this same block, and a
+                // command handed over after that would arrive for the second
+                // render rather than the first.
+                if let openSCAD = embedding.openSCAD {
+                    appState.openSCAD = openSCAD
                 }
             }
 

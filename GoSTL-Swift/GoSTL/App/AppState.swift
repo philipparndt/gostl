@@ -66,6 +66,19 @@ final class AppState: @unchecked Sendable {
         didSet { clearColor = backgroundOverride ?? ThemePreferences.shared.colors.background }
     }
 
+    /// How to run OpenSCAD, when a `.scad` has to be turned into geometry.
+    ///
+    /// Set by whoever is embedding the viewer, and defaulted to the copy
+    /// installed on this machine — so GoSTL on its own behaves exactly as it
+    /// always has, and an editor that already runs its tools from container
+    /// images can hand over one that needs no 200 MB cask installed first.
+    ///
+    /// `@ObservationIgnored` because it is a collaborator rather than state:
+    /// nothing on screen changes when it is set, and it is read from the
+    /// background queue a render runs on rather than from a view body.
+    @ObservationIgnored
+    var openSCAD: OpenSCADCommand = InstalledOpenSCAD()
+
     /// Camera for 3D navigation
     var camera = Camera()
 
@@ -370,14 +383,6 @@ final class AppState: @unchecked Sendable {
                 modelInfo.cycleMaterial()
                 self.modelInfo = modelInfo
             }
-        })
-
-        notificationObservers.append(NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("OpenWithGo3mf"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            openWithGo3mf(sourceFileURL: self?.sourceFileURL)
         })
 
         notificationObservers.append(NotificationCenter.default.addObserver(
@@ -1063,7 +1068,7 @@ final class AppState: @unchecked Sendable {
             print("Rendering OpenSCAD file: \(url.lastPathComponent)")
 
             let workDir = url.deletingLastPathComponent()
-            let renderer = OpenSCADRenderer(workDir: workDir)
+            let renderer = OpenSCADRenderer(workDir: workDir, openSCAD: openSCAD)
 
             do {
                 // Render OpenSCAD with color extraction
@@ -1273,7 +1278,7 @@ final class AppState: @unchecked Sendable {
         } else if isOpenSCAD {
             // For OpenSCAD files, watch the source file and all dependencies
             let workDir = sourceURL.deletingLastPathComponent()
-            let renderer = OpenSCADRenderer(workDir: workDir)
+            let renderer = OpenSCADRenderer(workDir: workDir, openSCAD: openSCAD)
             filesToWatch = renderer.resolveDependencies(scadFile: sourceURL)
         } else {
             // For STL/3MF files, just watch the source file
@@ -1377,7 +1382,7 @@ final class AppState: @unchecked Sendable {
                 } else if self.isOpenSCAD {
                     // Render OpenSCAD with color extraction
                     let workDir = sourceURL.deletingLastPathComponent()
-                    let renderer = OpenSCADRenderer(workDir: workDir)
+                    let renderer = OpenSCADRenderer(workDir: workDir, openSCAD: openSCAD)
 
                     let result = try renderer.renderToColoredModel(scadFile: sourceURL)
                     model = result.model

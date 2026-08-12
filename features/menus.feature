@@ -46,12 +46,20 @@ Feature: Application Menus
     Then I should see "Measure Distance" with Cmd+D
     And I should see "Measure Angle" with Cmd+A
     And I should see "Measure Radius"
-    And I should see "Select Triangles" with T
+    And I should see "Select Triangles" with no shortcut beside it
     And I should see "Clear All Measurements" with Cmd+Shift+K
     And I should see "Copy as OpenSCAD" with Cmd+Shift+C
     And I should see "Change Material" with Cmd+M
-    And I should see "Open with go3mf"
+    And I should see "Open with go3mf" with no shortcut beside it (disabled unless a file is loaded)
     And I should see "Open in OpenSCAD" with Cmd+E (disabled unless .scad file is loaded)
+
+  @shortcuts
+  Scenario: The menu does not bind the single keys the viewport answers to
+    Given the viewport answers to single keys such as O and T
+    When a menu command would bind the same key with no modifier
+    Then that command has no shortcut instead
+    And the key still reaches the viewport, in a window of its own or embedded
+    And the panel still shows the key as a hint beside the action
 
   Scenario: Help menu structure
     When I open the Help menu
