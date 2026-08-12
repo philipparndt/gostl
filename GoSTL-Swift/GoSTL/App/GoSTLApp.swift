@@ -287,12 +287,12 @@ public struct GoSTLApp: App {
                 Button("New Tab") {
                     openNewTab()
                 }
-                .keyboardShortcut("t", modifiers: .command)
+                .menuShortcut("t", .command)
 
                 Button("Open...") {
                     openFile()
                 }
-                .keyboardShortcut("o", modifiers: .command)
+                .menuShortcut("o", .command)
 
                 Divider()
 
@@ -317,13 +317,13 @@ public struct GoSTLApp: App {
                 Button("Save") {
                     saveFile()
                 }
-                .keyboardShortcut("s", modifiers: .command)
+                .menuShortcut("s", .command)
                 .disabled(appState?.canSave != true || appState?.hasSaveDestination != true)
 
                 Button("Save As...") {
                     saveFileAs()
                 }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .menuShortcut("s", .commandShift)
                 .disabled(appState?.model == nil)
 
                 Divider()
@@ -331,7 +331,7 @@ public struct GoSTLApp: App {
                 Button("Reload") {
                     NotificationCenter.default.post(name: NSNotification.Name("ReloadModel"), object: nil)
                 }
-                .keyboardShortcut("r", modifiers: .command)
+                .menuShortcut("r", .command)
                 .disabled(appState?.sourceFileURL == nil)
             }
 
@@ -340,7 +340,7 @@ public struct GoSTLApp: App {
                     get: { appState?.showModelInfo ?? true },
                     set: { appState?.showModelInfo = $0 }
                 ))
-                .keyboardShortcut("i", modifiers: .command)
+                .menuShortcut("i", .command)
 
                 Menu("Wireframe") {
                     Button("Off") {
@@ -357,13 +357,13 @@ public struct GoSTLApp: App {
                 Button("Cycle Wireframe Mode") {
                     NotificationCenter.default.post(name: NSNotification.Name("CycleWireframeMode"), object: nil)
                 }
-                .keyboardShortcut("w", modifiers: .command)
+                .menuShortcut("w", .command)
 
                 Toggle("Face Orientation", isOn: Binding(
                     get: { appState?.showFaceOrientation ?? false },
                     set: { appState?.showFaceOrientation = $0 }
                 ))
-                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .menuShortcut("f", .commandShift)
 
                 Divider()
 
@@ -385,7 +385,7 @@ public struct GoSTLApp: App {
                 Button("Cycle Grid Mode") {
                     NotificationCenter.default.post(name: NSNotification.Name("CycleGridMode"), object: nil)
                 }
-                .keyboardShortcut("g", modifiers: .command)
+                .menuShortcut("g", .command)
 
                 Divider()
 
@@ -444,7 +444,7 @@ public struct GoSTLApp: App {
                 Button("Cycle Build Plate") {
                     NotificationCenter.default.post(name: NSNotification.Name("CycleBuildPlate"), object: nil)
                 }
-                .keyboardShortcut("b", modifiers: .command)
+                .menuShortcut("b", .command)
 
                 Divider()
 
@@ -452,7 +452,7 @@ public struct GoSTLApp: App {
                     get: { appState?.slicingState.isVisible ?? false },
                     set: { _ in appState?.slicingState.toggleVisibility() }
                 ))
-                .keyboardShortcut("x", modifiers: [.command, .shift])
+                .menuShortcut("x", .commandShift)
 
                 Divider()
 
@@ -478,39 +478,39 @@ public struct GoSTLApp: App {
                     Button("Front") {
                         NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.front)
                     }
-                    .keyboardShortcut("1", modifiers: .command)
+                    .menuShortcut("1", .command)
 
                     Button("Back") {
                         NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.back)
                     }
-                    .keyboardShortcut("2", modifiers: .command)
+                    .menuShortcut("2", .command)
 
                     Button("Left") {
                         NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.left)
                     }
-                    .keyboardShortcut("3", modifiers: .command)
+                    .menuShortcut("3", .command)
 
                     Button("Right") {
                         NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.right)
                     }
-                    .keyboardShortcut("4", modifiers: .command)
+                    .menuShortcut("4", .command)
 
                     Button("Top") {
                         NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.top)
                     }
-                    .keyboardShortcut("5", modifiers: .command)
+                    .menuShortcut("5", .command)
 
                     Button("Bottom") {
                         NotificationCenter.default.post(name: NSNotification.Name("SetCameraPreset"), object: CameraPreset.bottom)
                     }
-                    .keyboardShortcut("6", modifiers: .command)
+                    .menuShortcut("6", .command)
 
                     Divider()
 
                     Button("Reset View") {
                         NotificationCenter.default.post(name: NSNotification.Name("ResetCamera"), object: nil)
                     }
-                    .keyboardShortcut("0", modifiers: .command)
+                    .menuShortcut("0", .command)
                 }
             }
 
@@ -518,12 +518,12 @@ public struct GoSTLApp: App {
                 Button("Measure Distance") {
                     NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.distance)
                 }
-                .keyboardShortcut("d", modifiers: .command)
+                .menuShortcut("d", .command)
 
                 Button("Measure Angle") {
                     NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.angle)
                 }
-                .keyboardShortcut("a", modifiers: .command)
+                .menuShortcut("a", .command)
 
                 Button("Measure Radius") {
                     NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.radius)
@@ -531,17 +531,18 @@ public struct GoSTLApp: App {
 
                 Divider()
 
+                // Also without a key equivalent, and for the same reason: a
+                // bare `t` here shadowed the viewport's own. See ViewportKeys.
                 Button("Select Triangles") {
                     NotificationCenter.default.post(name: NSNotification.Name("StartMeasurement"), object: MeasurementType.triangleSelect)
                 }
-                .keyboardShortcut("t", modifiers: [])
 
                 Divider()
 
                 Button("Level Object") {
                     NotificationCenter.default.post(name: NSNotification.Name("StartLeveling"), object: nil)
                 }
-                .keyboardShortcut("l", modifiers: .command)
+                .menuShortcut("l", .command)
 
                 Button("Undo Leveling") {
                     NotificationCenter.default.post(name: NSNotification.Name("UndoLeveling"), object: nil)
@@ -553,43 +554,45 @@ public struct GoSTLApp: App {
                 Button("Clear All Measurements") {
                     NotificationCenter.default.post(name: NSNotification.Name("ClearMeasurements"), object: nil)
                 }
-                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .menuShortcut("k", .commandShift)
 
                 Divider()
 
                 Button("Copy as OpenSCAD") {
                     NotificationCenter.default.post(name: NSNotification.Name("CopyMeasurementsAsOpenSCAD"), object: nil)
                 }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .menuShortcut("c", .commandShift)
 
                 Button("Copy as OpenSCAD (Closed Solid)") {
                     NotificationCenter.default.post(name: NSNotification.Name("CopyMeasurementsAsOpenSCADClosed"), object: nil)
                 }
-                .keyboardShortcut("c", modifiers: [.command, .shift, .option])
+                .menuShortcut("c", .commandShiftOption)
 
                 Button("Copy as Polygon") {
                     NotificationCenter.default.post(name: NSNotification.Name("CopyMeasurementsAsPolygon"), object: nil)
                 }
-                .keyboardShortcut("p", modifiers: .command)
+                .menuShortcut("p", .command)
 
                 Divider()
 
                 Button("Change Material") {
                     NotificationCenter.default.post(name: NSNotification.Name("CycleMaterial"), object: nil)
                 }
-                .keyboardShortcut("m", modifiers: .command)
+                .menuShortcut("m", .command)
 
                 Divider()
 
+                // No key equivalent, deliberately: `o` belongs to the
+                // viewport. See ViewportKeys.
                 Button("Open with go3mf") {
-                    NotificationCenter.default.post(name: NSNotification.Name("OpenWithGo3mf"), object: nil)
+                    appState?.openWithGo3mf()
                 }
-                .keyboardShortcut("o", modifiers: [])
+                .disabled(appState?.sourceFileURL == nil)
 
                 Button("Open in OpenSCAD") {
                     appState?.openInOpenSCAD()
                 }
-                .keyboardShortcut("e", modifiers: .command)
+                .menuShortcut("e", .command)
                 .disabled(appState?.isOpenSCAD != true)
             }
 

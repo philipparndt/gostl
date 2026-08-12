@@ -606,7 +606,7 @@ struct ToolsSectionContent: View {
                     .padding(.vertical, 2)
 
                 Button(action: {
-                    openWithGo3mf(sourceFileURL: appState?.sourceFileURL)
+                    appState?.openWithGo3mf()
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "cube.transparent")

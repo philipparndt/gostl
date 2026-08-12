@@ -249,8 +249,26 @@ private func findGo3mfExecutable() -> String? {
     return nil
 }
 
-/// Opens the current file with go3mf
-func openWithGo3mf(sourceFileURL: URL?) {
+extension AppState {
+    /// Builds the file this viewer is showing and opens the result.
+    ///
+    /// A method on the state rather than a free function reached through a
+    /// broadcast, which is what it was: `OpenWithGo3mf` went to every live
+    /// `AppState` and each answered with its own `sourceFileURL`, so one
+    /// command built and opened a file per open window — none of which was
+    /// necessarily the one in front. The menu, the panel's button and the
+    /// viewport's `o` all arrive here, at the viewer they mean (0481).
+    func openWithGo3mf() {
+        buildAndOpenWithGo3mf(sourceFileURL: sourceFileURL)
+    }
+}
+
+/// Builds the given file with go3mf and opens what it produced.
+///
+/// Private, and reached only through `AppState.openWithGo3mf()`: which file is
+/// opened is a property of a viewer, and passing one in by hand is how a single
+/// command came to act on a window that was not the one in front.
+private func buildAndOpenWithGo3mf(sourceFileURL: URL?) {
     guard let sourceURL = sourceFileURL else {
         print("No file loaded")
         return

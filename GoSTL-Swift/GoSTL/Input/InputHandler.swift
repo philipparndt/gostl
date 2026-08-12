@@ -722,8 +722,8 @@ final class InputHandler {
             return false
 
         case "o":
-            // Open current file with go3mf
-            openWithGo3mf(sourceFileURL: appState.sourceFileURL)
+            // The viewport owns `o`; see ViewportKeys.
+            appState.openWithGo3mf()
             return true
 
         case "l":

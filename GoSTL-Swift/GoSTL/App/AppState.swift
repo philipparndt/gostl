@@ -386,14 +386,6 @@ final class AppState: @unchecked Sendable {
         })
 
         notificationObservers.append(NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("OpenWithGo3mf"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            openWithGo3mf(sourceFileURL: self?.sourceFileURL)
-        })
-
-        notificationObservers.append(NotificationCenter.default.addObserver(
             forName: NSNotification.Name("SetBuildPlate"),
             object: nil,
             queue: .main

@@ -121,7 +121,7 @@ Feature: Keyboard Shortcuts
 
     Examples:
       | shortcut | action                              |
-      | O        | opens file with go3mf               |
+      | O        | opens the file this viewer shows with go3mf |
       | Cmd+E    | opens .scad file in OpenSCAD editor |
       | Ctrl+C   | quits the application               |
 
