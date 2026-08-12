@@ -50,6 +50,7 @@ Feature: Open 3D Model Files
     Given OpenSCAD is not installed on the system
     When I open an OpenSCAD file
     Then an error message should be displayed
+    And no shape should be shown on the build plate
     And the error should include installation instructions
     And the instructions should name the development snapshot
       """
@@ -73,6 +74,31 @@ Feature: Open 3D Model Files
     When I open an OpenSCAD file that has syntax errors
     Then an error overlay should be displayed
     And the error should show the OpenSCAD stdout/stderr output
+    And no shape should be shown on the build plate
+
+  @error
+  Scenario: A file that will not load shows nothing rather than something else
+    When I open a file that fails to load, for any reason
+    Then the build plate should be empty
+    And the file that would not load should be the one named in the info panel
+    And the file should be watched, so that fixing it is noticed
+      """
+      This used to show a test cube, correctly lit, sitting on the build plate:
+      the failure path fell back to setupInitialState(loadTestCube: true).
+      Somebody who had not written the file had no way to tell that the shape on
+      screen was not the shape their code described, and somebody with no
+      OpenSCAD installed got a cube instead of the install instructions above
+      (0484).
+
+      A blank pane is honest and a cube is a lie, and the difference matters
+      most where the message cannot be seen at all: an embedded pane is captured
+      through the Metal snapshot provider, which sees the model and not the
+      SwiftUI overlay above it, so the shape is the only thing that says whether
+      the load worked.
+
+      The test cube belongs to a window opened with no file, which has nothing
+      else it could show.
+      """
 
   @go3mf
   Scenario: Open go3mf YAML configuration file

@@ -343,6 +343,25 @@ public struct ContentView: View {
         .onChange(of: appState.reloadRequestId) { _, _ in
             reloadModel()
         }
+        // The overlay follows the load error, in both directions.
+        //
+        // Reading a cleared error as "a load succeeded" is an inference, and
+        // 0484 reported it going wrong: the failure path set the overlay and
+        // then loaded a test cube, whose load cleared the error and dismissed
+        // the message one line after it was shown. Driving this version, the
+        // overlay in fact survived - loading a model does not touch `loadError`,
+        // and at startup `loadErrorID` was still nil so this never fired - so
+        // what was seen was a cube *and* a message rather than a cube alone.
+        // The reported mechanism is real all the same, and needs only a prior
+        // error for a fallback's clearing to dismiss the message about the
+        // failure it is falling back from.
+        //
+        // What makes the inference sound rather than lucky is that every place
+        // which clears this is a load that worked: `reloadModel` on success, an
+        // OpenSCAD file that rendered to no geometry, and `resetForNewFile` when
+        // a different file is opened, which should indeed take the old message
+        // away. A failure sets it and leaves it set (AppState.showFailedLoad),
+        // and there is no longer a fallback load behind it.
         .onChange(of: appState.loadErrorID) { _, errorID in
             if let error = appState.loadError {
                 handleLoadError(error, isAutoReload: true)
@@ -423,8 +442,13 @@ public struct ContentView: View {
                 try? appState.setupFileWatcher()
             } catch {
                 print("ERROR: Failed to load file on startup: \(error)")
+                // Drawn from here rather than left to the state change below, so
+                // the message does not depend on when observation delivers it.
                 handleLoadError(error, isAutoReload: false)
-                setupInitialState(loadTestCube: true)
+                // Nothing drawn, rather than the test cube this used to fall
+                // back to: a failure must not be able to look like a success
+                // (0484). See AppState.showFailedLoad.
+                appState.showFailedLoad(of: url, error: error)
             }
         }
     }

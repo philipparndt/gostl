@@ -57,6 +57,25 @@ Feature: Auto-Reload on File Changes
     And the overlay should be dismissible with a close button
     And the overlay should disappear on the next successful reload
 
+  @error
+  Scenario: A file that would not load at all is still watched
+    Given a file that fails to load when it is opened
+    Then no shape should be shown, and the error should stay on screen
+    When the file is fixed
+    Then it should be re-rendered and the model displayed
+    And the model should be framed, since no camera was worth preserving
+    And the error message should disappear
+      """
+      A failed first load used to remember nothing: the source URL was only set
+      on success, so nothing was watched and the overlay's promise that "the
+      file will auto-reload when the error is fixed" could not be kept. It also
+      showed a test cube, which is the part that could mislead somebody - see
+      file_open.feature.
+
+      A reload that succeeds is now the only thing that takes the message away,
+      which is what makes clearing the error mean something.
+      """
+
   Scenario: Cooldown period between reloads
     When a reload completes
     Then no new reload should occur for at least 1.5 seconds
