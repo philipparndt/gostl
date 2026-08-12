@@ -15,6 +15,20 @@ Feature: External Tool Integration
     And the command should be "go3mf build <file> -o <output.3mf>"
     And GoSTL should open the built 3MF once the build succeeds
 
+  @go3mf @recipe
+  Scenario: Open a recipe with go3mf
+    Given a go3mf YAML recipe is loaded
+    When I press O
+    Then the command should be "go3mf build <recipe>" with no -o
+    And the 3MF that opens should be the one the recipe's output: names
+      """
+      Pressing O is an export somebody asked for, so it writes into the project
+      - unlike showing a recipe, which must not. But go3mf takes the name from
+      the recipe's output: and never from -o, so a recipe whose output: is not
+      its own basename used to build correctly and then open a path that had
+      never existed.
+      """
+
   @go3mf
   Scenario: The built file is opened once and not twice
     Given a file is loaded
@@ -169,9 +183,45 @@ Feature: External Tool Integration
   Scenario: go3mf YAML rendering
     Given a go3mf YAML configuration file is loaded
     Then it should be rendered to a temporary 3MF file via go3mf CLI
-    And the command should be "go3mf build <file> -o <output.3mf>"
+    And the command should be "go3mf build <recipe>" with no -o
+    And go3mf should be run with a temporary directory as its working directory
     And the resulting 3MF should be parsed and displayed
-    And the temporary file should be cleaned up on reload
+    And the temporary build directory should be cleaned up on reload
+
+  @go3mf @recipe
+  Scenario: Showing a recipe does not write to the project it lives in
+    Given a go3mf YAML recipe that declares "output: adapter-set.3mf"
+    And a file of that name already exists beside the recipe
+    When the recipe is loaded in the viewer
+    Then the recipe's own directory should be byte for byte what it was
+    And the built 3MF should be inside a temporary build directory
+      """
+      go3mf ignores -o for a recipe: a single YAML input takes CreatePlan down
+      createYAMLPlan, the one plan that never receives the -o value, and the
+      output name comes from the recipe's mandatory output: instead - written
+      relative to go3mf's working directory, and then exit 0. Run in the
+      recipe's own directory, as this did, that overwrote the project's .3mf
+      under exactly the name the recipe names, which is where a hand-made or
+      hand-sliced file normally sits, and then the viewer parsed a temporary
+      file that had never been created.
+
+      The working directory is the fix and is enough of one: go3mf resolves
+      every file: against the recipe's own directory, so the parts are still
+      found where they live. Nothing is copied and nothing is rewritten.
+      """
+
+  @go3mf @recipe
+  Scenario: A recipe that names an output the viewer will not write
+    Given a go3mf YAML recipe whose output: is an absolute path
+    When the recipe is loaded in the viewer
+    Then nothing should be built and nothing should be written
+    And the error should name the output it refused
+      """
+      No working directory can contain an absolute path, so this is the one
+      output: the viewer cannot keep out of the project. Refusing it and saying
+      so is the honest answer; building it would overwrite a file somebody may
+      have made by hand.
+      """
 
   @go3mf @multi-plate
   Scenario: go3mf YAML with multiple plates
@@ -186,9 +236,16 @@ Feature: External Tool Integration
     When I press O to open with go3mf
     Then GoSTL should export each color as a separate STL file
     And generate a go3mf YAML configuration with filament assignments
+    And the generated configuration's output: should be the full destination path
     And each color gets assigned to a different filament (1, 2, 3, etc.)
     And go3mf should build a multi-color 3MF file
     And the 3MF file should open in the default application
+      """
+      The destination goes in the generated recipe rather than in -o, because for
+      a recipe that is the only place go3mf reads it from. With the bare name
+      there, go3mf wrote the result into the temporary export directory that the
+      cleanup then deleted, and the file handed to the slicer had never existed.
+      """
 
   @go3mf @openscad @colors
   Scenario: Single-color OpenSCAD export to go3mf

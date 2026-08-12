@@ -232,6 +232,13 @@ final class AppState: @unchecked Sendable {
         // Stop the file watcher
         fileWatcher?.stop()
         fileWatcher = nil
+
+        // And take the build this viewer was showing with it. Closing a window
+        // used to leave its temporary 3MF behind; now that a recipe builds in a
+        // directory, leaving that behind would be a directory per window.
+        if let tempURL = tempSTLFileURL, isOpenSCAD || isGo3mf {
+            removeTemporaryBuildArtifact(at: tempURL)
+        }
     }
 
     /// Set up notification observers for menu commands
@@ -829,6 +836,61 @@ final class AppState: @unchecked Sendable {
         self.measurementSystem.clearAll()
     }
 
+    /// The state a load that failed leaves behind: nothing drawn, the file
+    /// remembered, the error kept.
+    ///
+    /// What this replaces is a test cube. A load that threw used to be followed
+    /// by `setupInitialState(loadTestCube: true)`, so a `.scad` with an
+    /// unclosed bracket - or any file at all on a machine with no OpenSCAD -
+    /// put a correctly lit cube on the build plate, and somebody who had not
+    /// written the file had no way to tell that the shape on screen was not the
+    /// shape their code described (0484). A blank viewport is honest and a cube
+    /// is a lie, and the difference matters most where the message cannot be
+    /// seen: an embedded pane is captured through the Metal snapshot provider,
+    /// which sees the model and not the SwiftUI overlay above it, so the shape
+    /// is the *only* thing that says whether the load worked.
+    ///
+    /// The file is still remembered, and watched, for two reasons: the overlay
+    /// promises that "the file will auto-reload when the error is fixed", which
+    /// was not true of a failed first load - nothing was watching - and a
+    /// reload that then succeeds is what takes the message away again.
+    ///
+    /// - Parameters:
+    ///   - url: the file that would not load
+    ///   - error: what it failed with, kept so that clearing it later means
+    ///     something (see ContentView's `loadErrorID` handler)
+    func showFailedLoad(of url: URL, error: Error) {
+        clearModel()
+
+        sourceFileURL = url
+        tempSTLFileURL = nil
+        threeMFParseResult = nil
+        selectedPlateId = nil
+        renderWarnings = (error as? OpenSCADError)?.messages ?? []
+
+        // Which tool would have to run again, so the watcher watches the right
+        // files and a reload takes the same route the failed load took.
+        let fileExtension = url.pathExtension.lowercased()
+        isOpenSCAD = fileExtension == "scad"
+        isGo3mf = fileExtension == "yaml" || fileExtension == "yml"
+
+        // Not an empty file: that overlay says the file rendered and produced
+        // no geometry, which is a different and much less alarming thing.
+        isEmptyFile = false
+        modelInfo = ModelInfo(
+            fileName: url.lastPathComponent,
+            triangleCount: 0,
+            volume: 0,
+            boundingBox: BoundingBox()
+        )
+
+        isLoading = false
+        loadError = error
+        loadErrorID = UUID()
+
+        try? setupFileWatcher()
+    }
+
     /// Reset state for loading a new file (different from current file)
     /// This clears all model-related state but preserves view settings like wireframe mode
     /// - Parameter preserveSettings: If true, preserve wireframe mode, grid mode, build plate, etc.
@@ -837,9 +899,9 @@ final class AppState: @unchecked Sendable {
         fileWatcher?.stop()
         fileWatcher = nil
 
-        // Clean up old temp file if exists
+        // Clean up old temp file if exists (and the build directory around it)
         if let tempURL = tempSTLFileURL, (isOpenSCAD || isGo3mf) {
-            try? FileManager.default.removeItem(at: tempURL)
+            removeTemporaryBuildArtifact(at: tempURL)
         }
 
         // Clear model-related state
@@ -1057,7 +1119,7 @@ final class AppState: @unchecked Sendable {
             fileWatcher?.stop()
             fileWatcher = nil
             if let tempURL = tempSTLFileURL, (isOpenSCAD || isGo3mf), tempURL != url {
-                try? FileManager.default.removeItem(at: tempURL)
+                removeTemporaryBuildArtifact(at: tempURL)
             }
         }
 
@@ -1180,14 +1242,11 @@ final class AppState: @unchecked Sendable {
             // go3mf YAML configuration file - use external go3mf tool to build 3MF
             print("Loading go3mf config: \(url.lastPathComponent)")
 
-            let workDir = url.deletingLastPathComponent()
-            let renderer = Go3mfToolRenderer(workDir: workDir)
-
-            // Create temporary 3MF file
-            let temp3MFURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("gostl_go3mf_\(Int(Date().timeIntervalSince1970)).3mf")
-
-            try renderer.buildTo3MF(yamlFile: url, outputFile: temp3MFURL)
+            // Built where the recipe's own output: cannot reach the project.
+            // The name comes back rather than being chosen here, because for a
+            // recipe it is the recipe that names it - see
+            // Go3mfToolRenderer.buildRecipe.
+            let temp3MFURL = try Go3mfToolRenderer().buildRecipe(url)
 
             // Load the generated 3MF file
             let parseResult = try ThreeMFParser.parseWithPlates(url: temp3MFURL)
@@ -1354,14 +1413,9 @@ final class AppState: @unchecked Sendable {
                 var tempURL: URL?
 
                 if self.isGo3mf {
-                    // Build go3mf YAML config using external go3mf tool
-                    let workDir = sourceURL.deletingLastPathComponent()
-                    let renderer = Go3mfToolRenderer(workDir: workDir)
-
-                    let newTempURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("gostl_go3mf_\(Int(Date().timeIntervalSince1970)).3mf")
-
-                    try renderer.buildTo3MF(yamlFile: sourceURL, outputFile: newTempURL)
+                    // Build go3mf YAML config using external go3mf tool, into a
+                    // temporary directory of its own (Go3mfToolRenderer.buildRecipe)
+                    let newTempURL = try Go3mfToolRenderer().buildRecipe(sourceURL)
 
                     // Load the generated 3MF file (supports plates)
                     let parseResult = try ThreeMFParser.parseWithPlates(url: newTempURL)
@@ -1417,7 +1471,7 @@ final class AppState: @unchecked Sendable {
                     do {
                         // Clean up old temp file if exists (for both OpenSCAD and go3mf)
                         if let oldTempURL = self.tempSTLFileURL, (self.isOpenSCAD || self.isGo3mf), oldTempURL != tempURL {
-                            try? FileManager.default.removeItem(at: oldTempURL)
+                            removeTemporaryBuildArtifact(at: oldTempURL)
                         }
 
                         // Update temp file reference
@@ -1425,8 +1479,12 @@ final class AppState: @unchecked Sendable {
                             self.tempSTLFileURL = tempURL
                         }
 
-                        // Load the new model, preserving camera position
-                        try self.loadModel(model, device: device, preserveCamera: true)
+                        // Load the new model, preserving camera position - but
+                        // there is no camera worth preserving when nothing was
+                        // on screen, which is what a load that failed now
+                        // leaves behind (0484). Framing it is what a first
+                        // sight of a model gets.
+                        try self.loadModel(model, device: device, preserveCamera: self.model != nil)
 
                         // Preserve the selected material from previous model info
                         let previousMaterial = self.modelInfo?.material ?? .pla
