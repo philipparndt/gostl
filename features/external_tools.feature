@@ -12,8 +12,15 @@ Feature: External Tool Integration
     Given a file is loaded
     When I press O
     Then the go3mf CLI tool should be launched
-    And it should open with the current file
-    And the command should be "go3mf build <file> --open"
+    And the command should be "go3mf build <file> -o <output.3mf>"
+    And GoSTL should open the built 3MF once the build succeeds
+
+  @go3mf
+  Scenario: The built file is opened once and not twice
+    Given a file is loaded
+    When I press O
+    Then the command should not contain "--open"
+    And the built 3MF should be handed to the default application exactly once
 
   @go3mf
   Scenario: go3mf executable discovery

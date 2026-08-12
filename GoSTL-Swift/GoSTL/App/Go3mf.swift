@@ -150,7 +150,27 @@ class Go3mfToolRenderer {
     }
 }
 
-// MARK: - Open with go3mf menu command
+// MARK: - Open with go3mf
+
+/// The arguments that build `output` from `input`, and nothing else.
+///
+/// One function, and it deliberately cannot ask go3mf to open the result. There
+/// used to be two ways the built `.3mf` was opened and both of them ran: this
+/// argument list ended in `--open`, and then the success branch called
+/// `NSWorkspace.shared.open` on the same file "as a fallback since --open may
+/// not work reliably when running as a subprocess with captured stdout/stderr".
+/// It works perfectly reliably — `--open` is `exec.Command("open", file)` inside
+/// go3mf — so one press of `o` handed the same file to the slicer twice and it
+/// appeared twice (0481).
+///
+/// Opening is this program's job rather than go3mf's: it is the side that knows
+/// the build finished, it can say so through the error overlay when it did not,
+/// and `NSWorkspace` needs no `open` on the subprocess's `PATH`. Both call sites
+/// build their arguments here, so a second `--open` cannot come back into one of
+/// them without coming back into the other.
+func go3mfBuildArguments(input: URL, output: URL) -> [String] {
+    ["build", input.path, "-o", output.path]
+}
 
 /// Get the user's shell PATH by running a login shell
 /// - Returns: The full PATH string from the user's shell environment
@@ -263,10 +283,9 @@ private func openFileWithGo3mf(sourceURL: URL, go3mfPath: String) {
     let outputFileName = sourceURL.deletingPathExtension().lastPathComponent + ".3mf"
     let outputURL = sourceURL.deletingLastPathComponent().appendingPathComponent(outputFileName)
 
-    // Execute go3mf build <filename> -o <output.3mf> --open
     let process = Process()
     process.executableURL = URL(fileURLWithPath: go3mfPath)
-    process.arguments = ["build", sourceURL.path, "-o", outputURL.path, "--open"]
+    process.arguments = go3mfBuildArguments(input: sourceURL, output: outputURL)
     process.currentDirectoryURL = sourceURL.deletingLastPathComponent()
 
     // Inherit the user's shell PATH so go3mf can find openscad and other tools
@@ -313,7 +332,7 @@ private func openFileWithGo3mf(sourceURL: URL, go3mfPath: String) {
                 }
             } else {
                 print("go3mf build completed successfully")
-                // Open the output file manually as a fallback
+                // The one place the result is opened. See go3mfBuildArguments.
                 DispatchQueue.main.async {
                     NSWorkspace.shared.open(outputURL)
                 }
@@ -440,7 +459,7 @@ private func runGo3mf(
 ) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: go3mfPath)
-    process.arguments = ["build", inputFile.path, "-o", outputFile.path, "--open"]
+    process.arguments = go3mfBuildArguments(input: inputFile, output: outputFile)
     process.currentDirectoryURL = workDir
 
     // Inherit the user's shell PATH
@@ -455,7 +474,7 @@ private func runGo3mf(
     process.standardOutput = stdoutPipe
     process.standardError = stderrPipe
 
-    print("Running: \(go3mfPath) build \(inputFile.path) -o \(outputFile.path) --open")
+    print("Running: \(go3mfPath) \(process.arguments!.joined(separator: " "))")
     print("Working directory: \(workDir.path)")
 
     do {
@@ -493,8 +512,7 @@ private func runGo3mf(
             }
         } else {
             print("go3mf build completed successfully, output: \(outputFile.path)")
-            // Open the output file manually as a fallback since --open may not work
-            // reliably when running as a subprocess with captured stdout/stderr
+            // The one place the result is opened. See go3mfBuildArguments.
             DispatchQueue.main.async {
                 NSWorkspace.shared.open(outputFile)
             }
