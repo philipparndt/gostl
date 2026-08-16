@@ -44,6 +44,7 @@ This directory contains Cucumber/Gherkin feature files documenting all functiona
 - `keyboard_shortcuts.feature` - All keyboard shortcuts
 - `window_management.feature` - Multi-window and tab support
 - `external_tools.feature` - Integration with external tools
+- `app_icon.feature` - Application icon in the Dock and Finder
 
 ### Internal/Technical
 - `ray_casting.feature` - Ray casting for point picking
@@ -68,6 +69,7 @@ Features use tags for categorization:
 - `@ui` - User interface
 - `@keyboard` - Keyboard shortcuts
 - `@theme` - Theme/appearance selection
+- `@app-icon` - Application icon
 - `@internal` - Internal implementation details
 
 ## Supported File Formats

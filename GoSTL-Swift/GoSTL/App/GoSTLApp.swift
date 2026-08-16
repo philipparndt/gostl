@@ -195,6 +195,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("DEBUG: applicationDidFinishLaunching")
         NSApp.setActivationPolicy(.regular)
+        // After the policy change, not before: switching to .regular is what
+        // creates the Dock tile, and it builds that tile from the bundle,
+        // discarding an applicationIconImage set earlier in launch.
+        applyDockIconIfUnbundled()
         NSApp.activate(ignoringOtherApps: true)
         configureAllWindows()
 
@@ -217,6 +221,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func windowDidChange(_ notification: Notification) {
         configureAllWindows()
+    }
+
+    /// Give the Dock an icon when running outside an app bundle.
+    ///
+    /// `make run` launches the executable directly, so there is no Info.plist
+    /// for the Dock to read a CFBundleIconFile out of and it falls back to a
+    /// generic placeholder. Inside GoSTL.app the plist already names the icon,
+    /// and the Dock has loaded it before this runs — so only step in when
+    /// nobody else has.
+    private func applyDockIconIfUnbundled() {
+        guard Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil else { return }
+
+        guard let url = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+              let icon = NSImage(contentsOf: url) else {
+            print("DEBUG: AppIcon.icns missing from the resource bundle")
+            return
+        }
+        NSApp.applicationIconImage = icon
     }
 
     /// Handle files opened from Finder

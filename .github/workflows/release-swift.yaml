@@ -152,6 +152,11 @@ jobs:
               # Copy resource bundle inside app bundle at root level (required by Swift's Bundle.module)
               cp_r bin/"GoSTL_GoSTL.bundle", prefix/"GoSTL.app/GoSTL_GoSTL.bundle"
 
+              # App icon. It ships inside the resource bundle because that is
+              # what SwiftPM builds and what the tarball carries; the Dock reads
+              # it from Contents/Resources, so it has to exist in both places.
+              cp bin/"GoSTL_GoSTL.bundle/Contents/Resources/AppIcon.icns", app_resources/"AppIcon.icns"
+
               # Create Info.plist with document type declarations
               (app_contents/"Info.plist").write <<~XML
                 <?xml version="1.0" encoding="UTF-8"?>
@@ -167,6 +172,8 @@ jobs:
                   <string>GoSTL</string>
                   <key>CFBundleDisplayName</key>
                   <string>GoSTL</string>
+                  <key>CFBundleIconFile</key>
+                  <string>AppIcon</string>
                   <key>CFBundlePackageType</key>
                   <string>APPL</string>
                   <key>CFBundleVersion</key>
@@ -283,6 +290,7 @@ jobs:
               assert_predicate bin/"gostl", :exist?
               assert_predicate bin/"GoSTL_GoSTL.bundle/Contents/Resources/default.metallib", :exist?
               assert_predicate prefix/"GoSTL.app/Contents/MacOS/GoSTL", :exist?
+              assert_predicate prefix/"GoSTL.app/Contents/Resources/AppIcon.icns", :exist?
             end
           end
           FORMULA
