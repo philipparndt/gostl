@@ -60,6 +60,17 @@ jobs:
           mkdir -p "$BIN/GoSTL_GoSTL.bundle/Contents/Resources"
           cp .build/default.metallib "$BIN/GoSTL_GoSTL.bundle/Contents/Resources/"
 
+          # Put the app icon beside the metallib. Where SwiftPM leaves a
+          # processed resource depends on the toolchain — this runner drops it
+          # at the bundle root, others use Contents/Resources — so normalise it
+          # here rather than making every consumer guess. The test is what
+          # stops a bundle with no icon in it from reaching the formula.
+          if [ -f "$BIN/GoSTL_GoSTL.bundle/AppIcon.icns" ]; then
+            cp "$BIN/GoSTL_GoSTL.bundle/AppIcon.icns" \
+               "$BIN/GoSTL_GoSTL.bundle/Contents/Resources/AppIcon.icns"
+          fi
+          test -f "$BIN/GoSTL_GoSTL.bundle/Contents/Resources/AppIcon.icns"
+
           # Create Info.plist for the bundle
           cat > "$BIN/GoSTL_GoSTL.bundle/Contents/Info.plist" << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -155,7 +166,14 @@ jobs:
               # App icon. It ships inside the resource bundle because that is
               # what SwiftPM builds and what the tarball carries; the Dock reads
               # it from Contents/Resources, so it has to exist in both places.
-              cp bin/"GoSTL_GoSTL.bundle/Contents/Resources/AppIcon.icns", app_resources/"AppIcon.icns"
+              # The release build normalises it into Contents/Resources, but an
+              # older tarball may still carry it at the bundle root, so take it
+              # from wherever it actually is.
+              icon = [
+                bin/"GoSTL_GoSTL.bundle/Contents/Resources/AppIcon.icns",
+                bin/"GoSTL_GoSTL.bundle/AppIcon.icns",
+              ].find(&:exist?)
+              cp icon, app_resources/"AppIcon.icns" if icon
 
               # Create Info.plist with document type declarations
               (app_contents/"Info.plist").write <<~XML
