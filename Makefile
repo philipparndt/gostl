@@ -1,4 +1,4 @@
-.PHONY: help build run run-release clean test release install-dev restore-release install-status
+.PHONY: help build run run-release clean test release appicon install-dev restore-release install-status
 
 # Where SwiftPM puts the built products.
 #
@@ -30,6 +30,7 @@ help:
 	@echo "  run-release FILE=<path>"
 	@echo "                   Build release and run with the given file"
 	@echo "  test             Build debug and open examples/simple-named/PartA_1.stl"
+	@echo "  appicon          Rebuild AppIcon.icns from the SVG masters (needs librsvg)"
 	@echo "  clean            Remove build artifacts (.build/)"
 	@echo "  install-dev      Replace the Homebrew binary with the local debug build"
 	@echo "                   (creates a backup the first time)"
@@ -63,6 +64,14 @@ run-release: release
 # Test with sample file
 test: build
 	"$(DEBUG_BIN)/GoSTL" examples/simple-named/PartA_1.stl
+
+# Rebuild the app icon from the SVG masters.
+#
+# Not wired into `build`: the resulting AppIcon.icns is committed, because the
+# release runner has no vector tooling to regenerate it from. Run this after
+# changing the artwork, then commit the .icns alongside it.
+appicon:
+	./assets/appicon/make-icns.sh
 
 # Clean build artifacts
 clean:
