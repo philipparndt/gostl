@@ -73,11 +73,28 @@ struct MetalView: NSViewRepresentable {
             self.appState = appState
         }
 
+        /// Whether the renderer could not be built, and why.
+        ///
+        /// Kept rather than trapped on. A renderer that will not start is a view
+        /// that cannot draw, which is a bad pane; it is not a reason to take the
+        /// host application down, and it used to be exactly that:
+        ///
+        ///     GoSTL/MetalView.swift:80: Fatal error: Failed to initialize Metal
+        ///     renderer: shaderLoadingFailed
+        ///
+        /// An editor that embeds this view died on launch from it, every launch,
+        /// because the tab it restored happened to be a model. Every use of
+        /// `renderer` below is already optional, so leaving it nil draws nothing
+        /// and goes no further.
+        private(set) var setupFailure: String?
+
         func setupRenderer(device: MTLDevice) {
             do {
                 renderer = try MetalRenderer(device: device)
+                setupFailure = nil
             } catch {
-                fatalError("Failed to initialize Metal renderer: \(error)")
+                setupFailure = "\(error)"
+                print("GoSTL: the Metal renderer could not be initialised: \(error)")
             }
         }
 
