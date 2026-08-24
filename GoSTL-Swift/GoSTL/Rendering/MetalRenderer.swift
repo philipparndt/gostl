@@ -299,14 +299,36 @@ final class MetalRenderer {
         // For SPM builds, load from the module bundle
         let bundle = Bundle.module
 
-        // Look for the compiled Metal library (default.metallib)
-        guard let libraryURL = bundle.url(forResource: "default", withExtension: "metallib") else {
-            print("DEBUG: Failed to find default.metallib in bundle: \(bundle.bundlePath)")
-            throw MetalError.shaderLoadingFailed
+        // The compiled library first: it is what a complete build produces, and
+        // loading it costs nothing at launch.
+        if let libraryURL = bundle.url(forResource: "default", withExtension: "metallib") {
+            return try device.makeLibrary(URL: libraryURL)
         }
 
-        print("DEBUG: Loading Metal library from: \(libraryURL.path)")
-        return try device.makeLibrary(URL: libraryURL)
+        // Failing that, compile the shader source that ships beside it.
+        //
+        // `.process("Resources")` asks SwiftPM to compile `Shaders.metal` into
+        // `default.metallib`. On a machine without the Metal toolchain that step
+        // cannot run — `swift build` prints
+        //
+        //     error: cannot execute tool 'metal' due to missing Metal Toolchain
+        //
+        // and exits 0 anyway, having copied the *source* into the bundle instead.
+        // So the bundle holds `Shaders.metal` and no `default.metallib`, and this
+        // used to throw: every host app then lost its 3D view, and any host that
+        // treated the throw as fatal lost the whole process.
+        //
+        // Compiling at runtime needs no toolchain — it goes through the Metal
+        // framework, which is always present — and the source is right there. It
+        // costs a few hundred milliseconds once per renderer, which is worth
+        // paying to have a viewer at all.
+        if let sourceURL = bundle.url(forResource: "Shaders", withExtension: "metal") {
+            let source = try String(contentsOf: sourceURL, encoding: .utf8)
+            return try device.makeLibrary(source: source, options: nil)
+        }
+
+        print("GoSTL: no default.metallib and no Shaders.metal in \(bundle.bundlePath)")
+        throw MetalError.shaderLoadingFailed
     }
 
     @MainActor
