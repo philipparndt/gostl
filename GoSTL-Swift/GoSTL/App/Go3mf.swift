@@ -477,9 +477,44 @@ extension AppState {
 /// Private, and reached only through `AppState.openWithGo3mf()`: which file is
 /// opened is a property of a viewer, and passing one in by hand is how a single
 /// command came to act on a window that was not the one in front.
+/// Whether this file is already what a build would have produced.
+///
+/// `openFileWithGo3mf` takes the output's name from the input for anything that
+/// is not a recipe — `x.stl` becomes `x.3mf` beside it — so for a file that is
+/// *already* a `.3mf` the input and the output are the same path, and the
+/// command becomes `go3mf build x.3mf -o x.3mf`. go3mf reads that as combining a
+/// set of one and refuses, correctly:
+///
+///     ✓ Validated 1 3MF file(s)
+///     Merging 3MF files...
+///     ✗ at least 2 files required for combining
+///
+/// which reached the viewer as "Failed to build x.3mf" — a build failure for a
+/// file that needs no building. There is nothing to make here: the file is
+/// already the thing, so it is handed straight to whatever opens a 3MF.
+///
+/// A recipe is never this, whatever it is called: what it produces is named by
+/// its own `output:`, so it is asked about the extension and not about the
+/// question this answers.
+func isAlreadyBuilt(_ sourceURL: URL) -> Bool {
+    sourceURL.pathExtension.lowercased() == "3mf"
+}
+
 private func buildAndOpenWithGo3mf(sourceFileURL: URL?) {
     guard let sourceURL = sourceFileURL else {
         print("No file loaded")
+        return
+    }
+
+    // Nothing to build, so nothing is built. The successful build below ends in
+    // exactly this call; a 3MF simply starts there.
+    //
+    // Before `findGo3mfExecutable`, deliberately: opening a 3MF needs no go3mf
+    // at all, and failing with "go3mf not found" on a machine that does not have
+    // it would be the same wrong answer in a different sentence.
+    if isAlreadyBuilt(sourceURL) {
+        print("\(sourceURL.lastPathComponent) is already a 3MF — opening it rather than building it")
+        NSWorkspace.shared.open(sourceURL)
         return
     }
 
