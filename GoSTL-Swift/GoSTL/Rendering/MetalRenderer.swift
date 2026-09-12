@@ -1003,8 +1003,23 @@ final class MetalRenderer {
             // Set texture for this quad
             encoder.setFragmentTexture(textQuad.texture, index: 0)
 
-            // Draw the quad (6 vertices = 2 triangles)
-            encoder.drawPrimitives(type: .triangle, vertexStart: vertexOffset, vertexCount: 6)
+            if textQuad.orientation == .billboard {
+                // Turned to the camera as it is now, so built here and handed
+                // over inline; the buffer's placeholder for it is skipped.
+                let halfHeight = textQuad.size / 2
+                let vertices = TextBillboardData.createBillboardQuad(
+                    pos: textQuad.position,
+                    halfWidth: halfHeight * textQuad.aspectRatio,
+                    halfHeight: halfHeight,
+                    camera: appState.camera
+                )
+                encoder.setVertexBytes(vertices, length: vertices.count * MemoryLayout<VertexIn>.stride, index: 0)
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+                encoder.setVertexBuffer(textData.vertexBuffer, offset: 0, index: 0)
+            } else {
+                // Draw the quad (6 vertices = 2 triangles)
+                encoder.drawPrimitives(type: .triangle, vertexStart: vertexOffset, vertexCount: 6)
+            }
             vertexOffset += 6
         }
     }

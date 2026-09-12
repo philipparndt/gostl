@@ -9,6 +9,10 @@ enum TextOrientation {
     case horizontal  // Flat on XY plane (bottom grid, Z is up)
     case verticalXZ  // Flat on XZ plane (back wall, facing -Y)
     case verticalYZ  // Flat on YZ plane (left wall, facing +X)
+    /// Facing the camera, upright on screen, whichever way the model is
+    /// turned. A quad lying in a world plane reads mirrored from behind and
+    /// upside down from below; a dimension has to be legible from anywhere.
+    case billboard
 }
 
 /// GPU-ready flat text data for 3D text rendering
@@ -18,6 +22,9 @@ final class TextBillboardData {
         let texture: MTLTexture
         let size: Float
         let orientation: TextOrientation
+        /// Width over height of the texture, so a quad made later - a
+        /// billboard, per frame - keeps the text's proportions.
+        let aspectRatio: Float
     }
 
     let vertexBuffer: MTLBuffer
@@ -39,17 +46,18 @@ final class TextBillboardData {
                 continue
             }
 
-            textQuads.append(TextQuad(
-                position: label.position,
-                texture: texture,
-                size: label.size,
-                orientation: label.orientation
-            ))
-
             // Calculate aspect ratio from texture dimensions
             let textureWidth = Float(texture.width)
             let textureHeight = Float(texture.height)
             let aspectRatio = textureWidth / textureHeight
+
+            textQuads.append(TextQuad(
+                position: label.position,
+                texture: texture,
+                size: label.size,
+                orientation: label.orientation,
+                aspectRatio: aspectRatio
+            ))
 
             // Create flat quad vertices oriented according to the grid plane
             // Use aspect ratio to prevent text compression
@@ -69,6 +77,10 @@ final class TextBillboardData {
             case .verticalYZ:
                 // Flat on YZ plane (left wall, facing +X)
                 vertices.append(contentsOf: TextBillboardData.createVerticalYZQuad(pos: pos, halfWidth: halfWidth, halfHeight: halfHeight, color: color))
+            case .billboard:
+                // Made at draw time from the camera; six placeholders keep
+                // the buffer offsets of the quads after it where they are.
+                vertices.append(contentsOf: TextBillboardData.createHorizontalQuad(pos: pos, halfWidth: 0, halfHeight: 0, color: color))
             }
         }
 
@@ -88,6 +100,33 @@ final class TextBillboardData {
     }
 
     // MARK: - Quad Generation
+
+    /// A quad facing the camera, its edges along the screen's, sized in world
+    /// units like the flat ones. Made every frame because the camera moves.
+    static func createBillboardQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, camera: Camera) -> [VertexIn] {
+        let view = camera.viewMatrix()
+        // The view matrix's rows are the camera axes in world space.
+        let right = simd_normalize(SIMD3<Float>(view[0][0], view[1][0], view[2][0]))
+        let up = simd_normalize(SIMD3<Float>(view[0][1], view[1][1], view[2][1]))
+        let normal = simd_normalize(camera.position - pos)
+        let color = SIMD4<Float>(1, 1, 1, 1)
+
+        let v0 = pos - right * halfWidth - up * halfHeight
+        let v1 = pos + right * halfWidth - up * halfHeight
+        let v2 = pos + right * halfWidth + up * halfHeight
+        let v3 = pos - right * halfWidth + up * halfHeight
+
+        // The same texture mapping as the flat quad on the ground: v = 1 is
+        // the top of the text.
+        return [
+            VertexIn(position: v0, normal: normal, color: color, texCoord: SIMD2(0, 0)),
+            VertexIn(position: v1, normal: normal, color: color, texCoord: SIMD2(1, 0)),
+            VertexIn(position: v2, normal: normal, color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: v0, normal: normal, color: color, texCoord: SIMD2(0, 0)),
+            VertexIn(position: v2, normal: normal, color: color, texCoord: SIMD2(1, 1)),
+            VertexIn(position: v3, normal: normal, color: color, texCoord: SIMD2(0, 1))
+        ]
+    }
 
     /// Horizontal text on XY plane (Z-up: text lies flat on ground, readable from above)
     private static func createHorizontalQuad(pos: SIMD3<Float>, halfWidth: Float, halfHeight: Float, color: SIMD4<Float>) -> [VertexIn] {

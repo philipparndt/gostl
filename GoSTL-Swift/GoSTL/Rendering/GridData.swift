@@ -408,7 +408,12 @@ final class GridData {
         return labels
     }
 
-    /// Generate dimension label data for text rendering (Z-up coordinate system)
+    /// Generate dimension label data for text rendering (Z-up coordinate system).
+    ///
+    /// The three sizes face the camera rather than lying in the grid's planes:
+    /// flat text was mirrored from behind and upside down from below, and
+    /// the Z label stood on the left wall, which half the views look at from
+    /// the back.
     func generateDimensionLabels() -> [(text: String, position: SIMD3<Float>, color: SIMD4<Float>, size: Float, orientation: TextOrientation)] {
         var labels: [(String, SIMD3<Float>, SIMD4<Float>, Float, TextOrientation)] = []
         let dimColor = ThemePreferences.shared.colors.dimensionLines
@@ -420,15 +425,15 @@ final class GridData {
 
         // X dimension label - positioned near the X marker (front edge)
         let xText = String(format: "X: %.1f mm", sizeX)
-        labels.append((xText, SIMD3(bounds.bboxMaxX, bounds.bboxMinY - 2, bounds.bottomZ), dimColor, labelSize, .horizontal))
+        labels.append((xText, SIMD3(bounds.bboxMaxX, bounds.bboxMinY - 2, bounds.bottomZ), dimColor, labelSize, .billboard))
 
         // Y dimension label - positioned near the Y marker (left edge)
         let yText = String(format: "Y: %.1f mm", sizeY)
-        labels.append((yText, SIMD3(bounds.bboxMinX - 2, bounds.bboxMaxY, bounds.bottomZ), dimColor, labelSize, .horizontal))
+        labels.append((yText, SIMD3(bounds.bboxMinX - 2, bounds.bboxMaxY, bounds.bottomZ), dimColor, labelSize, .billboard))
 
         // Z dimension label - positioned near the Z marker (vertical)
         let zText = String(format: "Z: %.1f mm", sizeZ)
-        labels.append((zText, SIMD3(bounds.bboxMinX - 2, bounds.bboxMaxY + 2, bounds.bboxMaxZ + labelSize * 0.6), dimColor, labelSize, .verticalYZ))
+        labels.append((zText, SIMD3(bounds.bboxMinX - 2, bounds.bboxMaxY + 2, bounds.bboxMaxZ + labelSize * 0.6), dimColor, labelSize, .billboard))
 
         return labels
     }

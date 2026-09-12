@@ -9,7 +9,11 @@ final class Camera {
     /// Distance from target
     var distance: Double = 100.0
 
-    /// Pitch angle (elevation above XY plane), in radians
+    /// Pitch angle (elevation above XY plane), in radians.
+    ///
+    /// Not confined to the upper half: past ±π/2 the camera goes over the pole
+    /// and comes down the far side, still looking at the target, so a model
+    /// can be turned right over to see its underside. `up` flips with it.
     var angleX: Double = 0.3
 
     /// Yaw angle (rotation around Z-axis), in radians
@@ -53,9 +57,20 @@ final class Camera {
         return target + SIMD3(x, y, z)
     }
 
-    /// Up vector for the camera (Z-up coordinate system)
+    /// Up vector for the camera (Z-up coordinate system).
+    ///
+    /// Beyond the pole the camera is upside down relative to Z, and the up
+    /// vector says so; otherwise the picture would snap through 180° at the
+    /// top. At the pole itself Z is along the line of sight and cannot be
+    /// "up"; the direction the camera just came from stands in for the one
+    /// frame it matters.
     var up: SIMD3<Float> {
-        SIMD3(0, 0, 1)
+        let tilt = cos(angleX)
+        if abs(tilt) < 1e-6 {
+            let toward = SIMD3<Float>(Float(-sin(angleY)), Float(-cos(angleY)), 0)
+            return sin(angleX) > 0 ? toward : -toward
+        }
+        return SIMD3(0, 0, tilt > 0 ? 1 : -1)
     }
 
     // MARK: - Matrix Generation
@@ -92,13 +107,22 @@ final class Camera {
 
     // MARK: - Camera Manipulation
 
-    /// Rotate camera
+    /// Rotate camera.
+    ///
+    /// The pitch used to stop 0.1 rad short of straight down, which is where
+    /// the underside of a model is: the drag simply stopped. It goes all the
+    /// way round now, kept in (-π, π] so the number stays readable.
     func rotate(deltaX: Double, deltaY: Double) {
-        angleX += deltaX
+        angleX = Self.wrapped(angleX + deltaX)
         angleY += deltaY
+    }
 
-        // Clamp pitch to avoid gimbal lock
-        angleX = max(-Double.pi / 2 + 0.1, min(Double.pi / 2 - 0.1, angleX))
+    /// `angle` brought into (-π, π].
+    static func wrapped(_ angle: Double) -> Double {
+        var a = angle.truncatingRemainder(dividingBy: 2 * .pi)
+        if a > .pi { a -= 2 * .pi }
+        if a <= -.pi { a += 2 * .pi }
+        return a
     }
 
     /// How far in and out of a fitted view zooming may go.
