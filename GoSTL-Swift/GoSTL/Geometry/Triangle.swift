@@ -20,6 +20,21 @@ struct TriangleColor: Codable, Equatable {
     }
 
     static let white = TriangleColor(1, 1, 1, 1)
+
+    /// A colour written the way 3MF writes one: `#RRGGBB` or `#RRGGBBAA`,
+    /// sRGB, the `#` optional and the case of the digits free.
+    init?(hex: String) {
+        let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        guard digits.count == 6 || digits.count == 8, let value = UInt32(digits, radix: 16) else { return nil }
+        let hasAlpha = digits.count == 8
+        let rgb = hasAlpha ? value >> 8 : value
+        self.init(
+            Float((rgb >> 16) & 0xFF) / 255,
+            Float((rgb >> 8) & 0xFF) / 255,
+            Float(rgb & 0xFF) / 255,
+            hasAlpha ? Float(value & 0xFF) / 255 : 1
+        )
+    }
 }
 
 /// A triangle defined by three vertices

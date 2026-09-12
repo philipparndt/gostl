@@ -257,12 +257,103 @@ private struct ThreeMFObject {
     var pid: Int?  // Property ID (extruder/material)
     var triangles: [Triangle] = []
     var components: [(objectId: Int, path: String?, transform: Transform3D)] = []
+
+    /// The object's own `pid`/`pindex`: the default for every triangle that
+    /// does not say otherwise.
+    var property: PropertyReference?
+    /// One entry per triangle, in the order they were read: its `pid`/`p1`.
+    var triangleProperties: [PropertyReference?] = []
+    /// `property` looked up, once the resources are all known.
+    var defaultColor: TriangleColor?
+
+    /// Turns the references into colours. Done after the whole document is
+    /// read: the spec wants resources defined before they are referenced, but
+    /// Cadova writes the object first and its colour group after it.
+    mutating func resolveColors(with resources: MaterialResources) {
+        defaultColor = resources.color(of: property)
+        for (index, reference) in triangleProperties.enumerated() where index < triangles.count {
+            if let color = resources.color(of: reference) {
+                triangles[index].color = color
+            }
+        }
+    }
+}
+
+// MARK: - Materials
+
+/// Which colour a triangle or an object points at: a property group and an
+/// index into it.
+private struct PropertyReference: Equatable {
+    let group: Int
+    let index: Int
+
+    /// Reads `pid` and the index attribute (`pindex` on an object, `p1` on a
+    /// triangle), the group falling back to the object's when a triangle has
+    /// none of its own.
+    init?(attributes: [String: String], indexAttribute: String, defaultGroup: Int?) {
+        guard let group = attributes["pid"].flatMap({ Int($0) }) ?? defaultGroup else { return nil }
+        guard let index = attributes[indexAttribute].flatMap({ Int($0) }) else { return nil }
+        self.group = group
+        self.index = index
+    }
+}
+
+/// The colours a model declares under `<resources>`, by group id: the core
+/// spec's `<basematerials>` with a `displaycolor` per `<base>`, and the
+/// materials extension's `<m:colorgroup>` with a `color` per `<m:color>`.
+///
+/// Fed element by element from the XML delegate; the namespace prefix is
+/// already stripped by then. Groups this does not know (textures, composites,
+/// multiproperties) are left out, so a reference into one resolves to no
+/// colour rather than a wrong one.
+private struct MaterialResources {
+    private var groups: [Int: [TriangleColor]] = [:]
+    private var openGroup: Int?
+
+    mutating func didStart(_ localName: String, attributes: [String: String]) {
+        switch localName {
+        case "basematerials", "colorgroup":
+            openGroup = attributes["id"].flatMap { Int($0) }
+            if let id = openGroup { groups[id] = [] }
+        case "base":
+            append(attributes["displaycolor"])
+        case "color":
+            append(attributes["color"])
+        default:
+            break
+        }
+    }
+
+    mutating func didEnd(_ localName: String) {
+        if localName == "basematerials" || localName == "colorgroup" {
+            openGroup = nil
+        }
+    }
+
+    /// An entry without a parsable colour still takes its index, so the ones
+    /// after it are not shifted.
+    private mutating func append(_ hex: String?) {
+        guard let id = openGroup else { return }
+        groups[id]?.append(hex.flatMap { TriangleColor(hex: $0) } ?? .white)
+    }
+
+    /// Whether `id` names a colour group, as opposed to an extruder number.
+    func isGroup(_ id: Int) -> Bool {
+        groups[id] != nil
+    }
+
+    func color(of reference: PropertyReference?) -> TriangleColor? {
+        guard let reference, let colors = groups[reference.group],
+              colors.indices.contains(reference.index) else { return nil }
+        return colors[reference.index]
+    }
 }
 
 // MARK: - Build Item
 
 private struct BuildItem {
     let objectId: Int
+    let path: String?
     let transform: Transform3D
 }
 
@@ -292,6 +383,7 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
     private var inTriangles = false
     private var inComponents = false
     private var inBuild = false
+    private var materials = MaterialResources()
 
     init(data: Data, archive: ZipArchive, partExtruders: [Int: [Int: Int]] = [:]) {
         self.data = data
@@ -317,6 +409,10 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
             throw ThreeMFError.xmlParsingFailed
         }
 
+        for id in objects.keys {
+            objects[id]?.resolveColors(with: materials)
+        }
+
         // Load external models that were referenced during parsing
         // (deferred to avoid reentrant XML parsing)
         loadPendingExternalModels()
@@ -331,7 +427,8 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
     /// - path: Path to external model file if this is an external component
     /// - transform: Accumulated transformation matrix
     /// - inheritedPid: Inherited property ID from parent
-    private func collectTriangles(parentObjectId: Int? = nil, objectId: Int, path: String? = nil, transform: Transform3D, inheritedPid: Int? = nil) -> [Triangle] {
+    /// - inheritedColor: The colour of the nearest ancestor that has one
+    private func collectTriangles(parentObjectId: Int? = nil, objectId: Int, path: String? = nil, transform: Transform3D, inheritedPid: Int? = nil, inheritedColor: TriangleColor? = nil) -> [Triangle] {
         // Look up object from external file or local objects
         let obj: ThreeMFObject?
         if let path = path, let externalObjs = externalObjects[path] {
@@ -349,7 +446,9 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
         // 2. Fall back to object's pid
         // 3. Fall back to inherited pid
         let lookupObjectId = parentObjectId ?? objectId
-        var effectivePid = obj.pid ?? inheritedPid
+        // A pid that names a colour group is a material, not an extruder.
+        let extruderPid = obj.pid.flatMap { materials.isGroup($0) ? nil : $0 }
+        var effectivePid = extruderPid ?? inheritedPid
 
         // Check for part-specific extruder from model_settings.config
         if let objectExtruders = partExtruders[lookupObjectId] {
@@ -363,7 +462,11 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
             }
         }
 
-        let color = effectivePid.flatMap { extruderColors[$0] }
+        // The colour, in the order the spec gives: the triangle's own property,
+        // then the object's default, then what a parent handed down. Bambu's
+        // extruder numbering is the fallback for a file without materials.
+        let objectColor = obj.defaultColor ?? inheritedColor
+        let color = objectColor ?? effectivePid.flatMap { extruderColors[$0] }
 
         // Add this object's triangles with transform and color applied
         for triangle in obj.triangles {
@@ -380,7 +483,7 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
             let combinedTransform = transform.multiply(component.transform)
             // Keep track of the top-level parent for extruder lookup
             let effectiveParent = parentObjectId ?? objectId
-            result.append(contentsOf: collectTriangles(parentObjectId: effectiveParent, objectId: component.objectId, path: component.path, transform: combinedTransform, inheritedPid: effectivePid))
+            result.append(contentsOf: collectTriangles(parentObjectId: effectiveParent, objectId: component.objectId, path: component.path, transform: combinedTransform, inheritedPid: effectivePid, inheritedColor: objectColor))
         }
 
         return result
@@ -408,7 +511,7 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
         } else {
             // Process build items with transforms
             for item in buildItems {
-                let itemTriangles = collectTriangles(objectId: item.objectId, transform: item.transform)
+                let itemTriangles = collectTriangles(objectId: item.objectId, path: item.path, transform: item.transform)
                 allTriangles.append(contentsOf: itemTriangles)
                 trianglesByObjectId[item.objectId] = itemTriangles
             }
@@ -429,8 +532,13 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
             if let idStr = attributeDict["id"], let id = Int(idStr) {
                 currentObjectId = id
                 let pid = attributeDict["pid"].flatMap { Int($0) }
-                objects[id] = ThreeMFObject(id: id, pid: pid)
+                var object = ThreeMFObject(id: id, pid: pid)
+                object.property = PropertyReference(attributes: attributeDict, indexAttribute: "pindex", defaultGroup: nil)
+                objects[id] = object
             }
+
+        case "basematerials", "base", "colorgroup", "color":
+            materials.didStart(localName.lowercased(), attributes: attributeDict)
 
         case "mesh":
             inMesh = true
@@ -484,6 +592,8 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
         switch localName.lowercased() {
         case "object":
             currentObjectId = nil
+        case "basematerials", "colorgroup":
+            materials.didEnd(localName.lowercased())
         case "mesh":
             inMesh = false
         case "vertices":
@@ -535,6 +645,10 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
         )
 
         objects[objectId]?.triangles.append(triangle)
+        // p1 alone: a triangle coloured per vertex (p2, p3) is drawn flat in
+        // its first vertex's colour.
+        let reference = PropertyReference(attributes: attributes, indexAttribute: "p1", defaultGroup: objects[objectId]?.property?.group)
+        objects[objectId]?.triangleProperties.append(reference)
     }
 
     private func parseComponent(attributes: [String: String], parentObjectId: Int) {
@@ -604,7 +718,14 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
             transform = .identity
         }
 
-        buildItems.append(BuildItem(objectId: objectId, transform: transform))
+        // The production extension puts the object in another model file,
+        // named on the item the same way a component names it.
+        let path = attributes["p:path"] ?? attributes["path"]
+        if let path {
+            pendingExternalPaths.insert(path)
+        }
+
+        buildItems.append(BuildItem(objectId: objectId, path: path, transform: transform))
     }
 }
 
@@ -810,6 +931,7 @@ private class ExternalModelParser: NSObject, XMLParserDelegate {
     private var inMesh = false
     private var inVertices = false
     private var inTriangles = false
+    private var materials = MaterialResources()
 
     init(data: Data) {
         self.data = data
@@ -827,6 +949,12 @@ private class ExternalModelParser: NSObject, XMLParserDelegate {
             throw ThreeMFError.xmlParsingFailed
         }
 
+        // Each model file declares its own colour groups; a reference never
+        // crosses into another file.
+        for id in objects.keys {
+            objects[id]?.resolveColors(with: materials)
+        }
+
         return objects
     }
 
@@ -842,8 +970,13 @@ private class ExternalModelParser: NSObject, XMLParserDelegate {
             if let idStr = attributeDict["id"], let id = Int(idStr) {
                 currentObjectId = id
                 let pid = attributeDict["pid"].flatMap { Int($0) }
-                objects[id] = ThreeMFObject(id: id, pid: pid)
+                var object = ThreeMFObject(id: id, pid: pid)
+                object.property = PropertyReference(attributes: attributeDict, indexAttribute: "pindex", defaultGroup: nil)
+                objects[id] = object
             }
+
+        case "basematerials", "base", "colorgroup", "color":
+            materials.didStart(localName.lowercased(), attributes: attributeDict)
 
         case "mesh":
             inMesh = true
@@ -881,6 +1014,8 @@ private class ExternalModelParser: NSObject, XMLParserDelegate {
         switch localName.lowercased() {
         case "object":
             currentObjectId = nil
+        case "basematerials", "colorgroup":
+            materials.didEnd(localName.lowercased())
         case "mesh":
             inMesh = false
         case "vertices":
@@ -928,6 +1063,10 @@ private class ExternalModelParser: NSObject, XMLParserDelegate {
         )
 
         objects[objectId]?.triangles.append(triangle)
+        // p1 alone: a triangle coloured per vertex (p2, p3) is drawn flat in
+        // its first vertex's colour.
+        let reference = PropertyReference(attributes: attributes, indexAttribute: "p1", defaultGroup: objects[objectId]?.property?.group)
+        objects[objectId]?.triangleProperties.append(reference)
     }
 }
 
