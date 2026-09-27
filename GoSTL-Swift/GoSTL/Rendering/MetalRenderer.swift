@@ -296,8 +296,12 @@ final class MetalRenderer {
     }
 
     private static func loadShaderLibrary(device: MTLDevice) throws -> MTLLibrary {
-        // For SPM builds, load from the module bundle
-        let bundle = Bundle.module
+        // Not `Bundle.module`: its generated accessor aborts on any machine but
+        // the one that built the host app (see `ResourceBundle`).
+        guard let bundle = ResourceBundle.bundle else {
+            print("GoSTL: no \(ResourceBundle.name).bundle in \(ResourceBundle.searchDirectories.map(\.path))")
+            throw MetalError.shaderLoadingFailed
+        }
 
         // The compiled library first: it is what a complete build produces, and
         // loading it costs nothing at launch.

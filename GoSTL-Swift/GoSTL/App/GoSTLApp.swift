@@ -233,7 +233,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyDockIconIfUnbundled() {
         guard Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil else { return }
 
-        guard let url = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+        guard let url = ResourceBundle.url(forResource: "AppIcon", withExtension: "icns"),
               let icon = NSImage(contentsOf: url) else {
             print("DEBUG: AppIcon.icns missing from the resource bundle")
             return
