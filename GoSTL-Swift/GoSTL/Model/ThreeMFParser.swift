@@ -428,16 +428,26 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
     /// - transform: Accumulated transformation matrix
     /// - inheritedPid: Inherited property ID from parent
     /// - inheritedColor: The colour of the nearest ancestor that has one
-    private func collectTriangles(parentObjectId: Int? = nil, objectId: Int, path: String? = nil, transform: Transform3D, inheritedPid: Int? = nil, inheritedColor: TriangleColor? = nil) -> [Triangle] {
-        // Look up object from external file or local objects
+    /// - ancestors: The objects above this one, so a cycle ends instead of recursing until the stack runs out
+    private func collectTriangles(parentObjectId: Int? = nil, objectId: Int, path: String? = nil, transform: Transform3D, inheritedPid: Int? = nil, inheritedColor: TriangleColor? = nil, ancestors: Set<String> = []) -> [Triangle] {
+        // Look up object from external file or local objects. A path whose file
+        // did not load names nothing: falling back to the main model's object
+        // of the same id finds the wrong object, and in a Bambu file often the
+        // parent itself.
         let obj: ThreeMFObject?
-        if let path = path, let externalObjs = externalObjects[path] {
-            obj = externalObjs[objectId]
+        if let path = path {
+            obj = externalObjects[path]?[objectId]
         } else {
             obj = objects[objectId]
         }
 
         guard let obj = obj else { return [] }
+
+        // The spec forbids an object containing itself, but a file that does
+        // must not take the app down with it.
+        let key = "\(path ?? "")#\(objectId)"
+        guard !ancestors.contains(key) else { return [] }
+        let chain = ancestors.union([key])
 
         var result: [Triangle] = []
 
@@ -483,7 +493,7 @@ private class ThreeMFXMLParser: NSObject, XMLParserDelegate {
             let combinedTransform = transform.multiply(component.transform)
             // Keep track of the top-level parent for extruder lookup
             let effectiveParent = parentObjectId ?? objectId
-            result.append(contentsOf: collectTriangles(parentObjectId: effectiveParent, objectId: component.objectId, path: component.path, transform: combinedTransform, inheritedPid: effectivePid, inheritedColor: objectColor))
+            result.append(contentsOf: collectTriangles(parentObjectId: effectiveParent, objectId: component.objectId, path: component.path, transform: combinedTransform, inheritedPid: effectivePid, inheritedColor: objectColor, ancestors: chain))
         }
 
         return result
